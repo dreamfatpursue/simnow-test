@@ -97,7 +97,7 @@ def install_handlers(event_engine: Any, main_engine: Any, settings: Settings) ->
         print(
             "[资金] "
             f"账户={account.accountid} balance={account.balance} "
-            f"available={account.available} margin={account.margin}",
+            f"available={account.available} frozen={account.frozen}",
             flush=True,
         )
 
