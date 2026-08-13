@@ -1,1 +1,2 @@
 vnpy>=4.0
+-e ./vendor/vnpy_ctp

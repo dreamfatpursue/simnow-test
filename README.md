@@ -23,14 +23,7 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-Mac 上的 `vnpy_ctp` 需要从源码构建：
-
-```bash
-git clone https://github.com/vnpy/vnpy_ctp.git ../vnpy_ctp
-python -m pip install ../vnpy_ctp
-```
-
-如果你的上级目录已经有 `vnpy_ctp`，跳过 `git clone`，只执行安装命令即可。构建失败时，以 [vnpy_ctp 官方 README](https://github.com/vnpy/vnpy_ctp) 的 Mac 安装说明为准。
+项目已经把带持仓查询完成契约的 `vnpy_ctp` 放在 `vendor/vnpy_ctp`。安装会构建项目管理的 CTP 原生扩展；构建失败时，先确认本机已具备 C++ 编译器、Meson 和 Ninja。
 
 ## 2. 填写 SimNow 参数
 
@@ -75,4 +68,25 @@ python run.py
 
 ## 当前边界
 
-本阶段没有加入策略、自动下单、风控、订单持久化和广发实盘配置。等 SimNow 的登录、行情、资金和持仓链路稳定后，再增加一手模拟委托和撤单测试；切换到广发时只替换同一组 `CTP_*` 配置。
+当前实现只面向 SimNow 单合约、单进程、无凭证落盘的受控联调；不包含生产交易、广发实盘配置、回放撮合、数据库持久化或多合约组合。
+
+## 单合约报撤联调
+
+普通连接入口仍然只读。需要下单能力时使用独立入口，并准备不含凭证的策略配置：
+
+```bash
+cp strategy.example.json strategy.json
+# 把 symbol 改成当前 SimNow 合约查询返回的有效合约
+python run_live_grid.py --config strategy.json
+```
+
+该命令只显示标准化配置和 SHA-256 哈希，不会连接或下单。确认无误后，必须同时提供 SimNow 确认和至少八位匹配的策略哈希前缀：
+
+```bash
+python run_live_grid.py \
+  --config strategy.json \
+  --confirm-simnow \
+  --confirm-hash <策略哈希前八位或更长前缀>
+```
+
+CTP 凭证仍只从 `.env` 读取，策略配置和测试审计目录不得放入凭证。每次运行会在 `audit/` 下创建独立目录，记录无凭证事件和最终安全摘要。首次使用应先执行远价无成交后 `Ctrl+C` 的人工验收，再进行受控首次成交验收。

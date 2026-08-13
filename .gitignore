@@ -5,4 +5,4 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 *.log
-vnpy_ctp/
+/vnpy_ctp/
