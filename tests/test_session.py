@@ -678,9 +678,15 @@ class ContinuousQuotingTests(unittest.TestCase):
         self.assertEqual(session.summary()["stop_reason"], "session_end")
 
     def test_past_session_end_never_quotes(self) -> None:
-        from datetime import datetime, timedelta
+        from datetime import datetime
 
-        past = (datetime.now() - timedelta(minutes=30)).strftime("%H:%M")
+        now = datetime.now()
+        if now.minute >= 1:
+            past = now.replace(minute=now.minute - 1).strftime("%H:%M")
+        elif now.hour >= 1:
+            past = f"{now.hour - 1:02d}:59"
+        else:
+            past = "00:00"
         session = start_session(make_config(session_end_time=past))
         at0 = time.monotonic()
         session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, at0))
@@ -707,6 +713,55 @@ class ContinuousQuotingTests(unittest.TestCase):
         client_id = flatten.payload["client_id"]
         session.handle(OrderEvent("r1-late-flat", "rb2601", "SHFE", "BUY", "ALLTRADED", 1, traded=1, client_id=client_id))
         session.handle(TradeEvent("r1-late-flat", "rb2601", "SHFE", "BUY", 1, 101, "f2-trade", client_id=client_id))
+        self.assertEqual(session.state, SessionState.WAITING_FOR_STABLE_QUOTE)
+        self.assertEqual(session.summary()["round_trips"], 2)
+
+    def test_interrupt_during_round_closing_stops_after_flatten(self) -> None:
+        session = start_session(make_config(max_round_trips=5))
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
+        submitted = session.handle(ClockEvent(2))
+        bind_quotes(session, submitted, "r1")
+        session.handle(TradeEvent("r1-buy", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
+        session.handle(InterruptEvent())
+        self.assertEqual(session.stop_reason, "interrupted")
+        complete_round(session, "r1", "BUY", 1)
+        self.assertEqual(session.state, SessionState.FINISHED)
+        summary = session.summary()
+        self.assertEqual(summary["stop_reason"], "interrupted")
+        self.assertEqual(summary["round_trips"], 1)
+
+    def test_stop_reason_first_wins_over_max_round_trips(self) -> None:
+        session = start_session(make_config(max_round_trips=1))
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
+        submitted = session.handle(ClockEvent(2))
+        bind_quotes(session, submitted, "r1")
+        session.handle(TradeEvent("r1-buy", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
+        session.handle(InterruptEvent())
+        complete_round(session, "r1", "BUY", 1)
+        self.assertEqual(session.state, SessionState.FINISHED)
+        self.assertEqual(session.summary()["stop_reason"], "interrupted")
+
+    def test_late_flatten_fill_that_changes_net_triggers_new_closing(self) -> None:
+        session = start_session(make_config(max_round_trips=5))
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
+        submitted = session.handle(ClockEvent(2))
+        bind_quotes(session, submitted, "r1")
+        session.handle(TradeEvent("r1-buy", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
+        complete_round(session, "r1", "BUY", 1)
+        self.assertEqual(session.state, SessionState.WAITING_FOR_STABLE_QUOTE)
+        flatten_client = session.actions[-1].payload["client_id"]
+
+        # 平仓单迟到成交回报（新的成交编号）使净仓再次非零
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 4))
+        session.handle(
+            TradeEvent("r1-flat", "rb2601", "SHFE", "SELL", 1, 99, "dup-flatten-trade", client_id=flatten_client)
+        )
+        self.assertEqual(session.state, SessionState.CLOSING_RECONCILE)
+        query = session.actions[-1].payload["request_id"]
+        flatten = session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", -1))[0]
+        client_id = flatten.payload["client_id"]
+        session.handle(OrderEvent("r2-flat", "rb2601", "SHFE", "BUY", "ALLTRADED", 1, traded=1, client_id=client_id))
+        session.handle(TradeEvent("r2-flat", "rb2601", "SHFE", "BUY", 1, 101, "r2-flat-trade", client_id=client_id))
         self.assertEqual(session.state, SessionState.WAITING_FOR_STABLE_QUOTE)
         self.assertEqual(session.summary()["round_trips"], 2)
 

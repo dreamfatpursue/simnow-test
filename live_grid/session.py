@@ -27,6 +27,18 @@ class SessionState(str, Enum):
     FAILED = "FAILED"
 
 
+# 收口中与终态的合集：处于其中任何状态时不得开启新一轮收口或报价。
+_CLOSING_OR_TERMINAL = frozenset(
+    {
+        SessionState.CLOSING_CANCELS,
+        SessionState.CLOSING_RECONCILE,
+        SessionState.FLATTENING,
+        SessionState.FINISHED,
+        SessionState.FAILED,
+    }
+)
+
+
 @dataclass(frozen=True)
 class ContractEvent:
     symbol: str
@@ -325,14 +337,10 @@ class LiveGridSession:
         traded_delta = order.traded - previous_traded
 
         if order.is_flatten:
-            if self.state not in {
-                SessionState.CLOSING_CANCELS,
-                SessionState.CLOSING_RECONCILE,
-                SessionState.FLATTENING,
-                SessionState.FINISHED,
-                SessionState.FAILED,
-            }:
-                # 本轮已完成并续挂：迟到的平仓委托回报不再影响状态。
+            if self.state not in _CLOSING_OR_TERMINAL:
+                if traded_delta > 0:
+                    # 迟到的平仓成交改变了净仓：不得带仓续挂，立即开启新一轮收口。
+                    self._enter_closing("late_fill", order=order, volume=traded_delta)
                 return
             if self.state == SessionState.FINISHED and self.final_net_position != 0:
                 self.failure_reason = self.failure_reason or "late_flatten_fill_after_finish"
@@ -355,10 +363,7 @@ class LiveGridSession:
         elif self.state in {SessionState.QUOTING, SessionState.REPLACING} and traded_delta > 0:
             self._enter_closing("first_fill", order=order, volume=traded_delta)
         elif traded_delta > 0 and self.state == SessionState.WAITING_FOR_STABLE_QUOTE:
-            # 上一轮撤单竞速失败的迟到成交：立即按新一轮收口处理。
-            self.final_net_position = (self.final_net_position if self.final_net_position is not None else 0) + (
-                traded_delta if order.side == "BUY" else -traded_delta
-            )
+            # 上一轮撤单竞速失败的迟到成交：立即按新一轮收口处理（净仓以对账查询为准）。
             self._enter_closing("late_fill", order=order, volume=traded_delta)
         elif traded_delta > 0 and self.state in {
             SessionState.CLOSING_RECONCILE,
@@ -385,16 +390,19 @@ class LiveGridSession:
             order.trade_ids.add(event.trade_id)
         order.trade_volume += event.volume
         order.traded = max(order.traded, order.trade_volume)
+        accounted_before = order.accounted_traded
         self._account_flatten_fill(order)
         if order.is_flatten:
-            if self.state not in {
-                SessionState.CLOSING_CANCELS,
-                SessionState.CLOSING_RECONCILE,
-                SessionState.FLATTENING,
-                SessionState.FINISHED,
-                SessionState.FAILED,
-            }:
-                # 本轮已完成并续挂：迟到的平仓成交回报不再影响状态。
+            if self.state not in _CLOSING_OR_TERMINAL:
+                if order.accounted_traded > accounted_before:
+                    # 迟到的平仓成交改变了净仓：不得带仓续挂，立即开启新一轮收口。
+                    self._enter_closing(
+                        "late_fill",
+                        order=order,
+                        volume=order.accounted_traded - accounted_before,
+                        price=event.price,
+                        trade_id=event.trade_id,
+                    )
                 return
             current_flatten_terminal = order.client_id == self._flatten_client_id and order.terminal
             if self.state == SessionState.FINISHED and self.final_net_position != 0:
@@ -419,9 +427,6 @@ class LiveGridSession:
                 trade_id=event.trade_id,
             )
         elif self.state == SessionState.WAITING_FOR_STABLE_QUOTE:
-            self.final_net_position = (self.final_net_position if self.final_net_position is not None else 0) + (
-                event.volume if order.side == "BUY" else -event.volume
-            )
             self._enter_closing(
                 "late_fill",
                 order=order,
@@ -483,6 +488,7 @@ class LiveGridSession:
         if event.net_position == 0:
             self._finish_or_fail()
             return
+        self._round_has_fill = True
         self.state = SessionState.FLATTENING
         self._flatten_started_at = self._now
         if not self._protected_valid(self._latest_tick):
@@ -610,7 +616,7 @@ class LiveGridSession:
         return True
 
     def _begin_replacement(self, reason: str, *, safety: bool) -> None:
-        if self.state in {SessionState.CLOSING_CANCELS, SessionState.CLOSING_RECONCILE, SessionState.FLATTENING, SessionState.FINISHED, SessionState.FAILED}:
+        if self.state in _CLOSING_OR_TERMINAL:
             return
         self.state = SessionState.REPLACING
         self._replacement_reason = reason
@@ -659,7 +665,7 @@ class LiveGridSession:
             self._stable_since = None
 
     def _enter_closing(self, reason: str, *, order: _Order | None = None, volume: int = 0, price: float = 0, trade_id: str = "") -> None:
-        if self.state in {SessionState.CLOSING_CANCELS, SessionState.CLOSING_RECONCILE, SessionState.FLATTENING, SessionState.FINISHED, SessionState.FAILED}:
+        if self.state in _CLOSING_OR_TERMINAL:
             return
         self.state = SessionState.CLOSING_CANCELS
         self._closing_started_at = self._now
@@ -790,11 +796,11 @@ class LiveGridSession:
             return
         self._round_trips += 1
         self._round_has_fill = False
-        if self._round_trips >= self.config.effective["max_round_trips"]:
+        if self.stop_reason is None and self._round_trips >= self.config.effective["max_round_trips"]:
             self.stop_reason = "max_round_trips"
-            self.state = SessionState.FINISHED
-        elif self._past_end():
+        if self.stop_reason is None and self._past_end():
             self.stop_reason = "session_end"
+        if self.stop_reason is not None:
             self.state = SessionState.FINISHED
         else:
             # 一轮完成且未到停止条件：清锚重新进入稳定行情门槛，继续下一轮挂单。
