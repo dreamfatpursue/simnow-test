@@ -98,6 +98,89 @@ class LiveGridSessionTests(unittest.TestCase):
         self.assertEqual(flatten.payload["offset"], "CLOSETODAY")
         self.assertEqual(flatten.payload["order_type"], "FAK")
 
+    def test_first_full_trade_cancels_remaining_orders_and_records_successful_cancellation(self) -> None:
+        session = start_session()
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
+        submitted = session.handle(ClockEvent(2))
+        buy = next(action for action in submitted if action.payload["side"] == "BUY")
+        sell = next(action for action in submitted if action.payload["side"] == "SELL")
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
+        session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
+
+        actions = session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
+        self.assertEqual(session.state, SessionState.CLOSING_CANCELS)
+        self.assertEqual(session.first_fill["volume"], 1)
+        self.assertEqual([action.kind for action in actions], ["cancel_order", "cancel_order"])
+
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "ALLTRADED", 1, traded=1))
+        actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
+        self.assertEqual(session.state, SessionState.CLOSING_RECONCILE)
+        self.assertTrue(session.cancellation_terminal)
+        self.assertEqual([action.kind for action in actions], ["query_position"])
+
+    def test_rolling_action_limit_pauses_after_sixty_normal_actions(self) -> None:
+        session = start_session(
+            make_config(
+                reanchor_confirmation_seconds=0.1,
+                stable_market_seconds=0.1,
+                action_limit_per_minute=60,
+            )
+        )
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
+        submitted = session.handle(ClockEvent(0.1))
+        active_orders = []
+        for number, action in enumerate(submitted, 1):
+            order_id = f"order-{number}"
+            active_orders.append((order_id, action.payload["side"]))
+            session.handle(
+                OrderEvent(
+                    order_id,
+                    "rb2601",
+                    "SHFE",
+                    action.payload["side"],
+                    "NOTTRADED",
+                    1,
+                    client_id=action.payload["client_id"],
+                )
+            )
+
+        anchor = 100
+        for cycle in range(15):
+            base = 0.2 + cycle * 0.33
+            outside = anchor + 21
+            session.handle(TickEvent("rb2601", "SHFE", outside, outside - 1, outside + 1, base))
+            actions = session.handle(
+                TickEvent("rb2601", "SHFE", outside, outside - 1, outside + 1, base + 0.11)
+            )
+            self.assertEqual([action.kind for action in actions], ["cancel_order", "cancel_order"])
+            for number, (order_id, side) in enumerate(active_orders, 1):
+                session.handle(OrderEvent(order_id, "rb2601", "SHFE", side, "CANCELLED", 1))
+
+            session.handle(TickEvent("rb2601", "SHFE", outside, outside - 1, outside + 1, base + 0.22))
+            actions = session.handle(ClockEvent(base + 0.33))
+            if cycle < 14:
+                self.assertEqual([action.kind for action in actions], ["submit_order", "submit_order"])
+                active_orders = []
+                for number, action in enumerate(actions, 1):
+                    order_id = f"order-{cycle + 2}-{number}"
+                    active_orders.append((order_id, action.payload["side"]))
+                    session.handle(
+                        OrderEvent(
+                            order_id,
+                            "rb2601",
+                            "SHFE",
+                            action.payload["side"],
+                            "NOTTRADED",
+                            1,
+                            client_id=action.payload["client_id"],
+                        )
+                    )
+                anchor += 20
+            else:
+                self.assertEqual([action.kind for action in actions], ["audit_warning"])
+                self.assertEqual(actions[0].payload["code"], "normal_action_limit_reached")
+                self.assertEqual(session.state, SessionState.WAITING_FOR_STABLE_QUOTE)
+
     def test_wide_book_fails_strict_protection_gate_without_quotes(self) -> None:
         session = start_session(make_config(w_ticks=1, d_ticks=1, book_protection_multiple=2))
         session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))

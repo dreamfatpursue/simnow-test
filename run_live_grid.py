@@ -60,13 +60,7 @@ def main() -> int:
                     print(f"异常收口未完成: {cleanup_exc}", file=sys.stderr)
                 summary = adapter.session.summary()
             else:
-                summary = {
-                    "terminal_state": "FAILED",
-                    "target_symbol": config.effective["symbol"],
-                    "target_exchange": config.effective["exchange"],
-                    "target_lots": config.effective["target_lots"],
-                    "strategy_hash": config.sha256,
-                }
+                summary = _session(config, args).summary()
             summary.update({"terminal_state": "FAILED", "failure_reason": str(exc)})
             audit.finish(summary)
         return 3
