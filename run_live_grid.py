@@ -132,6 +132,8 @@ def main() -> int:
                     _interrupt_and_wait(adapter)
                 except Exception as cleanup_exc:
                     print(f"异常收口未完成: {cleanup_exc}", file=sys.stderr)
+                adapter.close()
+                adapter = None
             if run_audit is not None:
                 audits = run_audit.writers
                 _finish_contract_summaries(
@@ -153,6 +155,10 @@ def main() -> int:
         except KeyboardInterrupt:
             if adapter is not None:
                 _interrupt_and_wait(adapter)
+        # 先关引擎再写摘要：否则摘要落盘后引擎仍可能投递迟到事件给已关闭的审计写入器。
+        if adapter is not None:
+            adapter.close()
+            adapter = None
         audits = run_audit.writers
         _finish_contract_summaries(sessions, audits)
         directory = run_audit.finish(_run_summary(config, sessions))
@@ -163,7 +169,7 @@ def main() -> int:
     finally:
         if adapter is not None:
             adapter.close()
-        elif run_audit is not None:
+        if run_audit is not None:
             run_audit.close()
 
 

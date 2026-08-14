@@ -403,7 +403,7 @@ class CtpAdapterTests(unittest.TestCase):
         adapter.close()
         self.assertTrue(engine.lock_free_during_close)
         self.assertIsNone(adapter.main_engine)
-        self.assertTrue(all(audit.closed for audit in audits))
+        self.assertFalse(all(audit.closed for audit in audits))
 
     def test_project_gateway_path_and_position_completion_contract_are_available(self) -> None:
         package_path = verify_project_gateway(Path(__file__).resolve().parents[1])

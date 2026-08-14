@@ -124,14 +124,12 @@ class CtpLiveGridAdapter:
 
     def close(self) -> None:
         # 不能持锁关闭事件引擎：其工作线程 join 前可能正阻塞在本锁的回调上。
+        # 审计写入器由入口拥有并在引擎关闭之后关闭，避免迟到事件写入已关闭的审计目录。
         with self._lock:
             engine = self.main_engine
             self.main_engine = None
         if engine is not None:
             engine.close()
-        with self._lock:
-            for audit in self.audits:
-                audit.close()
 
     def _on_contract(self, event: Any) -> None:
         contract = event.data
