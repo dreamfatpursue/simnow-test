@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, replace
 from math import isfinite
 from pathlib import Path
@@ -41,7 +42,7 @@ _CREDENTIAL_KEYS = {
     "CTP_AUTH_CODE",
     "CTP_PRODUCT_INFO",
 }
-_DEFAULTS: dict[str, int] = {
+_DEFAULTS: dict[str, Any] = {
     "w_ticks": 20,
     "d_ticks": 20,
     "s_ticks": 10,
@@ -52,6 +53,8 @@ _DEFAULTS: dict[str, int] = {
     "cancel_timeout_seconds": 10,
     "flatten_timeout_seconds": 3,
     "flatten_adverse_ticks": 10,
+    "max_round_trips": 10,
+    "session_end_time": "",
 }
 _REQUIRED = {"version", "symbol", "exchange", "target_lots"}
 _POSITIVE_FIELDS = {
@@ -63,7 +66,15 @@ _POSITIVE_FIELDS = {
     "flatten_timeout_seconds",
     "flatten_adverse_ticks",
 }
-_POSITIVE_INTEGER_FIELDS = {"target_lots", "w_ticks", "d_ticks", "s_ticks"}
+_POSITIVE_INTEGER_FIELDS = {"target_lots", "w_ticks", "d_ticks", "s_ticks", "max_round_trips"}
+
+_SESSION_END_PATTERN = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def _validate_session_end_time(effective: Mapping[str, Any]) -> None:
+    value = effective["session_end_time"]
+    if not isinstance(value, str) or (value and not _SESSION_END_PATTERN.match(value)):
+        raise StrategyConfigError(f"session_end_time 必须是 HH:MM 格式: {value!r}")
 
 
 def _reject_credentials(raw: Mapping[str, Any]) -> None:
@@ -134,6 +145,7 @@ class StrategyConfig:
         effective["symbol"] = effective["symbol"].strip()
         _require_positive_integers(effective, _POSITIVE_INTEGER_FIELDS)
         _require_positive(effective, _POSITIVE_FIELDS)
+        _validate_session_end_time(effective)
         if (
             isinstance(effective["version"], bool)
             or not isinstance(effective["version"], int)
@@ -199,6 +211,7 @@ class MultiContractConfig:
         common.update({name: raw[name] for name in _DEFAULTS if name in raw})
         _require_positive_integers(common, _POSITIVE_INTEGER_FIELDS - {"target_lots"})
         _require_positive(common, _POSITIVE_FIELDS)
+        _validate_session_end_time(common)
 
         per_contract: list[StrategyConfig] = []
         seen: set[tuple[str, str]] = set()

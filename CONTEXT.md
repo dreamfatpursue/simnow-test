@@ -28,9 +28,21 @@ _Avoid_: 仅报撤测试、无上限自动交易
 A first SimNow test phase that submits, cancels, replaces, and observes fills for one contract only. It deliberately does not submit an automatic hedge order.
 _Avoid_: 受限完整链路、最终策略运行
 
-**单次成交收口**:
-The mandatory sequence after the first confirmed fill in single-contract testing: cancel every remaining quote, reconcile CTP order and position callbacks, flatten the net position, then stop the run.
-_Avoid_: 持续报价、人工兜底持仓
+**单轮成交收口**:
+The mandatory sequence after any confirmed fill within a round: cancel every remaining quote, reconcile CTP order and position callbacks, flatten the net position, then either resume quoting for the next round or stop per the stop conditions. A closing or flatten failure fails the session; it never resumes quoting with an open position.
+_Avoid_: 持续持仓、带仓重挂、跨轮合并对账
+
+**收盘停止**:
+The configured local-clock time (`session_end_time`, HH:MM) at which each contract's session runs the same closing sequence as an operator interrupt and ends normally. A configured time already past today means the session is already over; cross-midnight end times are not supported.
+_Avoid_: 无限挂单、依赖交易所日历、跨午夜收盘时刻
+
+**往返轮数上限**:
+The maximum completed fill-and-flatten rounds per session (`max_round_trips`, default 10). Reaching it ends the session normally after the current round completes; it does not interrupt an in-flight closing.
+_Avoid_: 无上限轮次、中途打断收口
+
+**迟到成交触发**:
+A fill reported for an order that was already cancel-requested, arriving while the session is between rounds or re-quoting. It must immediately start a new closing sequence for that contract; it is never ignored as stale.
+_Avoid_: 忽略撤单竞速失败的成交、静默记账不平仓
 
 **报撤测试入口**:
 A dedicated command for the single-contract SimNow test. It can submit orders only when started with an explicit SimNow confirmation flag; the ordinary connection command remains read-only.
@@ -76,8 +88,8 @@ _Avoid_: 从环境变量隐式继承下单合约、只读订阅合约
 The first test may quote only when valid bid, ask, and last prices exist and `W + D` is strictly greater than twice the observed bid-ask spread in ticks. An invalid or too-wide book cancels test quotes and pauses quoting.
 _Avoid_: 薄盘口继续挂单、忽略无效行情
 
-**首次成交触发**:
-The first CTP-reported partial or complete fill for either target quote. It immediately starts the single-fill closing sequence; remaining quantity and the opposite quote cannot continue trading.
+**轮内成交触发**:
+The first CTP-reported partial or complete fill for either quote of the current round. It immediately starts that round's closing sequence; remaining quantity and the opposite quote cannot continue trading.
 _Avoid_: 等待全额成交、保留另一侧报价
 
 **撤单终态上限**:

@@ -180,6 +180,24 @@ class MultiContractConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(StrategyConfigError, "根节点必须是 JSON 对象"):
                 MultiContractConfig.from_json_file(path)
 
+    def test_multi_contract_config_accepts_session_controls_with_defaults(self) -> None:
+        doc = valid_multi_contract_config()
+        config = MultiContractConfig.from_mapping(doc)
+        self.assertEqual(config.effective["session_end_time"], "")
+        self.assertEqual(config.effective["max_round_trips"], 10)
+
+        config = MultiContractConfig.from_mapping(doc | {"session_end_time": "23:00", "max_round_trips": 3})
+        self.assertEqual(config.effective["session_end_time"], "23:00")
+        self.assertEqual(config.effective["max_round_trips"], 3)
+        self.assertEqual(config.contracts[0].effective["session_end_time"], "23:00")
+
+        with self.assertRaisesRegex(StrategyConfigError, "session_end_time"):
+            MultiContractConfig.from_mapping(doc | {"session_end_time": "9点"})
+        with self.assertRaisesRegex(StrategyConfigError, "session_end_time"):
+            MultiContractConfig.from_mapping(doc | {"session_end_time": "24:30"})
+        with self.assertRaisesRegex(StrategyConfigError, "max_round_trips 必须是正整数"):
+            MultiContractConfig.from_mapping(doc | {"max_round_trips": 0})
+
 
 if __name__ == "__main__":
     unittest.main()

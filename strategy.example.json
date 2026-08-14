@@ -21,5 +21,7 @@
   "action_limit_per_minute": 60,
   "cancel_timeout_seconds": 10,
   "flatten_timeout_seconds": 3,
-  "flatten_adverse_ticks": 10
+  "flatten_adverse_ticks": 10,
+  "max_round_trips": 10,
+  "session_end_time": "23:00"
 }

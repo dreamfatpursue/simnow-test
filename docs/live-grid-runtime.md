@@ -22,7 +22,7 @@
 - 报撤限额、首次成交收口、失败与超时均按会话独立；操作员中断广播至全部会话；运行在全部会话终态后结束。
 - 审计目录每次运行一个 run 目录，内含每合约子目录（`symbol@exchange`，各自 `effective_strategy.json`/`events.jsonl`/`summary.json`），run 根目录另写整份生效配置与全合约汇总 `summary.json`（`terminal_states`/`all_finished`/逐合约摘要）。
 
-下文其余章节描述的单合约状态机与收口规则对每个会话逐合约成立。
+自 ADR 0003 起收口语义升级为连续挂单：每轮成交平仓回零后清锚重挂，直至 `session_end_time` 收盘时刻、`max_round_trips` 轮数上限或操作员中断任一停止条件生效；摘要新增 `round_trips` 与 `stop_reason`。下文其余章节描述的单合约状态机与收口规则对每个会话逐合约、逐轮成立。
 
 ## 2. 代码地图
 

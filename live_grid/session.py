@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import time
 from collections import deque
 from dataclasses import asdict, dataclass, field, is_dataclass
+from datetime import datetime
 from enum import Enum
 from math import isfinite
 from typing import Any
@@ -132,6 +134,7 @@ class LiveGridSession:
     state: SessionState = field(init=False)
     actions: list[Action] = field(default_factory=list, init=False)
     failure_reason: str | None = field(default=None, init=False)
+    stop_reason: str | None = field(default=None, init=False)
     first_fill: dict[str, Any] | None = field(default=None, init=False)
     final_net_position: int | None = field(default=None, init=False)
     startup_position_result: str | None = field(default=None, init=False)
@@ -163,6 +166,9 @@ class LiveGridSession:
     _action_limit_paused: bool = field(default=False, init=False)
     _replacement_started_at: float | None = field(default=None, init=False)
     _replacement_warning_emitted: bool = field(default=False, init=False)
+    _round_trips: int = field(default=0, init=False)
+    _round_has_fill: bool = field(default=False, init=False)
+    _end_at: float | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self.state = (
@@ -173,6 +179,20 @@ class LiveGridSession:
             else SessionState.PREVIEW
         )
         self.state_transitions.append({"from": "", "to": self.state.value})
+        # 唯一的墙钟读取点：把 session_end_time 折算为单调时钟期限，此后保持事件驱动确定性。
+        # 已过当日收盘时刻视为本次会话已结束（不支持跨午夜收盘时刻）。
+        end_time = self.config.effective["session_end_time"]
+        if end_time:
+            hour, minute = (int(part) for part in end_time.split(":"))
+            now = datetime.now()
+            deadline = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if deadline <= now:
+                self._end_at = 0.0
+            else:
+                self._end_at = time.monotonic() + (deadline - now).total_seconds()
+
+    def _past_end(self) -> bool:
+        return self._end_at is not None and self._now >= self._end_at
 
     @property
     def target_symbol(self) -> str:
@@ -305,6 +325,15 @@ class LiveGridSession:
         traded_delta = order.traded - previous_traded
 
         if order.is_flatten:
+            if self.state not in {
+                SessionState.CLOSING_CANCELS,
+                SessionState.CLOSING_RECONCILE,
+                SessionState.FLATTENING,
+                SessionState.FINISHED,
+                SessionState.FAILED,
+            }:
+                # 本轮已完成并续挂：迟到的平仓委托回报不再影响状态。
+                return
             if self.state == SessionState.FINISHED and self.final_net_position != 0:
                 self.failure_reason = self.failure_reason or "late_flatten_fill_after_finish"
                 self.state = SessionState.FAILED
@@ -325,6 +354,12 @@ class LiveGridSession:
                     self._cancel_all(safety=True)
         elif self.state in {SessionState.QUOTING, SessionState.REPLACING} and traded_delta > 0:
             self._enter_closing("first_fill", order=order, volume=traded_delta)
+        elif traded_delta > 0 and self.state == SessionState.WAITING_FOR_STABLE_QUOTE:
+            # 上一轮撤单竞速失败的迟到成交：立即按新一轮收口处理。
+            self.final_net_position = (self.final_net_position if self.final_net_position is not None else 0) + (
+                traded_delta if order.side == "BUY" else -traded_delta
+            )
+            self._enter_closing("late_fill", order=order, volume=traded_delta)
         elif traded_delta > 0 and self.state in {
             SessionState.CLOSING_RECONCILE,
             SessionState.FLATTENING,
@@ -352,6 +387,15 @@ class LiveGridSession:
         order.traded = max(order.traded, order.trade_volume)
         self._account_flatten_fill(order)
         if order.is_flatten:
+            if self.state not in {
+                SessionState.CLOSING_CANCELS,
+                SessionState.CLOSING_RECONCILE,
+                SessionState.FLATTENING,
+                SessionState.FINISHED,
+                SessionState.FAILED,
+            }:
+                # 本轮已完成并续挂：迟到的平仓成交回报不再影响状态。
+                return
             current_flatten_terminal = order.client_id == self._flatten_client_id and order.terminal
             if self.state == SessionState.FINISHED and self.final_net_position != 0:
                 self.failure_reason = self.failure_reason or "late_flatten_fill_after_finish"
@@ -369,6 +413,17 @@ class LiveGridSession:
         if self.state in {SessionState.QUOTING, SessionState.REPLACING}:
             self._enter_closing(
                 "first_fill",
+                order=order,
+                volume=event.volume,
+                price=event.price,
+                trade_id=event.trade_id,
+            )
+        elif self.state == SessionState.WAITING_FOR_STABLE_QUOTE:
+            self.final_net_position = (self.final_net_position if self.final_net_position is not None else 0) + (
+                event.volume if order.side == "BUY" else -event.volume
+            )
+            self._enter_closing(
+                "late_fill",
                 order=order,
                 volume=event.volume,
                 price=event.price,
@@ -439,6 +494,21 @@ class LiveGridSession:
         self._now = max(self._now, event.at)
         self._prune_actions()
 
+        if self._past_end():
+            if self.state in {
+                SessionState.PREVIEW,
+                SessionState.WAITING_FOR_CONTRACT,
+                SessionState.WAITING_FOR_ZERO_POSITION,
+                SessionState.WAITING_FOR_STABLE_QUOTE,
+            }:
+                self.stop_reason = self.stop_reason or "session_end"
+                self.state = SessionState.FINISHED
+                return
+            if self.state in {SessionState.QUOTING, SessionState.REPLACING}:
+                self.stop_reason = "session_end"
+                self._enter_closing("session_end")
+                return
+
         if self.state == SessionState.WAITING_FOR_STABLE_QUOTE:
             if (
                 self._stable_since is not None
@@ -478,6 +548,7 @@ class LiveGridSession:
             if self.state == SessionState.PREVIEW:
                 self.state = SessionState.FINISHED
             return
+        self.stop_reason = self.stop_reason or "interrupted"
         if self.state in {SessionState.WAITING_FOR_CONTRACT, SessionState.WAITING_FOR_ZERO_POSITION}:
             self.failure_reason = self.failure_reason or "interrupted_before_zero_position"
             self._fail("interrupted_before_zero_position")
@@ -489,6 +560,8 @@ class LiveGridSession:
             self._enter_closing("interrupt")
 
     def _submit_quotes(self) -> bool:
+        if self._past_end():
+            return False
         tick = self._latest_tick
         if not self._protected_valid(tick) or self._contract is None:
             return False
@@ -591,6 +664,7 @@ class LiveGridSession:
         self.state = SessionState.CLOSING_CANCELS
         self._closing_started_at = self._now
         self.cancellation_terminal = None
+        self._round_has_fill = order is not None
         if order is not None:
             self.first_fill = {
                 "order_id": order.order_id,
@@ -708,10 +782,26 @@ class LiveGridSession:
         )
 
     def _finish_or_fail(self) -> None:
-        if self.failure_reason is None:
+        if self.failure_reason is not None:
+            self.state = SessionState.FAILED
+            return
+        if not self._round_has_fill:
+            self.state = SessionState.FINISHED
+            return
+        self._round_trips += 1
+        self._round_has_fill = False
+        if self._round_trips >= self.config.effective["max_round_trips"]:
+            self.stop_reason = "max_round_trips"
+            self.state = SessionState.FINISHED
+        elif self._past_end():
+            self.stop_reason = "session_end"
             self.state = SessionState.FINISHED
         else:
-            self.state = SessionState.FAILED
+            # 一轮完成且未到停止条件：清锚重新进入稳定行情门槛，继续下一轮挂单。
+            self._anchor_ticks = None
+            self._stable_since = None
+            self._outside_since = None
+            self.state = SessionState.WAITING_FOR_STABLE_QUOTE
 
     def _fail(self, reason: str) -> None:
         if self.state in {SessionState.FINISHED, SessionState.FAILED}:
@@ -853,6 +943,8 @@ class LiveGridSession:
             "target_exchange": self.target_exchange,
             "target_lots": self.config.effective["target_lots"],
             "strategy_hash": self.config.sha256,
+            "round_trips": self._round_trips,
+            "stop_reason": self.stop_reason,
             "startup_position_result": self.startup_position_result,
             "first_fill": self.first_fill,
             "cancellation_terminal": self.cancellation_terminal,
