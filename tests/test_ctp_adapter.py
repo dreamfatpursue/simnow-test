@@ -13,19 +13,20 @@ from vnpy_ctp.gateway.ctp_gateway import CtpTdApi, symbol_contract_map
 from vnpy_ctp.gateway.position_query import EVENT_POSITION_QUERY_COMPLETE, PositionQueryComplete
 
 
-def config(symbol: str = "rb2601", exchange: str = "SHFE") -> StrategyConfig:
-    return StrategyConfig.from_mapping(
-        {
-            "version": 1,
-            "symbol": symbol,
-            "exchange": exchange,
-            "target_lots": 1,
-        }
-    )
+def config(symbol: str = "rb2601", exchange: str = "SHFE", **overrides) -> StrategyConfig:
+    doc: dict = {"version": 1, "symbol": symbol, "exchange": exchange, "target_lots": 1}
+    doc.update(overrides)
+    return StrategyConfig.from_mapping(doc)
 
 
-def make_adapter(*specs: tuple[str, str]):
-    sessions = [LiveGridSession(config(symbol, exchange), simnow_confirmed=True) for symbol, exchange in specs]
+def make_adapter(*specs: tuple[str, str], stable_market_seconds: float = 2.0):
+    sessions = [
+        LiveGridSession(
+            config(symbol, exchange, stable_market_seconds=stable_market_seconds),
+            simnow_confirmed=True,
+        )
+        for symbol, exchange in specs
+    ]
     audits = [RecordingAudit() for _ in sessions]
     adapter = CtpLiveGridAdapter(sessions, {}, audits)
     adapter.main_engine = FakeMainEngine()
@@ -191,9 +192,9 @@ class CtpAdapterTests(unittest.TestCase):
         )
 
     def test_position_query_fan_out_rejects_whole_run_when_any_target_nonzero(self) -> None:
-        adapter, sessions, audits = make_adapter(("rb2601", "SHFE"), ("AP610", "CZCE"))
+        adapter, sessions, audits = make_adapter(("rb2601", "SHFE"), ("AP610", "CZCE"), ("hc2601", "SHFE"))
         engine = adapter.main_engine
-        rb, ap = sessions
+        rb, ap, hc = sessions
 
         adapter._on_contract(contract_event("rb2601", "SHFE"))
         adapter._on_contract(contract_event("AP610", "CZCE"))
@@ -204,8 +205,44 @@ class CtpAdapterTests(unittest.TestCase):
         self.assertEqual(rb.state.value, "FINISHED")
         self.assertEqual(ap.state.value, "FAILED")
         self.assertEqual(ap.failure_reason, "nonzero_startup_position")
+        self.assertEqual(hc.state.value, "FAILED")
+        self.assertEqual(hc.failure_reason, "interrupted_before_zero_position")
         self.assertEqual(engine.sent, [])
         self.assertEqual(engine.cancelled, [])
+
+    def test_sessions_cannot_quote_until_every_contract_passed_the_zero_gate(self) -> None:
+        adapter, sessions, audits = make_adapter(
+            ("rb2601", "SHFE"),
+            ("AP610", "CZCE"),
+            stable_market_seconds=0.05,
+        )
+        engine = adapter.main_engine
+        rb, ap = sessions
+
+        adapter._on_contract(contract_event("rb2601", "SHFE"))
+        adapter._on_position_query_complete(position_result(41))
+        self.assertEqual(rb.state.value, "WAITING_FOR_STABLE_QUOTE")
+
+        for _ in range(12):
+            adapter._on_tick(tick_event("rb2601", "SHFE"))
+            adapter._on_timer(SimpleNamespace(data=None))
+            time.sleep(0.01)
+        self.assertEqual(rb.state.value, "WAITING_FOR_STABLE_QUOTE")
+        self.assertEqual(engine.sent, [])
+
+        adapter._on_contract(contract_event("AP610", "CZCE"))
+        self.assertEqual(engine.gateway.query_count, 2)
+        adapter._on_position_query_complete(position_result(41))
+        self.assertEqual(ap.state.value, "WAITING_FOR_STABLE_QUOTE")
+
+        for _ in range(12):
+            adapter._on_tick(tick_event("rb2601", "SHFE"))
+            adapter._on_tick(tick_event("AP610", "CZCE"))
+            adapter._on_timer(SimpleNamespace(data=None))
+            time.sleep(0.01)
+        self.assertEqual(rb.state.value, "QUOTING")
+        self.assertEqual(ap.state.value, "QUOTING")
+        self.assertEqual(len(engine.sent), 4)
 
     def test_two_startup_queries_merge_into_one_account_level_query(self) -> None:
         class OnceRefusingGateway:

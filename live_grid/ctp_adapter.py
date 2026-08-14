@@ -17,12 +17,16 @@ from .session import (
     LiveGridSession,
     OrderEvent,
     PositionQueryCompleteEvent,
+    SessionState,
     TickEvent,
     TradeEvent,
 )
 
 
 GATEWAY_NAME = "CTP"
+
+# 零仓门槛尚未评估完的会话状态：只要还有会话处在其一，任何会话都不得开始首次报价。
+_PREGATE_STATES = {SessionState.WAITING_FOR_CONTRACT, SessionState.WAITING_FOR_ZERO_POSITION}
 
 # CTP 同一时刻只允许一个在途查询；目标合约回报可能在合约查询响应流的中间到达，
 # 此时新查询发送会被拒，需按定时器每秒重试直到流结束（SimNow 可能持续数十秒）。
@@ -78,7 +82,7 @@ class CtpLiveGridAdapter:
         self._client_to_order: dict[str, str] = {}
         self._subscribed: set[tuple[str, str]] = set()
         # 账户级在途查询的 request_id 集合；一次查询的结果按合约扇出给全部待查会话。
-        self._query_map: dict[int, bool] = {}
+        self._inflight_position_queries: set[int] = set()
         self._startup_position_pending: dict[tuple[str, str], str] = {}
         self._closing_position_pending: dict[tuple[str, str], str] = {}
         self._position_query_attempts = 0
@@ -153,71 +157,79 @@ class CtpLiveGridAdapter:
         print(f"[CTP] {getattr(data, 'msg', data)}", flush=True)
 
     def _on_tick(self, event: Any) -> None:
-        tick = event.data
-        session = self._session_map.get((tick.symbol, tick.exchange.value))
-        if session is None:
-            return
-        self._consume(
-            TickEvent(
-                symbol=tick.symbol,
-                exchange=tick.exchange.value,
-                last_price=tick.last_price,
-                bid_price=tick.bid_price_1,
-                ask_price=tick.ask_price_1,
-                at=time.monotonic(),
-            ),
-            session,
-        )
+        with self._lock:
+            tick = event.data
+            session = self._session_map.get((tick.symbol, tick.exchange.value))
+            if session is None:
+                return
+            self._consume(
+                TickEvent(
+                    symbol=tick.symbol,
+                    exchange=tick.exchange.value,
+                    last_price=tick.last_price,
+                    bid_price=tick.bid_price_1,
+                    ask_price=tick.ask_price_1,
+                    at=time.monotonic(),
+                ),
+                session,
+            )
 
     def _on_order(self, event: Any) -> None:
-        order = event.data
-        session = self._session_map.get((order.symbol, order.exchange.value))
-        if session is None:
-            return
-        client_id = self._client_to_order.get(order.orderid)
-        if client_id is None:
-            client_id = order.reference or None
-        if client_id:
-            self._client_to_order.setdefault(order.orderid, client_id)
-        self._consume(
-            OrderEvent(
-                order_id=order.orderid,
-                symbol=order.symbol,
-                exchange=order.exchange.value,
-                side="BUY" if order.direction.value == "多" else "SELL",
-                status=self._status_name(order.status),
-                volume=int(order.volume),
-                traded=int(order.traded),
-                price=order.price,
-                client_id=client_id,
-            ),
-            session,
-        )
+        with self._lock:
+            order = event.data
+            session = self._session_map.get((order.symbol, order.exchange.value))
+            if session is None:
+                return
+            client_id = self._client_to_order.get(order.orderid)
+            if client_id is None:
+                client_id = order.reference or None
+            if client_id:
+                self._client_to_order.setdefault(order.orderid, client_id)
+            self._consume(
+                OrderEvent(
+                    order_id=order.orderid,
+                    symbol=order.symbol,
+                    exchange=order.exchange.value,
+                    side="BUY" if order.direction.value == "多" else "SELL",
+                    status=self._status_name(order.status),
+                    volume=int(order.volume),
+                    traded=int(order.traded),
+                    price=order.price,
+                    client_id=client_id,
+                ),
+                session,
+            )
 
     def _on_trade(self, event: Any) -> None:
-        trade = event.data
-        session = self._session_map.get((trade.symbol, trade.exchange.value))
-        if session is None:
-            return
-        client_id = self._client_to_order.get(trade.orderid) or getattr(trade, "reference", None)
-        self._consume(
-            TradeEvent(
-                order_id=trade.orderid,
-                symbol=trade.symbol,
-                exchange=trade.exchange.value,
-                side="BUY" if trade.direction.value == "多" else "SELL",
-                volume=int(trade.volume),
-                price=trade.price,
-                trade_id=trade.tradeid,
-                client_id=client_id,
-            ),
-            session,
-        )
+        with self._lock:
+            trade = event.data
+            session = self._session_map.get((trade.symbol, trade.exchange.value))
+            if session is None:
+                return
+            client_id = self._client_to_order.get(trade.orderid) or getattr(trade, "reference", None)
+            self._consume(
+                TradeEvent(
+                    order_id=trade.orderid,
+                    symbol=trade.symbol,
+                    exchange=trade.exchange.value,
+                    side="BUY" if trade.direction.value == "多" else "SELL",
+                    volume=int(trade.volume),
+                    price=trade.price,
+                    trade_id=trade.tradeid,
+                    client_id=client_id,
+                ),
+                session,
+            )
 
     def _on_position_query_complete(self, event: Any) -> None:
+        with self._lock:
+            self._handle_position_query_complete(event)
+
+    def _handle_position_query_complete(self, event: Any) -> None:
         result = event.data
-        if self._query_map.pop(result.request_id, None) is None:
+        if result.request_id not in self._inflight_position_queries:
             return
+        self._inflight_position_queries.discard(result.request_id)
         nets: dict[tuple[str, str], int] = {key: 0 for key in self._session_map}
         for position in result.positions:
             key = (position.symbol, position.exchange.value)
@@ -232,41 +244,51 @@ class CtpLiveGridAdapter:
         self._startup_position_pending = {}
         self._closing_position_pending = {}
         self._position_query_attempts = 0
-        # 任一待查合约非零仓即整体拒绝：非零会话自然失败，零仓会话随后中断，不发任何委托。
+        # 任一待查合约非零仓即整体拒绝：先送达真实净仓事件（非零会话自然失败），
+        # 再向全部会话广播中断，零仓与未评估会话都会无委托地终结。
         rejected = bool(result.error_id) or any(nets[key] != 0 for key in startup)
         for key, logical_id in startup.items():
-            session = self._session_map[key]
             self._consume(
-                PositionQueryCompleteEvent(
-                    request_id=logical_id,
-                    symbol=key[0],
-                    exchange=key[1],
-                    net_position=nets[key],
-                    error_id=result.error_id,
-                    error_msg=result.error_msg,
-                ),
-                session,
+                self._position_event(key, logical_id, nets[key], result.error_id, result.error_msg),
+                self._session_map[key],
             )
-            if rejected and not result.error_id and nets[key] == 0:
+        if rejected:
+            for session in self.sessions:
                 self._consume(InterruptEvent(), session)
         for key, logical_id in closing.items():
             self._consume(
-                PositionQueryCompleteEvent(
-                    request_id=logical_id,
-                    symbol=key[0],
-                    exchange=key[1],
-                    net_position=nets[key],
-                    error_id=result.error_id,
-                    error_msg=result.error_msg,
-                ),
+                self._position_event(key, logical_id, nets[key], result.error_id, result.error_msg),
                 self._session_map[key],
             )
 
+    @staticmethod
+    def _position_event(
+        key: tuple[str, str],
+        logical_id: str,
+        net_position: int,
+        error_id: int,
+        error_msg: str,
+    ) -> PositionQueryCompleteEvent:
+        return PositionQueryCompleteEvent(
+            request_id=logical_id,
+            symbol=key[0],
+            exchange=key[1],
+            net_position=net_position,
+            error_id=error_id,
+            error_msg=error_msg,
+        )
+
     def _on_timer(self, event: Any) -> None:
         with self._lock:
-            if (self._startup_position_pending or self._closing_position_pending) and not self._query_map:
+            if (self._startup_position_pending or self._closing_position_pending) and not self._inflight_position_queries:
                 self._try_send_position_query()
+            # 零仓启动门槛未在全部会话上评估完之前，禁止任何会话靠时钟进入首次报价。
+            gate_closed = any(
+                session.state in _PREGATE_STATES for session in self.sessions
+            )
             for session in self.sessions:
+                if gate_closed and session.state == SessionState.WAITING_FOR_STABLE_QUOTE:
+                    continue
                 self._consume(ClockEvent(time.monotonic()), session)
 
     def _consume(self, event: object, session: LiveGridSession) -> None:
@@ -348,7 +370,7 @@ class CtpLiveGridAdapter:
                 else self._closing_position_pending
             )
             pending[key] = payload["request_id"]
-            if not self._query_map:
+            if not self._inflight_position_queries:
                 self._try_send_position_query()
 
     def _try_send_position_query(self) -> None:
@@ -356,7 +378,7 @@ class CtpLiveGridAdapter:
         gateway = self.main_engine.get_gateway(GATEWAY_NAME) if self.main_engine is not None else None
         request_id = gateway.query_position() if gateway is not None else None
         if request_id is not None:
-            self._query_map[request_id] = True
+            self._inflight_position_queries.add(request_id)
             self._position_query_attempts = 0
             return
         self._position_query_attempts += 1
