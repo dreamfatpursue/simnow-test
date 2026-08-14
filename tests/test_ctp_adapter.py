@@ -27,12 +27,13 @@ def config() -> StrategyConfig:
 class RecordingAudit:
     def __init__(self) -> None:
         self.events = []
+        self.closed = False
 
     def record(self, event, actions, state, at, state_before=None) -> None:
         self.events.append((event, actions, state, at, state_before))
 
     def close(self) -> None:
-        pass
+        self.closed = True
 
 
 class FakeGateway:
@@ -145,6 +146,103 @@ class CtpAdapterTests(unittest.TestCase):
         self.assertIsInstance(audit.events[-1][0], TradeEvent)
         self.assertEqual(audit.events[-1][0].volume, 1)
         self.assertEqual(len(engine.cancelled), 2)
+
+    def test_position_query_send_refusal_retries_on_timer_until_sent(self) -> None:
+        class FlowControlledGateway:
+            def __init__(self) -> None:
+                self.query_count = 0
+
+            def query_position(self) -> int | None:
+                self.query_count += 1
+                return None if self.query_count < 30 else 77
+
+        strategy = config()
+        session = LiveGridSession(strategy, simnow_confirmed=True)
+        audit = RecordingAudit()
+        adapter = CtpLiveGridAdapter(session, {}, audit)
+        engine = FakeMainEngine()
+        engine.gateway = FlowControlledGateway()
+        adapter.main_engine = engine
+
+        contract = SimpleNamespace(
+            symbol="rb2601",
+            exchange=SimpleNamespace(value="SHFE"),
+            pricetick=1.0,
+        )
+        adapter._on_contract(SimpleNamespace(data=contract))
+        self.assertEqual(engine.gateway.query_count, 1)
+        self.assertEqual(session.state.value, "WAITING_FOR_ZERO_POSITION")
+
+        for _ in range(28):
+            adapter._on_timer(SimpleNamespace(data=None))
+        self.assertEqual(engine.gateway.query_count, 29)
+        self.assertEqual(session.state.value, "WAITING_FOR_ZERO_POSITION")
+
+        adapter._on_timer(SimpleNamespace(data=None))
+        self.assertEqual(engine.gateway.query_count, 30)
+        adapter._on_position_query_complete(
+            SimpleNamespace(
+                data=SimpleNamespace(request_id=77, positions=(), error_id=0, error_msg="")
+            )
+        )
+        self.assertEqual(session.state.value, "WAITING_FOR_STABLE_QUOTE")
+
+    def test_position_query_send_refusal_fails_after_exhausted_retries(self) -> None:
+        from live_grid.ctp_adapter import POSITION_QUERY_MAX_ATTEMPTS
+
+        class DeadGateway:
+            def __init__(self) -> None:
+                self.query_count = 0
+
+            def query_position(self) -> None:
+                self.query_count += 1
+                return None
+
+        strategy = config()
+        session = LiveGridSession(strategy, simnow_confirmed=True)
+        audit = RecordingAudit()
+        adapter = CtpLiveGridAdapter(session, {}, audit)
+        engine = FakeMainEngine()
+        engine.gateway = DeadGateway()
+        adapter.main_engine = engine
+
+        contract = SimpleNamespace(
+            symbol="rb2601",
+            exchange=SimpleNamespace(value="SHFE"),
+            pricetick=1.0,
+        )
+        adapter._on_contract(SimpleNamespace(data=contract))
+        self.assertEqual(session.state.value, "WAITING_FOR_ZERO_POSITION")
+        for _ in range(POSITION_QUERY_MAX_ATTEMPTS - 2):
+            adapter._on_timer(SimpleNamespace(data=None))
+        self.assertEqual(session.state.value, "WAITING_FOR_ZERO_POSITION")
+        adapter._on_timer(SimpleNamespace(data=None))
+        self.assertEqual(session.state.value, "FAILED")
+        self.assertEqual(engine.gateway.query_count, POSITION_QUERY_MAX_ATTEMPTS)
+
+    def test_close_does_not_hold_lock_while_engine_closes(self) -> None:
+        strategy = config()
+        session = LiveGridSession(strategy, simnow_confirmed=True)
+        audit = RecordingAudit()
+        adapter = CtpLiveGridAdapter(session, {}, audit)
+
+        class LockProbingEngine(FakeMainEngine):
+            def __init__(self) -> None:
+                super().__init__()
+                self.lock_free_during_close = None
+
+            def close(self) -> None:
+                acquired = adapter._lock.acquire(timeout=1)
+                self.lock_free_during_close = acquired
+                if acquired:
+                    adapter._lock.release()
+
+        engine = LockProbingEngine()
+        adapter.main_engine = engine
+        adapter.close()
+        self.assertTrue(engine.lock_free_during_close)
+        self.assertIsNone(adapter.main_engine)
+        self.assertTrue(audit.closed)
 
     def test_project_gateway_path_and_position_completion_contract_are_available(self) -> None:
         package_path = verify_project_gateway(Path(__file__).resolve().parents[1])

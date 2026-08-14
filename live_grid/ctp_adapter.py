@@ -24,6 +24,10 @@ from .session import (
 
 GATEWAY_NAME = "CTP"
 
+# CTP 同一时刻只允许一个在途查询；目标合约回报可能在合约查询响应流的中间到达，
+# 此时新查询发送会被拒，需按定时器每秒重试直到流结束（SimNow 可能持续数十秒）。
+POSITION_QUERY_MAX_ATTEMPTS = 60
+
 
 class CtpAdapterError(RuntimeError):
     """Raised when the order-capable adapter cannot prove its runtime boundary."""
@@ -63,13 +67,21 @@ class CtpLiveGridAdapter:
         self.main_engine: Any | None = None
         self._client_to_order: dict[str, str] = {}
         self._query_map: dict[int, str] = {}
+        self._pending_position_queries: list[tuple[dict, int]] = []
         self._lock = threading.RLock()
 
     def start(self) -> Any:
         verify_project_gateway(self.project_root)
         try:
             from vnpy.event import EventEngine
-            from vnpy.trader.event import EVENT_CONTRACT, EVENT_ORDER, EVENT_TICK, EVENT_TRADE, EVENT_TIMER
+            from vnpy.trader.event import (
+                EVENT_CONTRACT,
+                EVENT_LOG,
+                EVENT_ORDER,
+                EVENT_TICK,
+                EVENT_TRADE,
+                EVENT_TIMER,
+            )
             from vnpy_ctp import CtpGateway
             from vnpy_ctp.gateway import EVENT_POSITION_QUERY_COMPLETE
         except (ImportError, OSError) as exc:
@@ -79,6 +91,7 @@ class CtpLiveGridAdapter:
         self.main_engine.add_gateway(CtpGateway, GATEWAY_NAME)
         engine = self.main_engine.event_engine
         engine.register(EVENT_CONTRACT, self._on_contract)
+        engine.register(EVENT_LOG, self._on_log)
         engine.register(EVENT_TICK, self._on_tick)
         engine.register(EVENT_ORDER, self._on_order)
         engine.register(EVENT_TRADE, self._on_trade)
@@ -91,10 +104,13 @@ class CtpLiveGridAdapter:
         self._consume(InterruptEvent())
 
     def close(self) -> None:
+        # 不能持锁关闭事件引擎：其工作线程 join 前可能正阻塞在本锁的回调上。
         with self._lock:
-            if self.main_engine is not None:
-                self.main_engine.close()
-                self.main_engine = None
+            engine = self.main_engine
+            self.main_engine = None
+        if engine is not None:
+            engine.close()
+        with self._lock:
             self.audit.close()
 
     def _on_contract(self, event: Any) -> None:
@@ -112,6 +128,11 @@ class CtpLiveGridAdapter:
                 SubscribeRequest(symbol=contract.symbol, exchange=Exchange(contract.exchange.value)),
                 GATEWAY_NAME,
             )
+
+    def _on_log(self, event: Any) -> None:
+        """Expose gateway authentication and request errors during live startup."""
+        data = event.data
+        print(f"[CTP] {getattr(data, 'msg', data)}", flush=True)
 
     def _on_tick(self, event: Any) -> None:
         tick = event.data
@@ -195,6 +216,11 @@ class CtpLiveGridAdapter:
         )
 
     def _on_timer(self, event: Any) -> None:
+        with self._lock:
+            pending = self._pending_position_queries
+            self._pending_position_queries = []
+            for payload, attempts in pending:
+                self._attempt_position_query(payload, attempts)
         self._consume(ClockEvent(time.monotonic()))
 
     def _consume(self, event: object) -> None:
@@ -266,21 +292,28 @@ class CtpLiveGridAdapter:
                 GATEWAY_NAME,
             )
         elif action.kind == "query_position":
-            gateway = self.main_engine.get_gateway(GATEWAY_NAME)
-            request_id = gateway.query_position() if gateway is not None else None
-            if request_id is not None:
-                self._query_map[request_id] = payload["request_id"]
-            else:
-                self._consume(
-                    PositionQueryCompleteEvent(
-                        request_id=payload["request_id"],
-                        symbol=payload["symbol"],
-                        exchange=payload["exchange"],
-                        net_position=0,
-                        error_id=1,
-                        error_msg="CTP 持仓查询请求未发送",
-                    )
+            self._attempt_position_query(payload, 1)
+
+    def _attempt_position_query(self, payload: dict, attempts: int) -> None:
+        """Send a position query; a refused send is retried on later timer ticks."""
+        gateway = self.main_engine.get_gateway(GATEWAY_NAME) if self.main_engine is not None else None
+        request_id = gateway.query_position() if gateway is not None else None
+        if request_id is not None:
+            self._query_map[request_id] = payload["request_id"]
+            return
+        if attempts >= POSITION_QUERY_MAX_ATTEMPTS:
+            self._consume(
+                PositionQueryCompleteEvent(
+                    request_id=payload["request_id"],
+                    symbol=payload["symbol"],
+                    exchange=payload["exchange"],
+                    net_position=0,
+                    error_id=1,
+                    error_msg="CTP 持仓查询请求未发送",
                 )
+            )
+            return
+        self._pending_position_queries.append((payload, attempts + 1))
 
     @staticmethod
     def _status_name(status: Any) -> str:
