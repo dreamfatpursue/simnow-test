@@ -360,7 +360,7 @@ adapter 的 `interrupt()` 只向 session 注入 `InterruptEvent`，不会立即�
 - 已在 closing/flattening：继续等待已有收口链路；
 - 终态：不重复处理。
 
-主入口会等待 `FINISHED` 或 `FAILED` 后再关闭 adapter。交接人遇到“Ctrl+C 后程序没有立即退出”时，先查看 CTP 撤单、查仓和平仓回报，这是保护逻辑，不是死循环的证据。
+主入口会等待 `FINISHED` 或 `FAILED` 后再关闭 adapter。交接人遇到“Ctrl+C 后程序没有立即退出”时，先区分两个阶段：终态打印之前的等待是撤单、查仓和平仓回报的保护逻辑，不是死循环；终态打印之后进程仍不退出则属关闭死锁（已在 12.4 描述的时序中修复），应视为缺陷上报。
 
 ## 12. CTP adapter 的关键细节
 
@@ -380,12 +380,15 @@ adapter 注册：
 
 ```text
 EVENT_CONTRACT
+EVENT_LOG
 EVENT_TICK
 EVENT_ORDER
 EVENT_TRADE
 EVENT_POSITION_QUERY_COMPLETE
 EVENT_TIMER
 ```
+
+`EVENT_LOG` 用于把网关认证、结算和请求错误直接打印到终端，便于实盘启动时定位 CTP 侧问题。
 
 每个回调都在同一个 `RLock` 保护下进入 session，并把事件、产生的动作、状态前后值写入审计。
 
@@ -398,6 +401,12 @@ EVENT_TIMER
 - `error_id`、`error_msg`。
 
 adapter 只汇总目标合约：多仓量减空仓量得到净仓。其他合约的 position 行不会参与本次策略判断。
+
+### 12.4 查仓发送重试与关闭时序
+
+CTP 同一时刻只允许一个在途查询。目标合约回报经常在合约查询响应流的中间到达（按字母序 AP610 靠前），此时查仓发送会被 CTP 拒绝；网关自身的资金/持仓轮询（每 2 秒一次）也会占用查询通道。因此 `query_position` 动作的发送失败不代表查询失败：adapter 把被拒请求挂入待重试队列，随 `EVENT_TIMER` 每秒重试一次，最多 `POSITION_QUERY_MAX_ATTEMPTS = 60` 次（约 60 秒）；重试耗尽仍无法发送时，才合成 `error_id=1` 的失败完成事件交给状态机。SimNow 上合约响应流可能持续两分钟，启动阶段等待 2～3 分钟属正常。
+
+`close()` 的调用时序受锁约束：`EventEngine.stop()` 会 join 事件引擎工作线程，而工作线程可能正阻塞在 adapter 的 `RLock` 回调上。持锁调用 `MainEngine.close()` 会造成互等死锁，表现为终态后进程不退出。正确顺序是：锁内仅把 `main_engine` 换手置空，释放锁后关闭引擎，最后再持锁关闭审计。
 
 ## 13. 审计目录和最终摘要
 
@@ -494,7 +503,7 @@ late_flatten_fill_after_finish
 3. 用最小、明确的 `target_lots` 生成策略配置；
 4. 先运行预览，人工核对 effective 配置和哈希；哈希用于确认审计身份，不是启动门禁；
 5. 只在 SimNow 环境用 `--confirm-simnow` 启动；
-6. 选择远离成交的价格环境，观察元数据、零仓查询、稳定行情和挂单；
+6. 选择远离成交的价格环境，观察元数据、零仓查询、稳定行情和挂单。SimNow 合约回报可能 30 秒到 2 分钟才到，启动查仓被拒发送时还会按 12.4 重试，整个启动等待 2～3 分钟属正常，不要提前 `Ctrl+C`；
 7. 操作者中断，等待完整撤单/查仓收口；
 8. 从 `summary.json` 确认没有活动订单和残余净仓。
 
@@ -517,7 +526,7 @@ late_flatten_fill_after_finish
 1. 是否只运行了预览，或者缺少 `--confirm-simnow`；
 2. 策略 JSON 的目标 `symbol/exchange` 是否与当前 CTP 合约回报一致；
 3. `pricetick` 是否为正；
-4. startup `query_position` 是否完成且 request id 匹配；
+4. startup `query_position` 是否完成且 request id 匹配；被拒发送会按 12.4 每秒重试最多 60 次，等待期间不算失败；
 5. 目标合约净仓是否确实为零；
 6. Bid/Ask/Last 是否有效，且严格通过盘口保护；
 7. 稳定行情是否持续满 2 秒；
