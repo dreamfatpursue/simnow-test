@@ -33,8 +33,8 @@ The mandatory sequence after any confirmed fill within a round: cancel every rem
 _Avoid_: 持续持仓、带仓重挂、跨轮合并对账
 
 **收盘停止**:
-The configured local-clock time (`session_end_time`, HH:MM) at which each contract's session runs the same closing sequence as an operator interrupt and ends normally. A configured time already past today means the session is already over; cross-midnight end times are not supported.
-_Avoid_: 无限挂单、依赖交易所日历、跨午夜收盘时刻
+The configured local-clock time (`session_end_time`, HH:MM) at which each contract's session runs the same closing sequence as an operator interrupt and ends normally. The deadline is the next occurrence of that time within 24 hours, so cross-midnight night-session ends (e.g. 01:00) are supported.
+_Avoid_: 无限挂单、依赖交易所日历、按当日零点截断
 
 **往返轮数上限**:
 The maximum completed fill-and-flatten rounds per session (`max_round_trips`, default 10). Reaching it ends the session normally after the current round completes; it does not interrupt an in-flight closing.

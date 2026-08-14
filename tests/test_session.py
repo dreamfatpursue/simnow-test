@@ -677,7 +677,7 @@ class ContinuousQuotingTests(unittest.TestCase):
         self.assertEqual(session.state, SessionState.FINISHED)
         self.assertEqual(session.summary()["stop_reason"], "session_end")
 
-    def test_past_session_end_never_quotes(self) -> None:
+    def test_past_clock_time_wraps_to_next_day_and_keeps_quoting(self) -> None:
         from datetime import datetime
 
         now = datetime.now()
@@ -690,9 +690,9 @@ class ContinuousQuotingTests(unittest.TestCase):
         session = start_session(make_config(session_end_time=past))
         at0 = time.monotonic()
         session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, at0))
-        self.assertEqual(session.handle(ClockEvent(at0 + 1)), [])
-        self.assertEqual(session.state, SessionState.FINISHED)
-        self.assertEqual(session.summary()["stop_reason"], "session_end")
+        submitted = session.handle(ClockEvent(at0 + 3))
+        self.assertEqual([action.kind for action in submitted], ["submit_order", "submit_order"])
+        self.assertEqual(session.state, SessionState.QUOTING)
 
     def test_late_fill_during_stable_wait_after_round_triggers_new_closing(self) -> None:
         session = start_session(make_config(max_round_trips=5))

@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from collections import deque
 from dataclasses import asdict, dataclass, field, is_dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from math import isfinite
 from typing import Any
@@ -192,16 +192,15 @@ class LiveGridSession:
         )
         self.state_transitions.append({"from": "", "to": self.state.value})
         # 唯一的墙钟读取点：把 session_end_time 折算为单调时钟期限，此后保持事件驱动确定性。
-        # 已过当日收盘时刻视为本次会话已结束（不支持跨午夜收盘时刻）。
+        # 取未来 24 小时内最近的该时刻，跨午夜收盘时刻（如夜盘 01:00）自然支持。
         end_time = self.config.effective["session_end_time"]
         if end_time:
             hour, minute = (int(part) for part in end_time.split(":"))
             now = datetime.now()
             deadline = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
             if deadline <= now:
-                self._end_at = 0.0
-            else:
-                self._end_at = time.monotonic() + (deadline - now).total_seconds()
+                deadline += timedelta(days=1)
+            self._end_at = time.monotonic() + (deadline - now).total_seconds()
 
     def _past_end(self) -> bool:
         return self._end_at is not None and self._now >= self._end_at
