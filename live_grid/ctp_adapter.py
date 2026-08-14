@@ -55,19 +55,33 @@ class CtpLiveGridAdapter:
 
     def __init__(
         self,
-        session: LiveGridSession,
+        sessions: list[LiveGridSession],
         gateway_setting: dict[str, str],
-        audit: AuditWriter,
+        audits: list[AuditWriter],
         project_root: str | Path | None = None,
     ) -> None:
-        self.session = session
+        if not sessions or len(sessions) != len(audits):
+            raise CtpAdapterError("适配器需要一一对应的会话与审计写入器列表")
+        self.sessions = list(sessions)
         self.gateway_setting = gateway_setting
-        self.audit = audit
+        self.audits = list(audits)
         self.project_root = Path(project_root or Path(__file__).resolve().parents[1]).resolve()
         self.main_engine: Any | None = None
+        self._session_map: dict[tuple[str, str], LiveGridSession] = {}
+        self._audit_map: dict[tuple[str, str], AuditWriter] = {}
+        for session, audit in zip(self.sessions, self.audits):
+            key = (session.target_symbol, session.target_exchange)
+            if key in self._session_map:
+                raise CtpAdapterError(f"目标合约重复: {key[0]}@{key[1]}")
+            self._session_map[key] = session
+            self._audit_map[key] = audit
         self._client_to_order: dict[str, str] = {}
-        self._query_map: dict[int, str] = {}
-        self._pending_position_queries: list[tuple[dict, int]] = []
+        self._subscribed: set[tuple[str, str]] = set()
+        # 账户级在途查询的 request_id 集合；一次查询的结果按合约扇出给全部待查会话。
+        self._query_map: dict[int, bool] = {}
+        self._startup_position_pending: dict[tuple[str, str], str] = {}
+        self._closing_position_pending: dict[tuple[str, str], str] = {}
+        self._position_query_attempts = 0
         self._lock = threading.RLock()
 
     def start(self) -> Any:
@@ -101,7 +115,8 @@ class CtpLiveGridAdapter:
         return self.main_engine
 
     def interrupt(self) -> None:
-        self._consume(InterruptEvent())
+        for session in self.sessions:
+            self._consume(InterruptEvent(), session)
 
     def close(self) -> None:
         # 不能持锁关闭事件引擎：其工作线程 join 前可能正阻塞在本锁的回调上。
@@ -111,23 +126,26 @@ class CtpLiveGridAdapter:
         if engine is not None:
             engine.close()
         with self._lock:
-            self.audit.close()
+            for audit in self.audits:
+                audit.close()
 
     def _on_contract(self, event: Any) -> None:
         contract = event.data
-        self._consume(ContractEvent(contract.symbol, contract.exchange.value, contract.pricetick))
-        if (
-            self.main_engine is not None
-            and contract.symbol == self.session.target_symbol
-            and contract.exchange.value == self.session.target_exchange
-        ):
-            from vnpy.trader.constant import Exchange
-            from vnpy.trader.object import SubscribeRequest
+        key = (contract.symbol, contract.exchange.value)
+        session = self._session_map.get(key)
+        if session is None:
+            return
+        self._consume(ContractEvent(contract.symbol, contract.exchange.value, contract.pricetick), session)
+        if self.main_engine is None or key in self._subscribed:
+            return
+        self._subscribed.add(key)
+        from vnpy.trader.constant import Exchange
+        from vnpy.trader.object import SubscribeRequest
 
-            self.main_engine.subscribe(
-                SubscribeRequest(symbol=contract.symbol, exchange=Exchange(contract.exchange.value)),
-                GATEWAY_NAME,
-            )
+        self.main_engine.subscribe(
+            SubscribeRequest(symbol=contract.symbol, exchange=Exchange(contract.exchange.value)),
+            GATEWAY_NAME,
+        )
 
     def _on_log(self, event: Any) -> None:
         """Expose gateway authentication and request errors during live startup."""
@@ -136,7 +154,8 @@ class CtpLiveGridAdapter:
 
     def _on_tick(self, event: Any) -> None:
         tick = event.data
-        if tick.symbol != self.session.target_symbol or tick.exchange.value != self.session.target_exchange:
+        session = self._session_map.get((tick.symbol, tick.exchange.value))
+        if session is None:
             return
         self._consume(
             TickEvent(
@@ -146,12 +165,14 @@ class CtpLiveGridAdapter:
                 bid_price=tick.bid_price_1,
                 ask_price=tick.ask_price_1,
                 at=time.monotonic(),
-            )
+            ),
+            session,
         )
 
     def _on_order(self, event: Any) -> None:
         order = event.data
-        if order.symbol != self.session.target_symbol or order.exchange.value != self.session.target_exchange:
+        session = self._session_map.get((order.symbol, order.exchange.value))
+        if session is None:
             return
         client_id = self._client_to_order.get(order.orderid)
         if client_id is None:
@@ -169,12 +190,14 @@ class CtpLiveGridAdapter:
                 traded=int(order.traded),
                 price=order.price,
                 client_id=client_id,
-            )
+            ),
+            session,
         )
 
     def _on_trade(self, event: Any) -> None:
         trade = event.data
-        if trade.symbol != self.session.target_symbol or trade.exchange.value != self.session.target_exchange:
+        session = self._session_map.get((trade.symbol, trade.exchange.value))
+        if session is None:
             return
         client_id = self._client_to_order.get(trade.orderid) or getattr(trade, "reference", None)
         self._consume(
@@ -187,50 +210,74 @@ class CtpLiveGridAdapter:
                 price=trade.price,
                 trade_id=trade.tradeid,
                 client_id=client_id,
-            )
+            ),
+            session,
         )
 
     def _on_position_query_complete(self, event: Any) -> None:
         result = event.data
-        request_id = self._query_map.pop(result.request_id, None)
-        if request_id is None:
+        if self._query_map.pop(result.request_id, None) is None:
             return
-        long_volume = 0
-        short_volume = 0
+        nets: dict[tuple[str, str], int] = {key: 0 for key in self._session_map}
         for position in result.positions:
-            if position.symbol != self.session.target_symbol or position.exchange.value != self.session.target_exchange:
+            key = (position.symbol, position.exchange.value)
+            if key not in nets:
                 continue
             if position.direction.value == "多":
-                long_volume += int(position.volume)
+                nets[key] += int(position.volume)
             elif position.direction.value == "空":
-                short_volume += int(position.volume)
-        self._consume(
-            PositionQueryCompleteEvent(
-                request_id=request_id,
-                symbol=self.session.target_symbol,
-                exchange=self.session.target_exchange,
-                net_position=long_volume - short_volume,
-                error_id=result.error_id,
-                error_msg=result.error_msg,
+                nets[key] -= int(position.volume)
+        startup = self._startup_position_pending
+        closing = self._closing_position_pending
+        self._startup_position_pending = {}
+        self._closing_position_pending = {}
+        self._position_query_attempts = 0
+        # 任一待查合约非零仓即整体拒绝：非零会话自然失败，零仓会话随后中断，不发任何委托。
+        rejected = bool(result.error_id) or any(nets[key] != 0 for key in startup)
+        for key, logical_id in startup.items():
+            session = self._session_map[key]
+            self._consume(
+                PositionQueryCompleteEvent(
+                    request_id=logical_id,
+                    symbol=key[0],
+                    exchange=key[1],
+                    net_position=nets[key],
+                    error_id=result.error_id,
+                    error_msg=result.error_msg,
+                ),
+                session,
             )
-        )
+            if rejected and not result.error_id and nets[key] == 0:
+                self._consume(InterruptEvent(), session)
+        for key, logical_id in closing.items():
+            self._consume(
+                PositionQueryCompleteEvent(
+                    request_id=logical_id,
+                    symbol=key[0],
+                    exchange=key[1],
+                    net_position=nets[key],
+                    error_id=result.error_id,
+                    error_msg=result.error_msg,
+                ),
+                self._session_map[key],
+            )
 
     def _on_timer(self, event: Any) -> None:
         with self._lock:
-            pending = self._pending_position_queries
-            self._pending_position_queries = []
-            for payload, attempts in pending:
-                self._attempt_position_query(payload, attempts)
-        self._consume(ClockEvent(time.monotonic()))
+            if (self._startup_position_pending or self._closing_position_pending) and not self._query_map:
+                self._try_send_position_query()
+            for session in self.sessions:
+                self._consume(ClockEvent(time.monotonic()), session)
 
-    def _consume(self, event: object) -> None:
+    def _consume(self, event: object, session: LiveGridSession) -> None:
         with self._lock:
-            state_before = self.session.state.value
-            actions = self.session.handle(event)
-            self.audit.record(
+            audit = self._audit_map[(session.target_symbol, session.target_exchange)]
+            state_before = session.state.value
+            actions = session.handle(event)
+            audit.record(
                 event,
                 actions,
-                self.session.state.value,
+                session.state.value,
                 time.monotonic(),
                 state_before=state_before,
             )
@@ -267,6 +314,7 @@ class CtpLiveGridAdapter:
             if vt_order_id:
                 self._client_to_order[vt_order_id.split(".", 1)[-1]] = client_id
             else:
+                session = self._session_map[(payload["symbol"], payload["exchange"])]
                 self._consume(
                     OrderEvent(
                         order_id=f"rejected-{client_id}",
@@ -277,7 +325,8 @@ class CtpLiveGridAdapter:
                         volume=payload["volume"],
                         price=payload["price"],
                         client_id=client_id,
-                    )
+                    ),
+                    session,
                 )
         elif action.kind == "cancel_order":
             order_id = payload["order_id"]
@@ -292,28 +341,43 @@ class CtpLiveGridAdapter:
                 GATEWAY_NAME,
             )
         elif action.kind == "query_position":
-            self._attempt_position_query(payload, 1)
+            key = (payload["symbol"], payload["exchange"])
+            pending = (
+                self._startup_position_pending
+                if payload["phase"] == "startup"
+                else self._closing_position_pending
+            )
+            pending[key] = payload["request_id"]
+            if not self._query_map:
+                self._try_send_position_query()
 
-    def _attempt_position_query(self, payload: dict, attempts: int) -> None:
-        """Send a position query; a refused send is retried on later timer ticks."""
+    def _try_send_position_query(self) -> None:
+        """Send one account-level query; a refused send is retried on later timer ticks."""
         gateway = self.main_engine.get_gateway(GATEWAY_NAME) if self.main_engine is not None else None
         request_id = gateway.query_position() if gateway is not None else None
         if request_id is not None:
-            self._query_map[request_id] = payload["request_id"]
+            self._query_map[request_id] = True
+            self._position_query_attempts = 0
             return
-        if attempts >= POSITION_QUERY_MAX_ATTEMPTS:
+        self._position_query_attempts += 1
+        if self._position_query_attempts < POSITION_QUERY_MAX_ATTEMPTS:
+            return
+        pending = {**self._startup_position_pending, **self._closing_position_pending}
+        self._startup_position_pending = {}
+        self._closing_position_pending = {}
+        self._position_query_attempts = 0
+        for key, logical_id in pending.items():
             self._consume(
                 PositionQueryCompleteEvent(
-                    request_id=payload["request_id"],
-                    symbol=payload["symbol"],
-                    exchange=payload["exchange"],
+                    request_id=logical_id,
+                    symbol=key[0],
+                    exchange=key[1],
                     net_position=0,
                     error_id=1,
                     error_msg="CTP 持仓查询请求未发送",
-                )
+                ),
+                self._session_map[key],
             )
-            return
-        self._pending_position_queries.append((payload, attempts + 1))
 
     @staticmethod
     def _status_name(status: Any) -> str:

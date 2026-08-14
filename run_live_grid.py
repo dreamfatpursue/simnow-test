@@ -42,13 +42,18 @@ def main() -> int:
             print(f"当前为预览模式：缺少 SimNow 确认，未连接且不会下单。审计目录={directory}")
             return 0
         settings = load_settings()
-        adapter = CtpLiveGridAdapter(session=_session(config, args), gateway_setting=settings.gateway_setting(), audit=audit)
+        session = _session(config, args)
+        adapter = CtpLiveGridAdapter(
+            sessions=[session],
+            gateway_setting=settings.gateway_setting(),
+            audits=[audit],
+        )
         adapter.start()
-        while adapter.session.state not in {SessionState.FINISHED, SessionState.FAILED}:
+        while session.state not in {SessionState.FINISHED, SessionState.FAILED}:
             time.sleep(0.2)
-        directory = audit.finish(adapter.session.summary())
-        print(f"终态={adapter.session.state.value} 审计目录={directory}")
-        return 0 if adapter.session.state == SessionState.FINISHED else 1
+        directory = audit.finish(session.summary())
+        print(f"终态={session.state.value} 审计目录={directory}")
+        return 0 if session.state == SessionState.FINISHED else 1
     except Exception as exc:
         print(f"启动失败: {exc}", file=sys.stderr)
         if "audit" in locals():
@@ -57,7 +62,7 @@ def main() -> int:
                     _interrupt_and_wait(adapter)
                 except Exception as cleanup_exc:
                     print(f"异常收口未完成: {cleanup_exc}", file=sys.stderr)
-                summary = adapter.session.summary()
+                summary = adapter.sessions[0].summary()
             else:
                 summary = _session(config, args).summary()
             summary.update({"terminal_state": "FAILED", "failure_reason": str(exc)})
@@ -66,9 +71,10 @@ def main() -> int:
     except KeyboardInterrupt:
         if "adapter" in locals():
             _interrupt_and_wait(adapter)
-            directory = audit.finish(adapter.session.summary())
-            print(f"终态={adapter.session.state.value} 审计目录={directory}")
-            return 0 if adapter.session.state == SessionState.FINISHED else 1
+            session = adapter.sessions[0]
+            directory = audit.finish(session.summary())
+            print(f"终态={session.state.value} 审计目录={directory}")
+            return 0 if session.state == SessionState.FINISHED else 1
         return 130
     finally:
         if "adapter" in locals():
@@ -79,7 +85,10 @@ def main() -> int:
 
 def _interrupt_and_wait(adapter: CtpLiveGridAdapter) -> None:
     adapter.interrupt()
-    while adapter.session.state not in {SessionState.FINISHED, SessionState.FAILED}:
+    while any(
+        session.state not in {SessionState.FINISHED, SessionState.FAILED}
+        for session in adapter.sessions
+    ):
         try:
             time.sleep(0.2)
         except KeyboardInterrupt:

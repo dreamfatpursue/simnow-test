@@ -13,14 +13,57 @@ from vnpy_ctp.gateway.ctp_gateway import CtpTdApi, symbol_contract_map
 from vnpy_ctp.gateway.position_query import EVENT_POSITION_QUERY_COMPLETE, PositionQueryComplete
 
 
-def config() -> StrategyConfig:
+def config(symbol: str = "rb2601", exchange: str = "SHFE") -> StrategyConfig:
     return StrategyConfig.from_mapping(
         {
             "version": 1,
-            "symbol": "rb2601",
-            "exchange": "SHFE",
+            "symbol": symbol,
+            "exchange": exchange,
             "target_lots": 1,
         }
+    )
+
+
+def make_adapter(*specs: tuple[str, str]):
+    sessions = [LiveGridSession(config(symbol, exchange), simnow_confirmed=True) for symbol, exchange in specs]
+    audits = [RecordingAudit() for _ in sessions]
+    adapter = CtpLiveGridAdapter(sessions, {}, audits)
+    adapter.main_engine = FakeMainEngine()
+    return adapter, sessions, audits
+
+
+def contract_event(symbol: str, exchange: str, pricetick: float = 1.0) -> SimpleNamespace:
+    return SimpleNamespace(
+        data=SimpleNamespace(
+            symbol=symbol,
+            exchange=SimpleNamespace(value=exchange),
+            pricetick=pricetick,
+        )
+    )
+
+
+def tick_event(symbol: str, exchange: str, last: float = 100.0, bid: float = 99.0, ask: float = 101.0) -> SimpleNamespace:
+    return SimpleNamespace(
+        data=SimpleNamespace(
+            symbol=symbol,
+            exchange=SimpleNamespace(value=exchange),
+            last_price=last,
+            bid_price_1=bid,
+            ask_price_1=ask,
+        )
+    )
+
+
+def position_result(request_id: int, positions: tuple = ()) -> SimpleNamespace:
+    return SimpleNamespace(data=SimpleNamespace(request_id=request_id, positions=positions, error_id=0, error_msg=""))
+
+
+def held_position(symbol: str, exchange: str, direction: str, volume: int) -> SimpleNamespace:
+    return SimpleNamespace(
+        symbol=symbol,
+        exchange=SimpleNamespace(value=exchange),
+        direction=SimpleNamespace(value=direction),
+        volume=volume,
     )
 
 
@@ -67,42 +110,148 @@ class FakeMainEngine:
 
 
 class CtpAdapterTests(unittest.TestCase):
-    def test_adapter_translates_ctp_events_and_actions_at_live_boundary(self) -> None:
-        strategy = config()
-        session = LiveGridSession(strategy, simnow_confirmed=True)
-        audit = RecordingAudit()
-        adapter = CtpLiveGridAdapter(session, {}, audit)
-        engine = FakeMainEngine()
-        adapter.main_engine = engine
+    def test_adapter_routes_two_contract_sessions_independently(self) -> None:
+        adapter, sessions, audits = make_adapter(("rb2601", "SHFE"), ("AP610", "CZCE"))
+        engine = adapter.main_engine
+        rb, ap = sessions
 
-        contract = SimpleNamespace(
-            symbol="rb2601",
-            exchange=SimpleNamespace(value="SHFE"),
-            pricetick=1.0,
+        adapter._on_contract(contract_event("rb2601", "SHFE"))
+        adapter._on_contract(contract_event("AP610", "CZCE"))
+        adapter._on_contract(contract_event("hc2601", "SHFE"))
+        self.assertEqual(rb.state.value, "WAITING_FOR_ZERO_POSITION")
+        self.assertEqual(ap.state.value, "WAITING_FOR_ZERO_POSITION")
+        self.assertEqual(
+            sorted(request.symbol for request, _ in engine.subscriptions),
+            ["AP610", "rb2601"],
         )
-        adapter._on_contract(SimpleNamespace(data=contract))
+        self.assertEqual(engine.gateway.query_count, 1)
+
+        adapter._on_position_query_complete(position_result(41))
+        self.assertEqual(rb.state.value, "WAITING_FOR_STABLE_QUOTE")
+        self.assertEqual(ap.state.value, "WAITING_FOR_STABLE_QUOTE")
+        rb_events = [entry[0] for entry in audits[0].events]
+        self.assertEqual(
+            [(type(event).__name__, getattr(event, "symbol", None)) for event in rb_events],
+            [("ContractEvent", "rb2601"), ("PositionQueryCompleteEvent", "rb2601")],
+        )
+
+        adapter._on_tick(tick_event("rb2601", "SHFE"))
+        adapter._on_tick(tick_event("AP610", "CZCE"))
+        self.assertEqual(audits[0].events[-1][0].last_price, 100)
+        self.assertEqual(audits[1].events[-1][0].symbol, "AP610")
+
+        now = time.monotonic()
+        for session in sessions:
+            for action in session.handle(ClockEvent(now + 2.1)):
+                adapter._dispatch(action)
+        self.assertEqual(len(engine.sent), 4)
+        self.assertEqual(
+            sorted(request.symbol for request, _ in engine.sent),
+            ["AP610", "AP610", "rb2601", "rb2601"],
+        )
+
+        for index, (request, _) in enumerate(engine.sent, 1):
+            adapter._on_order(
+                SimpleNamespace(
+                    data=SimpleNamespace(
+                        orderid=str(index),
+                        reference=None,
+                        symbol=request.symbol,
+                        exchange=SimpleNamespace(value="SHFE" if request.symbol == "rb2601" else "CZCE"),
+                        direction=SimpleNamespace(value="多" if request.direction.value == "多" else "空"),
+                        status=SimpleNamespace(value="未成交"),
+                        volume=1,
+                        traded=0,
+                        price=request.price,
+                    )
+                )
+            )
+        self.assertEqual(len(rb.orders), 2)
+        self.assertEqual(len(ap.orders), 2)
+
+        adapter._on_trade(
+            SimpleNamespace(
+                data=SimpleNamespace(
+                    orderid="1",
+                    reference=None,
+                    symbol="rb2601",
+                    exchange=SimpleNamespace(value="SHFE"),
+                    direction=SimpleNamespace(value="多"),
+                    volume=1,
+                    price=60,
+                    tradeid="trade-1",
+                )
+            )
+        )
+        self.assertEqual(rb.state.value, "CLOSING_CANCELS")
+        self.assertEqual(ap.state.value, "QUOTING")
+        self.assertEqual(
+            sorted(request.symbol for request, _ in engine.cancelled),
+            ["rb2601", "rb2601"],
+        )
+
+    def test_position_query_fan_out_rejects_whole_run_when_any_target_nonzero(self) -> None:
+        adapter, sessions, audits = make_adapter(("rb2601", "SHFE"), ("AP610", "CZCE"))
+        engine = adapter.main_engine
+        rb, ap = sessions
+
+        adapter._on_contract(contract_event("rb2601", "SHFE"))
+        adapter._on_contract(contract_event("AP610", "CZCE"))
+        adapter._on_position_query_complete(
+            position_result(41, (held_position("AP610", "CZCE", "多", 1),))
+        )
+
+        self.assertEqual(rb.state.value, "FINISHED")
+        self.assertEqual(ap.state.value, "FAILED")
+        self.assertEqual(ap.failure_reason, "nonzero_startup_position")
+        self.assertEqual(engine.sent, [])
+        self.assertEqual(engine.cancelled, [])
+
+    def test_two_startup_queries_merge_into_one_account_level_query(self) -> None:
+        class OnceRefusingGateway:
+            def __init__(self) -> None:
+                self.query_count = 0
+
+            def query_position(self) -> int | None:
+                self.query_count += 1
+                return None if self.query_count == 1 else 51
+
+        adapter, sessions, audits = make_adapter(("rb2601", "SHFE"), ("AP610", "CZCE"))
+        engine = adapter.main_engine
+        engine.gateway = OnceRefusingGateway()
+        rb, ap = sessions
+
+        adapter._on_contract(contract_event("rb2601", "SHFE"))
+        adapter._on_contract(contract_event("AP610", "CZCE"))
+        self.assertEqual(engine.gateway.query_count, 2)
+        self.assertEqual(rb.state.value, "WAITING_FOR_ZERO_POSITION")
+        self.assertEqual(ap.state.value, "WAITING_FOR_ZERO_POSITION")
+
+        adapter._on_timer(SimpleNamespace(data=None))
+        self.assertEqual(engine.gateway.query_count, 2)
+
+        adapter._on_position_query_complete(position_result(51))
+        self.assertEqual(rb.state.value, "WAITING_FOR_STABLE_QUOTE")
+        self.assertEqual(ap.state.value, "WAITING_FOR_STABLE_QUOTE")
+        self.assertEqual(engine.gateway.query_count, 2)
+
+    def test_adapter_translates_ctp_events_and_actions_at_live_boundary(self) -> None:
+        adapter, sessions, audits = make_adapter(("rb2601", "SHFE"))
+        session, audit = sessions[0], audits[0]
+        engine = adapter.main_engine
+
+        adapter._on_contract(contract_event("rb2601", "SHFE"))
         self.assertEqual(session.state.value, "WAITING_FOR_ZERO_POSITION")
         self.assertEqual(engine.gateway.query_count, 1)
         self.assertEqual(engine.subscriptions[0][0].symbol, "rb2601")
 
-        adapter._on_position_query_complete(
-            SimpleNamespace(
-                data=SimpleNamespace(request_id=41, positions=(), error_id=0, error_msg="")
-            )
-        )
+        adapter._on_position_query_complete(position_result(41))
         self.assertEqual(session.state.value, "WAITING_FOR_STABLE_QUOTE")
         self.assertIsInstance(audit.events[-1][0], PositionQueryCompleteEvent)
         self.assertEqual(audit.events[-1][0].request_id, "position-1")
 
         now = time.monotonic()
-        tick = SimpleNamespace(
-            symbol="rb2601",
-            exchange=SimpleNamespace(value="SHFE"),
-            last_price=100,
-            bid_price_1=99,
-            ask_price_1=101,
-        )
-        adapter._on_tick(SimpleNamespace(data=tick))
+        adapter._on_tick(tick_event("rb2601", "SHFE"))
         self.assertEqual(audit.events[-1][0].last_price, 100)
 
         actions = session.handle(ClockEvent(now + 2.1))
@@ -156,35 +305,22 @@ class CtpAdapterTests(unittest.TestCase):
                 self.query_count += 1
                 return None if self.query_count < 30 else 77
 
-        strategy = config()
-        session = LiveGridSession(strategy, simnow_confirmed=True)
-        audit = RecordingAudit()
-        adapter = CtpLiveGridAdapter(session, {}, audit)
-        engine = FakeMainEngine()
-        engine.gateway = FlowControlledGateway()
-        adapter.main_engine = engine
+        adapter, sessions, _ = make_adapter(("rb2601", "SHFE"))
+        session = sessions[0]
+        adapter.main_engine.gateway = FlowControlledGateway()
 
-        contract = SimpleNamespace(
-            symbol="rb2601",
-            exchange=SimpleNamespace(value="SHFE"),
-            pricetick=1.0,
-        )
-        adapter._on_contract(SimpleNamespace(data=contract))
-        self.assertEqual(engine.gateway.query_count, 1)
+        adapter._on_contract(contract_event("rb2601", "SHFE"))
+        self.assertEqual(adapter.main_engine.gateway.query_count, 1)
         self.assertEqual(session.state.value, "WAITING_FOR_ZERO_POSITION")
 
         for _ in range(28):
             adapter._on_timer(SimpleNamespace(data=None))
-        self.assertEqual(engine.gateway.query_count, 29)
+        self.assertEqual(adapter.main_engine.gateway.query_count, 29)
         self.assertEqual(session.state.value, "WAITING_FOR_ZERO_POSITION")
 
         adapter._on_timer(SimpleNamespace(data=None))
-        self.assertEqual(engine.gateway.query_count, 30)
-        adapter._on_position_query_complete(
-            SimpleNamespace(
-                data=SimpleNamespace(request_id=77, positions=(), error_id=0, error_msg="")
-            )
-        )
+        self.assertEqual(adapter.main_engine.gateway.query_count, 30)
+        adapter._on_position_query_complete(position_result(77))
         self.assertEqual(session.state.value, "WAITING_FOR_STABLE_QUOTE")
 
     def test_position_query_send_refusal_fails_after_exhausted_retries(self) -> None:
@@ -198,33 +334,21 @@ class CtpAdapterTests(unittest.TestCase):
                 self.query_count += 1
                 return None
 
-        strategy = config()
-        session = LiveGridSession(strategy, simnow_confirmed=True)
-        audit = RecordingAudit()
-        adapter = CtpLiveGridAdapter(session, {}, audit)
-        engine = FakeMainEngine()
-        engine.gateway = DeadGateway()
-        adapter.main_engine = engine
+        adapter, sessions, _ = make_adapter(("rb2601", "SHFE"))
+        session = sessions[0]
+        adapter.main_engine.gateway = DeadGateway()
 
-        contract = SimpleNamespace(
-            symbol="rb2601",
-            exchange=SimpleNamespace(value="SHFE"),
-            pricetick=1.0,
-        )
-        adapter._on_contract(SimpleNamespace(data=contract))
+        adapter._on_contract(contract_event("rb2601", "SHFE"))
         self.assertEqual(session.state.value, "WAITING_FOR_ZERO_POSITION")
         for _ in range(POSITION_QUERY_MAX_ATTEMPTS - 2):
             adapter._on_timer(SimpleNamespace(data=None))
         self.assertEqual(session.state.value, "WAITING_FOR_ZERO_POSITION")
         adapter._on_timer(SimpleNamespace(data=None))
         self.assertEqual(session.state.value, "FAILED")
-        self.assertEqual(engine.gateway.query_count, POSITION_QUERY_MAX_ATTEMPTS)
+        self.assertEqual(adapter.main_engine.gateway.query_count, POSITION_QUERY_MAX_ATTEMPTS)
 
     def test_close_does_not_hold_lock_while_engine_closes(self) -> None:
-        strategy = config()
-        session = LiveGridSession(strategy, simnow_confirmed=True)
-        audit = RecordingAudit()
-        adapter = CtpLiveGridAdapter(session, {}, audit)
+        adapter, _, audits = make_adapter(("rb2601", "SHFE"))
 
         class LockProbingEngine(FakeMainEngine):
             def __init__(self) -> None:
@@ -242,7 +366,7 @@ class CtpAdapterTests(unittest.TestCase):
         adapter.close()
         self.assertTrue(engine.lock_free_during_close)
         self.assertIsNone(adapter.main_engine)
-        self.assertTrue(audit.closed)
+        self.assertTrue(all(audit.closed for audit in audits))
 
     def test_project_gateway_path_and_position_completion_contract_are_available(self) -> None:
         package_path = verify_project_gateway(Path(__file__).resolve().parents[1])
