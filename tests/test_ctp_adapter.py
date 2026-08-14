@@ -68,7 +68,7 @@ class FakeMainEngine:
 class CtpAdapterTests(unittest.TestCase):
     def test_adapter_translates_ctp_events_and_actions_at_live_boundary(self) -> None:
         strategy = config()
-        session = LiveGridSession(strategy, simnow_confirmed=True, hash_prefix=strategy.sha256[:8])
+        session = LiveGridSession(strategy, simnow_confirmed=True)
         audit = RecordingAudit()
         adapter = CtpLiveGridAdapter(session, {}, audit)
         engine = FakeMainEngine()

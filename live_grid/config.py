@@ -134,7 +134,5 @@ class StrategyConfig:
             raise StrategyConfigError("策略配置根节点必须是 JSON 对象")
         return cls.from_mapping(raw)
 
-    def can_submit(self, *, simnow_confirmed: bool, hash_prefix: str) -> bool:
-        if not simnow_confirmed or not hash_prefix or len(hash_prefix) < 8:
-            return False
-        return self.sha256.startswith(hash_prefix.lower())
+    def can_submit(self, *, simnow_confirmed: bool) -> bool:
+        return simnow_confirmed

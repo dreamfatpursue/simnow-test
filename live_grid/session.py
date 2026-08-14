@@ -129,7 +129,6 @@ class LiveGridSession:
 
     config: StrategyConfig
     simnow_confirmed: bool
-    hash_prefix: str
     state: SessionState = field(init=False)
     actions: list[Action] = field(default_factory=list, init=False)
     failure_reason: str | None = field(default=None, init=False)
@@ -170,7 +169,6 @@ class LiveGridSession:
             SessionState.WAITING_FOR_CONTRACT
             if self.config.can_submit(
                 simnow_confirmed=self.simnow_confirmed,
-                hash_prefix=self.hash_prefix,
             )
             else SessionState.PREVIEW
         )

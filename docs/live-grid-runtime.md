@@ -7,7 +7,7 @@
 ## 1. 先记住三条边界
 
 1. [`run.py`](../run.py) 是只读连接入口。它可以登录、查询合约/资金/持仓、订阅 Tick，但不会调用 `send_order` 或 `cancel_order`。
-2. [`run_live_grid.py`](../run_live_grid.py) 是独立的可下单入口。只有显式确认 SimNow，并提供当前有效策略配置的 SHA-256 哈希前缀，才会进入 CTP 连接和下单链路。
+2. [`run_live_grid.py`](../run_live_grid.py) 是独立的可下单入口。只有显式确认 SimNow，才会进入 CTP 连接和下单链路；策略 SHA-256 只用于展示、审计和复盘识别。
 3. 真实成交、撤单生效和持仓变化只接受 CTP 委托、成交和持仓查询完成回报。行情穿过限价，只能触发报价保护或重定锚，不能直接推断成交。
 
 功能明确不包含：多合约/对冲、生产柜台、实盘凭证变更、回放撮合、进程重启后的订单恢复、既有仓位接管、数据库持久化和 Web UI。
@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | [`run.py`](../run.py) | 只读 CTP 连接命令 | 环境变量读取、登录、合约订阅、只读边界 |
 | [`run_live_grid.py`](../run_live_grid.py) | 报撤测试入口 | 预览/确认、审计目录、启动异常、Ctrl+C 收口 |
-| [`live_grid/config.py`](../live_grid/config.py) | 策略配置校验与哈希 | 凭证拒绝、默认值、规范化 JSON、提交确认 |
+| [`live_grid/config.py`](../live_grid/config.py) | 策略配置校验与哈希 | 凭证拒绝、默认值、规范化 JSON、SimNow 确认和策略身份 |
 | [`live_grid/session.py`](../live_grid/session.py) | 与 CTP 无关的确定性状态机 | 状态迁移、报价、撤换、收口、FAK、最终摘要 |
 | [`live_grid/ctp_adapter.py`](../live_grid/ctp_adapter.py) | vn.py/CTP 与状态机之间的薄适配层 | 回报转换、请求号关联、委托/撤单/查仓动作转换 |
 | [`live_grid/audit.py`](../live_grid/audit.py) | 每次运行的无凭证审计写入 | `effective_strategy.json`、`events.jsonl`、`summary.json` |
@@ -106,24 +106,22 @@ python run_live_grid.py \
 - 写入一次审计目录；
 - 不读取 CTP 凭证、不连接 CTP、不发送委托。
 
-确认 effective 配置、目标合约、手数和哈希后，才使用可下单命令：
+确认 effective 配置、目标合约和手数后，只需使用 SimNow 确认启动可下单命令：
 
 ```bash
 python run_live_grid.py \
   --config strategy.json \
   --audit-dir audit \
-  --confirm-simnow \
-  --confirm-hash <策略哈希前八位或更长前缀>
+  --confirm-simnow
 ```
 
-提交条件是两个条件同时满足：
+进入 CTP 连接和下单链路的唯一启动确认条件是：
 
 ```text
 confirm-simnow = true
-且 confirm-hash 非空、长度至少 8、匹配当前 effective 配置的 SHA-256 前缀
 ```
 
-策略 JSON 任何字段变化都会改变 effective 配置和哈希，旧的确认前缀不会继续授权新的配置。
+策略 JSON 任何字段变化都会改变 effective 配置和哈希。哈希会随本次配置写入预览和审计，但不作为命令授权条件。
 
 报撤入口主要返回码：
 
@@ -176,7 +174,7 @@ confirm-simnow = true
 ```mermaid
 stateDiagram-v2
     [*] --> PREVIEW
-    PREVIEW --> WAITING_FOR_CONTRACT: 两个确认均通过
+    PREVIEW --> WAITING_FOR_CONTRACT: SimNow 确认通过
     WAITING_FOR_CONTRACT --> WAITING_FOR_ZERO_POSITION: 目标合约且 pricetick > 0
     WAITING_FOR_ZERO_POSITION --> WAITING_FOR_STABLE_QUOTE: 关联查仓完成且净仓为 0
     WAITING_FOR_ZERO_POSITION --> FAILED: 查仓失败或目标合约已有仓位
@@ -415,7 +413,7 @@ audit/
 
 ### 13.1 `effective_strategy.json`
 
-保存合并默认值后的无凭证配置和 `sha256`。这是确认哈希和复盘策略参数的依据。
+保存合并默认值后的无凭证配置和 `sha256`。这是本次策略身份和复盘策略参数的依据，不是下单授权记录。
 
 ### 13.2 `events.jsonl`
 
@@ -452,7 +450,7 @@ failure_reason
 
 - `FINISHED` 还要确认 `final_net_position == 0`、`active_order_count == 0`，并检查撤单/平仓字段；
 - `FAILED` 要重点看 `failure_reason`、`final_net_position` 和 `active_orders`，失败不代表风险已经归零；
-- `PREVIEW + confirmation_required` 表示没有连接、没有下单，不是一次真实联调成功；
+- `PREVIEW + confirmation_required` 表示缺少 `--confirm-simnow`，没有连接、没有下单，不是一次真实联调成功；
 - `audit_warning` 只是审计提示，不等于订单成交或失败。
 
 常见失败原因包括：
@@ -494,8 +492,8 @@ late_flatten_fill_after_finish
 1. 从当前合约回报确认策略目标 `symbol/exchange`；
 2. 确认策略目标合约净仓为零；
 3. 用最小、明确的 `target_lots` 生成策略配置；
-4. 先运行预览，人工核对 effective 配置和哈希；
-5. 只在 SimNow 环境用确认参数启动；
+4. 先运行预览，人工核对 effective 配置和哈希；哈希用于确认审计身份，不是启动门禁；
+5. 只在 SimNow 环境用 `--confirm-simnow` 启动；
 6. 选择远离成交的价格环境，观察元数据、零仓查询、稳定行情和挂单；
 7. 操作者中断，等待完整撤单/查仓收口；
 8. 从 `summary.json` 确认没有活动订单和残余净仓。
@@ -516,7 +514,7 @@ late_flatten_fill_after_finish
 
 遇到“没有下单”时，按下面顺序查：
 
-1. 是否只运行了预览，或者哈希前缀不足/不匹配；
+1. 是否只运行了预览，或者缺少 `--confirm-simnow`；
 2. 策略 JSON 的目标 `symbol/exchange` 是否与当前 CTP 合约回报一致；
 3. `pricetick` 是否为正；
 4. startup `query_position` 是否完成且 request id 匹配；
@@ -541,7 +539,7 @@ late_flatten_fill_after_finish
 ## 16. 维护规则
 
 - 新增状态、事件、动作或配置字段时，同时更新 `live_grid/session.py`、对应测试、本文和 PRD；
-- 新增策略配置字段必须重新经过 canonical JSON 和哈希确认，不能默默兼容旧确认；
+- 新增策略配置字段必须重新生成 canonical JSON 和哈希，并确认审计文件记录了新的策略身份；哈希不再作为下单门禁；
 - 不要让 `run.py` 获得隐藏下单模式；可下单能力必须继续留在独立的 `run_live_grid.py`；
 - 不要把行情 crossing 写成成交逻辑；只能由 CTP order/trade callback 推进成交状态；
 - 修改 `vnpy_ctp` 时保持 `vendor/vnpy_ctp` 可追踪、可编辑，并补充 position-query-complete 的确定性测试；

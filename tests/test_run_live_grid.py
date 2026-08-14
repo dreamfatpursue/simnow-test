@@ -31,8 +31,6 @@ class RunLiveGridTests(unittest.TestCase):
                 "--config",
                 str(config_path),
                 "--confirm-simnow",
-                "--confirm-hash",
-                strategy.sha256[:8],
                 "--audit-dir",
                 audit_root,
             ]
@@ -40,8 +38,9 @@ class RunLiveGridTests(unittest.TestCase):
                 run_live_grid,
                 "load_settings",
                 side_effect=RuntimeError("missing credentials"),
-            ):
+            ) as load_settings:
                 self.assertEqual(run_live_grid.main(), 3)
+            load_settings.assert_called_once()
 
             run_directories = list(Path(audit_root).iterdir())
             self.assertEqual(len(run_directories), 1)

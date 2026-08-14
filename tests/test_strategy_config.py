@@ -27,16 +27,14 @@ def valid_config() -> dict:
 
 
 class StrategyConfigTests(unittest.TestCase):
-    def test_config_normalizes_and_requires_both_confirmations(self) -> None:
+    def test_config_normalizes_and_requires_simnow_confirmation(self) -> None:
         config = StrategyConfig.from_mapping(valid_config())
 
         self.assertEqual(config.effective["exchange"], "SHFE")
         self.assertEqual(config.effective["target_lots"], 1)
         self.assertEqual(len(config.sha256), 64)
-        self.assertFalse(config.can_submit(simnow_confirmed=False, hash_prefix=config.sha256[:8]))
-        self.assertFalse(config.can_submit(simnow_confirmed=True, hash_prefix=config.sha256[:7]))
-        self.assertTrue(config.can_submit(simnow_confirmed=True, hash_prefix=config.sha256[:8]))
-
+        self.assertFalse(config.can_submit(simnow_confirmed=False))
+        self.assertTrue(config.can_submit(simnow_confirmed=True))
 
     def test_config_rejects_credentials_and_invalid_values(self) -> None:
         with self.assertRaisesRegex(StrategyConfigError, "凭证"):

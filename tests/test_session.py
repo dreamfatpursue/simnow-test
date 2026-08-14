@@ -37,7 +37,7 @@ def make_config(**changes: object) -> StrategyConfig:
 
 def start_session(config: StrategyConfig | None = None) -> LiveGridSession:
     config = config or make_config()
-    session = LiveGridSession(config, simnow_confirmed=True, hash_prefix=config.sha256[:8])
+    session = LiveGridSession(config, simnow_confirmed=True)
     actions = session.handle(ContractEvent(config.effective["symbol"], config.effective["exchange"], 1.0))
     assert actions[0].kind == "query_position"
     request_id = actions[0].payload["request_id"]
@@ -48,14 +48,20 @@ def start_session(config: StrategyConfig | None = None) -> LiveGridSession:
 class LiveGridSessionTests(unittest.TestCase):
     def test_confirmation_is_required_before_session_can_emit_any_action(self) -> None:
         config = make_config()
-        for simnow_confirmed, hash_prefix in ((False, config.sha256[:8]), (True, "deadbeef")):
-            session = LiveGridSession(config, simnow_confirmed=simnow_confirmed, hash_prefix=hash_prefix)
-            self.assertEqual(session.state, SessionState.PREVIEW)
-            self.assertEqual(session.handle(ContractEvent("rb2601", "SHFE", 1.0)), [])
+        session = LiveGridSession(config, simnow_confirmed=False)
+        self.assertEqual(session.state, SessionState.PREVIEW)
+        self.assertEqual(session.handle(ContractEvent("rb2601", "SHFE", 1.0)), [])
+
+        confirmed_session = LiveGridSession(config, simnow_confirmed=True)
+        self.assertEqual(confirmed_session.state, SessionState.WAITING_FOR_CONTRACT)
+        self.assertEqual(
+            confirmed_session.handle(ContractEvent("rb2601", "SHFE", 1.0))[0].kind,
+            "query_position",
+        )
 
     def test_no_quote_until_contract_position_and_two_second_stable_market(self) -> None:
         config = make_config()
-        session = LiveGridSession(config, simnow_confirmed=True, hash_prefix=config.sha256[:8])
+        session = LiveGridSession(config, simnow_confirmed=True)
         self.assertEqual(session.state, SessionState.WAITING_FOR_CONTRACT)
         self.assertEqual(session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0)), [])
         query = session.handle(ContractEvent("rb2601", "SHFE", 1.0))[0]
@@ -189,7 +195,7 @@ class LiveGridSessionTests(unittest.TestCase):
 
     def test_mismatched_position_query_cannot_open_or_flatten(self) -> None:
         config = make_config()
-        session = LiveGridSession(config, simnow_confirmed=True, hash_prefix=config.sha256[:8])
+        session = LiveGridSession(config, simnow_confirmed=True)
         query = session.handle(ContractEvent("rb2601", "SHFE", 1.0))[0]
         self.assertEqual(session.handle(PositionQueryCompleteEvent("stale", "rb2601", "SHFE", 0)), [])
         self.assertEqual(session.state, SessionState.WAITING_FOR_ZERO_POSITION)
@@ -200,7 +206,7 @@ class LiveGridSessionTests(unittest.TestCase):
 
     def test_interrupt_before_zero_confirmation_does_not_flatten_existing_position(self) -> None:
         config = make_config()
-        session = LiveGridSession(config, simnow_confirmed=True, hash_prefix=config.sha256[:8])
+        session = LiveGridSession(config, simnow_confirmed=True)
         session.handle(ContractEvent("rb2601", "SHFE", 1.0))
 
         self.assertEqual(session.handle(InterruptEvent()), [])

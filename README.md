@@ -82,13 +82,14 @@ cp strategy.example.json strategy.json
 python run_live_grid.py --config strategy.json
 ```
 
-该命令只显示标准化配置和 SHA-256 哈希，不会连接或下单。确认无误后，必须同时提供 SimNow 确认和至少八位匹配的策略哈希前缀：
+该命令只显示标准化配置和 SHA-256 哈希，不会连接或下单。确认配置和目标合约无误后，只需显式确认当前连接是 SimNow：
 
 ```bash
 python run_live_grid.py \
   --config strategy.json \
-  --confirm-simnow \
-  --confirm-hash <策略哈希前八位或更长前缀>
+  --confirm-simnow
 ```
+
+SHA-256 仍会用于预览展示、审计记录和复盘识别，但不参与下单授权。修改策略配置会产生新的哈希，不需要额外提供旧哈希或新哈希参数。
 
 CTP 凭证仍只从 `.env` 读取，策略配置和测试审计目录不得放入凭证。每次运行会在 `audit/` 下创建独立目录，记录无凭证事件和最终安全摘要。首次使用应先执行远价无成交后 `Ctrl+C` 的人工验收，再进行受控首次成交验收。

@@ -23,7 +23,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="SimNow 单合约报撤联调入口")
     parser.add_argument("--config", required=True, help="无凭证策略 JSON 配置")
     parser.add_argument("--confirm-simnow", action="store_true", help="确认当前连接是 SimNow")
-    parser.add_argument("--confirm-hash", default="", help="有效策略哈希前缀，至少 8 位")
     parser.add_argument("--audit-dir", default="audit", help="测试审计根目录")
     args = parser.parse_args()
 
@@ -36,11 +35,11 @@ def main() -> int:
     try:
         audit = AuditWriter(config, args.audit_dir)
         print_preview(config)
-        if not config.can_submit(simnow_confirmed=args.confirm_simnow, hash_prefix=args.confirm_hash):
+        if not config.can_submit(simnow_confirmed=args.confirm_simnow):
             preview = _session(config, args).summary()
             preview["failure_reason"] = "confirmation_required"
             directory = audit.finish(preview)
-            print(f"当前为预览模式：缺少匹配的 SimNow 确认或策略哈希确认，未连接且不会下单。审计目录={directory}")
+            print(f"当前为预览模式：缺少 SimNow 确认，未连接且不会下单。审计目录={directory}")
             return 0
         settings = load_settings()
         adapter = CtpLiveGridAdapter(session=_session(config, args), gateway_setting=settings.gateway_setting(), audit=audit)
@@ -90,7 +89,7 @@ def _interrupt_and_wait(adapter: CtpLiveGridAdapter) -> None:
 def _session(config: StrategyConfig, args: argparse.Namespace):
     from live_grid.session import LiveGridSession
 
-    return LiveGridSession(config, simnow_confirmed=args.confirm_simnow, hash_prefix=args.confirm_hash)
+    return LiveGridSession(config, simnow_confirmed=args.confirm_simnow)
 
 
 if __name__ == "__main__":
