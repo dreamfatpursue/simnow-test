@@ -1,8 +1,17 @@
 {
-  "version": 1,
-  "symbol": "填写当前有效合约",
-  "exchange": "SHFE",
-  "target_lots": 1,
+  "version": 2,
+  "contracts": [
+    {
+      "symbol": "填写当前有效合约",
+      "exchange": "SHFE",
+      "target_lots": 1
+    },
+    {
+      "symbol": "第二个合约条目可选，删除本条目即回到单合约",
+      "exchange": "CZCE",
+      "target_lots": 1
+    }
+  ],
   "w_ticks": 20,
   "d_ticks": 20,
   "s_ticks": 10,

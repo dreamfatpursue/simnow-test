@@ -68,7 +68,7 @@ python run.py
 
 ## 当前边界
 
-当前实现只面向 SimNow 单合约、单进程、无凭证落盘的受控联调；不包含生产交易、广发实盘配置、回放撮合、数据库持久化或多合约组合。
+当前实现面向 SimNow 多合约（每合约独立会话与收口）、单进程、无凭证落盘的受控联调；不包含生产交易、广发实盘配置、回放撮合、数据库持久化或跨合约对冲。
 
 完整的启动方式、状态机、CTP 回报/动作链路、报价与收口规则、审计字段、排查顺序和交接验收步骤见：[单合约报撤联调运行与代码逻辑说明](docs/live-grid-runtime.md)。
 
@@ -78,7 +78,7 @@ python run.py
 
 ```bash
 cp strategy.example.json strategy.json
-# 把 symbol 改成当前 SimNow 合约查询返回的有效合约
+# 把 contracts 条目改成当前 SimNow 合约查询返回的有效合约（v2 多合约格式）
 python run_live_grid.py --config strategy.json
 ```
 

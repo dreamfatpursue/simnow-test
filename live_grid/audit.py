@@ -10,7 +10,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from .config import StrategyConfig
+from .config import MultiContractConfig, StrategyConfig
 
 
 class AuditError(ValueError):
@@ -45,18 +45,41 @@ _FORBIDDEN_KEYS = {
 }
 
 
+def _run_name() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ") + "-" + uuid.uuid4().hex[:10]
+
+
+def _write_json_file(directory: Path, name: str, value: Any) -> None:
+    AuditWriter._assert_safe(value)
+    directory.joinpath(name).write_text(
+        json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 class AuditWriter:
     """Write one isolated JSON audit directory for a session."""
 
-    def __init__(self, config: StrategyConfig, root: str | Path = "audit") -> None:
-        root_path = Path(root)
-        root_path.mkdir(parents=True, exist_ok=True)
-        run_name = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ") + "-" + uuid.uuid4().hex[:10]
-        self.directory = root_path / run_name
-        self.directory.mkdir()
+    def __init__(
+        self,
+        config: StrategyConfig,
+        root: str | Path = "audit",
+        *,
+        directory: str | Path | None = None,
+    ) -> None:
+        if directory is None:
+            root_path = Path(root)
+            root_path.mkdir(parents=True, exist_ok=True)
+            directory = root_path / _run_name()
+            Path(directory).mkdir()
+        else:
+            directory = Path(directory)
+            directory.mkdir(parents=True, exist_ok=False)
+        self.directory = directory
         self._events = self.directory.joinpath("events.jsonl").open("w", encoding="utf-8")
         self._closed = False
-        self._write_json(
+        _write_json_file(
+            self.directory,
             "effective_strategy.json",
             {"effective": config.effective, "sha256": config.sha256},
         )
@@ -82,7 +105,7 @@ class AuditWriter:
 
     def finish(self, summary: dict[str, Any]) -> Path:
         self._ensure_open()
-        self._write_json("summary.json", summary)
+        _write_json_file(self.directory, "summary.json", summary)
         self._events.close()
         self._closed = True
         return self.directory
@@ -91,13 +114,6 @@ class AuditWriter:
         if not self._closed:
             self._events.close()
             self._closed = True
-
-    def _write_json(self, name: str, value: Any) -> None:
-        self._assert_safe(value)
-        self.directory.joinpath(name).write_text(
-            json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
-        )
 
     def _write_line(self, value: Any) -> None:
         self._assert_safe(value)
@@ -137,3 +153,41 @@ class AuditWriter:
         if hasattr(value, "__dict__") and not isinstance(value, type):
             return {"type": type(value).__name__, "data": AuditWriter._serialize(vars(value))}
         return value
+
+
+class MultiContractAuditWriter:
+    """One run directory with per-contract audit subdirectories and a run-level summary."""
+
+    def __init__(self, config: MultiContractConfig, root: str | Path = "audit") -> None:
+        root_path = Path(root)
+        root_path.mkdir(parents=True, exist_ok=True)
+        self.directory = root_path / _run_name()
+        self.directory.mkdir()
+        self.writers = [
+            AuditWriter(
+                contract_config,
+                directory=self.directory / f"{contract_config.effective['symbol']}@{contract_config.effective['exchange']}",
+            )
+            for contract_config in config.contracts
+        ]
+        self._closed = False
+        _write_json_file(
+            self.directory,
+            "effective_strategy.json",
+            {"effective": config.effective, "sha256": config.sha256},
+        )
+
+    def finish(self, run_summary: dict[str, Any]) -> Path:
+        if self._closed:
+            raise AuditError("审计目录已经关闭")
+        for writer in self.writers:
+            writer.close()
+        _write_json_file(self.directory, "summary.json", run_summary)
+        self._closed = True
+        return self.directory
+
+    def close(self) -> None:
+        if not self._closed:
+            for writer in self.writers:
+                writer.close()
+            self._closed = True
