@@ -490,9 +490,6 @@ class LiveGridSession:
         self._round_has_fill = True
         self.state = SessionState.FLATTENING
         self._flatten_started_at = self._now
-        if not self._protected_valid(self._latest_tick):
-            self._fail("no_executable_quote")
-            return
         self._try_flatten()
 
     def _on_clock(self, event: ClockEvent) -> None:
@@ -731,16 +728,12 @@ class LiveGridSession:
         if self.state != SessionState.FLATTENING or self.final_net_position in {None, 0} or self._flatten_client_id is not None:
             return
         tick = self._latest_tick
-        if not self._protected_valid(tick):
-            self._fail("no_executable_quote")
+        if not self._executable_quote(tick):
             return
         assert tick is not None
         long_position = self.final_net_position > 0
         side = "SELL" if long_position else "BUY"
         executable = tick.bid_price if long_position else tick.ask_price
-        if not isfinite(executable) or executable <= 0:
-            self._fail("no_executable_quote")
-            return
         if self._flatten_initial_price is None:
             self._flatten_initial_price = executable
         else:
@@ -857,6 +850,12 @@ class LiveGridSession:
 
     def _is_target(self, symbol: str, exchange: str) -> bool:
         return symbol == self.target_symbol and exchange.upper() == self.target_exchange
+
+    def _executable_quote(self, tick: TickEvent | None) -> bool:
+        if tick is None:
+            return False
+        values = (tick.bid_price, tick.ask_price)
+        return all(isfinite(value) and value > 0 for value in values)
 
     def _protected_valid(self, tick: TickEvent | None) -> bool:
         if tick is None or self._contract is None:

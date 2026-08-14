@@ -528,7 +528,7 @@ class LiveGridSessionTests(unittest.TestCase):
         retry = session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1, client_id=client_id))
         self.assertEqual(retry[0].payload["price"], 89)
 
-    def test_missing_executable_quote_fails_before_flatten_order(self) -> None:
+    def test_invalid_book_waits_for_recovery_before_flatten(self) -> None:
         session = start_session()
         session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
         submitted = session.handle(ClockEvent(2))
@@ -541,9 +541,37 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
         actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
         query = actions[0].payload["request_id"]
+
+        # 无有效盘口：等待而不立即失败
         self.assertEqual(session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 1)), [])
+        self.assertEqual(session.state, SessionState.FLATTENING)
+        self.assertIsNone(session.failure_reason)
+        self.assertEqual(session.handle(ClockEvent(4)), [])
+
+        # 盘口恢复：行情事件本身触发受限 FAK 平仓（仍在 flatten_timeout 窗口内）
+        flatten = session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 4.2))
+        self.assertEqual(flatten[0].kind, "submit_order")
+        self.assertEqual(flatten[0].payload["order_type"], "FAK")
+
+    def test_invalid_book_until_flatten_timeout_fails(self) -> None:
+        session = start_session()
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
+        submitted = session.handle(ClockEvent(2))
+        buy = next(action for action in submitted if action.payload["side"] == "BUY")
+        sell = next(action for action in submitted if action.payload["side"] == "SELL")
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
+        session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
+        session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
+        session.handle(TickEvent("rb2601", "SHFE", 0, 0, 0, 3))
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
+        actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
+        query = actions[0].payload["request_id"]
+        session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 1))
+        self.assertEqual(session.handle(ClockEvent(5.5)), [])
+        self.assertEqual(session.state, SessionState.FLATTENING)
+        session.handle(ClockEvent(6.2))
         self.assertEqual(session.state, SessionState.FAILED)
-        self.assertEqual(session.failure_reason, "no_executable_quote")
+        self.assertEqual(session.failure_reason, "flatten_timeout")
 
     def test_flatten_rejection_is_failed(self) -> None:
         session = start_session()
