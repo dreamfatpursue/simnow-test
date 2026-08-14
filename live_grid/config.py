@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isfinite
 from pathlib import Path
 from typing import Any, Mapping
@@ -66,6 +66,48 @@ _POSITIVE_FIELDS = {
 _POSITIVE_INTEGER_FIELDS = {"target_lots", "w_ticks", "d_ticks", "s_ticks"}
 
 
+def _reject_credentials(raw: Mapping[str, Any]) -> None:
+    credential_keys = _CREDENTIAL_KEYS.intersection(raw)
+    if credential_keys:
+        raise StrategyConfigError("策略配置不得包含凭证字段: " + ", ".join(sorted(credential_keys)))
+
+
+def _require_positive_integers(effective: Mapping[str, Any], names: set[str]) -> None:
+    for name in names:
+        value = effective[name]
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise StrategyConfigError(f"{name} 必须是正整数")
+
+
+def _require_positive(effective: Mapping[str, Any], names: set[str]) -> None:
+    for name in names:
+        value = effective[name]
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not isfinite(value)
+            or value <= 0
+        ):
+            raise StrategyConfigError(f"{name} 必须是正数")
+
+
+def _identity(effective: Mapping[str, Any]) -> tuple[str, str]:
+    canonical_json = json.dumps(effective, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    sha256 = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+    return canonical_json, sha256
+
+
+def _load_mapping(path: str | Path) -> dict[str, Any]:
+    config_path = Path(path)
+    try:
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise StrategyConfigError(f"策略配置读取失败: {config_path}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise StrategyConfigError("策略配置根节点必须是 JSON 对象")
+    return raw
+
+
 @dataclass(frozen=True)
 class StrategyConfig:
     """Canonical, credential-free settings for one test run."""
@@ -76,9 +118,7 @@ class StrategyConfig:
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> "StrategyConfig":
-        credential_keys = _CREDENTIAL_KEYS.intersection(raw)
-        if credential_keys:
-            raise StrategyConfigError("策略配置不得包含凭证字段: " + ", ".join(sorted(credential_keys)))
+        _reject_credentials(raw)
 
         missing = _REQUIRED - raw.keys()
         if missing:
@@ -92,19 +132,8 @@ class StrategyConfig:
         if not isinstance(effective["symbol"], str) or not effective["symbol"].strip():
             raise StrategyConfigError("symbol 必须是非空字符串")
         effective["symbol"] = effective["symbol"].strip()
-        for name in _POSITIVE_INTEGER_FIELDS:
-            value = effective[name]
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-                raise StrategyConfigError(f"{name} 必须是正整数")
-        for name in _POSITIVE_FIELDS:
-            value = effective[name]
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not isfinite(value)
-                or value <= 0
-            ):
-                raise StrategyConfigError(f"{name} 必须是正数")
+        _require_positive_integers(effective, _POSITIVE_INTEGER_FIELDS)
+        _require_positive(effective, _POSITIVE_FIELDS)
         if (
             isinstance(effective["version"], bool)
             or not isinstance(effective["version"], int)
@@ -116,23 +145,107 @@ class StrategyConfig:
         if unknown:
             raise StrategyConfigError("未知策略字段: " + ", ".join(sorted(unknown)))
 
-        canonical_json = json.dumps(effective, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        canonical_json, sha256 = _identity(effective)
         return cls(
             effective=effective,
             canonical_json=canonical_json,
-            sha256=hashlib.sha256(canonical_json.encode("utf-8")).hexdigest(),
+            sha256=sha256,
         )
 
     @classmethod
     def from_json_file(cls, path: str | Path) -> "StrategyConfig":
-        config_path = Path(path)
-        try:
-            raw = json.loads(config_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise StrategyConfigError(f"策略配置读取失败: {config_path}: {exc}") from exc
-        if not isinstance(raw, dict):
-            raise StrategyConfigError("策略配置根节点必须是 JSON 对象")
-        return cls.from_mapping(raw)
+        return cls.from_mapping(_load_mapping(path))
 
     def can_submit(self, *, simnow_confirmed: bool) -> bool:
         return simnow_confirmed
+
+
+_MULTI_ENTRY_REQUIRED = {"symbol", "exchange", "target_lots"}
+
+
+@dataclass(frozen=True)
+class MultiContractConfig:
+    """Canonical, credential-free settings for one multi-contract run."""
+
+    effective: dict[str, Any]
+    canonical_json: str
+    sha256: str
+    contracts: tuple[StrategyConfig, ...]
+
+    @classmethod
+    def from_mapping(cls, raw: Mapping[str, Any]) -> "MultiContractConfig":
+        _reject_credentials(raw)
+
+        if "contracts" not in raw:
+            if "symbol" in raw:
+                raise StrategyConfigError(
+                    "旧单合约格式已停用: 请将 symbol/exchange/target_lots 移入 contracts 数组, 并将 version 改为 2"
+                )
+            raise StrategyConfigError("缺少策略字段: contracts")
+        version = raw["version"] if "version" in raw else None
+        if isinstance(version, bool) or not isinstance(version, int) or version != 2:
+            raise StrategyConfigError("version 必须是 2 (多合约格式)")
+
+        entries = raw["contracts"]
+        if not isinstance(entries, list) or not entries:
+            raise StrategyConfigError("contracts 必须是非空数组")
+
+        allowed = {"version", "contracts"} | set(_DEFAULTS)
+        unknown = set(raw) - allowed
+        if unknown:
+            raise StrategyConfigError("未知策略字段: " + ", ".join(sorted(unknown)))
+
+        common = dict(_DEFAULTS)
+        common.update({name: raw[name] for name in _DEFAULTS if name in raw})
+        _require_positive_integers(common, _POSITIVE_INTEGER_FIELDS - {"target_lots"})
+        _require_positive(common, _POSITIVE_FIELDS)
+
+        per_contract: list[StrategyConfig] = []
+        seen: set[tuple[str, str]] = set()
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                raise StrategyConfigError(f"contracts[{index}] 必须是 JSON 对象")
+            missing = _MULTI_ENTRY_REQUIRED - entry.keys()
+            if missing:
+                raise StrategyConfigError(f"contracts[{index}] 缺少字段: " + ", ".join(sorted(missing)))
+            unknown_keys = set(entry) - _MULTI_ENTRY_REQUIRED
+            if unknown_keys:
+                raise StrategyConfigError(f"contracts[{index}] 未知字段: " + ", ".join(sorted(unknown_keys)))
+            try:
+                config = StrategyConfig.from_mapping({"version": 2, **common, **entry})
+            except StrategyConfigError as exc:
+                raise StrategyConfigError(f"contracts[{index}]: {exc}") from exc
+            key = (config.effective["symbol"], config.effective["exchange"])
+            if key in seen:
+                raise StrategyConfigError(f"contracts[{index}]: 重复合约: {key[0]}@{key[1]}")
+            seen.add(key)
+            per_contract.append(config)
+
+        effective = {
+            "version": 2,
+            **common,
+            "contracts": [
+                {
+                    "symbol": config.effective["symbol"],
+                    "exchange": config.effective["exchange"],
+                    "target_lots": config.effective["target_lots"],
+                }
+                for config in per_contract
+            ],
+        }
+        canonical_json, sha256 = _identity(effective)
+        # 每份逐合约配置的身份字段刻意替换为整份配置的运行级身份,
+        # 其 canonical_json 不再是自身 effective 的序列化。
+        contracts = tuple(
+            replace(config, canonical_json=canonical_json, sha256=sha256) for config in per_contract
+        )
+        return cls(
+            effective=effective,
+            canonical_json=canonical_json,
+            sha256=sha256,
+            contracts=contracts,
+        )
+
+    @classmethod
+    def from_json_file(cls, path: str | Path) -> "MultiContractConfig":
+        return cls.from_mapping(_load_mapping(path))

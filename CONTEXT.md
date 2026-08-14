@@ -41,27 +41,35 @@ The selected closing method for the single-contract SimNow test: after order rec
 _Avoid_: 无限追价、静默忽略未平仓位、市价收口
 
 **策略配置**:
-A versionable JSON document containing the grid and safety parameters for one test run, excluding CTP credentials. The effective configuration is retained with that run's audit log.
-_Avoid_: 凭证文件、硬编码策略参数
+A versionable JSON document containing the grid and safety parameters shared by every target contract, plus one entry per contract with its symbol, exchange, and per-side lots. It excludes CTP credentials. The effective configuration is retained with that run's audit log.
+_Avoid_: 凭证文件、硬编码策略参数、每合约一份参数文件
+
+**多合约运行**:
+One SimNow test run quoting several target contracts concurrently, each driven by an independent single-contract session. The run ends only after every contract's session reaches a terminal state.
+_Avoid_: 共享网格状态、跨合约对冲、任一合约终态即结束
+
+**合约独立收口**:
+The rule that a contract's first-fill closing, failure, or timeout stops and flattens only that contract's session. An operator interrupt is broadcast to every session, which each run their own closing sequence.
+_Avoid_: 任一成交全停、跨合约收口链路
 
 **人工结束收口**:
 The termination path for a no-time-limit test: on an operator interrupt, cancel every test order, wait for terminal order callbacks, reconcile the position, and use the same bounded FAK close if a fill occurred.
 _Avoid_: 直接退出、遗留活动委托
 
 **零仓启动门槛**:
-The test may submit its first quote only after CTP position data confirms the target contract has zero net position. Any nonzero position rejects the run without sending an order.
-_Avoid_: 管理既有仓位、带仓启动
+The test may submit its first quote only after CTP position data confirms the target contract has zero net position. Any nonzero position on any target contract rejects the whole run without sending an order.
+_Avoid_: 管理既有仓位、带仓启动、剔除持仓合约后部分启动
 
 **首轮报撤限额**:
-The maximum number of quote submissions and cancellation requests in a rolling minute for the first SimNow test: 60. Reaching it pauses quoting and never bypasses a necessary safety cancellation.
-_Avoid_: 无上限报撤、把风险撤单计入静默失败
+The maximum number of quote submissions and cancellation requests in a rolling minute for one contract's session: 60, counted per contract independently. Reaching it pauses that session's quoting and never bypasses a necessary safety cancellation.
+_Avoid_: 无上限报撤、把风险撤单计入静默失败、跨合约共享限额池
 
 **合约元数据门槛**:
 The target contract's CTP metadata, including its positive price tick, must be received before the test may submit its first quote.
 _Avoid_: 写死最小变动价位、缺少合约元数据仍下单
 
 **策略目标合约**:
-The symbol and exchange named exclusively in the strategy configuration and used by the order-management test. CTP credentials and the read-only connector's subscription settings do not select it.
+A symbol and exchange named as one entry in the strategy configuration's contract list and used by that contract's order-management session. CTP credentials and the read-only connector's subscription settings do not select it.
 _Avoid_: 从环境变量隐式继承下单合约、只读订阅合约
 
 **盘口保护**:
@@ -81,12 +89,12 @@ The close offset chosen automatically for a position opened by this test today: 
 _Avoid_: 手工填写偏移、拒单后猜测性重试
 
 **目标委托手数**:
-The positive per-side quantity in the strategy configuration. No separate absolute cap applies; its actual value is highlighted before submission and recorded for the run, and any first partial fill still triggers closing.
+The positive per-side quantity in the strategy configuration's contract entry. No separate absolute cap applies; its actual value is highlighted before submission and recorded for the run, and any first partial fill still triggers closing.
 _Avoid_: 隐式固定手数、成交后继续加仓、未展示的配置风险
 
 **测试审计目录**:
-The per-run directory containing the effective credential-free strategy configuration, CTP market/order/trade events, and a final safety summary of position, active orders, and failures.
-_Avoid_: 仅终端输出、无法还原的测试结果
+The per-run directory holding one subdirectory per contract with its credential-free effective configuration, CTP market/order/trade events, and final safety summary, plus a run-level summary of every contract's position, active orders, and failures.
+_Avoid_: 仅终端输出、无法还原的测试结果、多合约事件混写单一文件
 
 **策略哈希身份**:
 The SHA-256 identity of the effective strategy configuration, used for preview, audit, and replay identification. It is not a submission gate; order-capable entry requires only explicit SimNow confirmation.
