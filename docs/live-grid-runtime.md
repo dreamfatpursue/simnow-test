@@ -509,7 +509,7 @@ late_flatten_fill_after_finish
 
 ### 阶段 D：受控首次成交验收
 
-在阶段 C 成功后，再安排有明确操作者和回滚/人工接管安排的受控首次成交。重点观察：
+在阶段 C 成功后，再安排有明确操作者和回滚/人工接管安排的受控首次成交。执行清单、逐字段通过判据和当前进度见 [`live-grid-acceptance.md`](live-grid-acceptance.md)，配套配置为 [`strategy-stage-d.json`](../strategy-stage-d.json)。重点观察：
 
 - 第一笔部分成交是否立即停止新增报价；
 - 剩余测试订单是否全部撤销并收到终态；
