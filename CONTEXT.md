@@ -124,6 +124,14 @@ _Avoid_: 未收到持仓事件即视为零仓、超时猜测零仓
 The checked-in editable `vnpy_ctp` source used by this project at runtime. Gateway safety patches are versioned with the live-grid test rather than applied to an unmanaged virtual-environment copy.
 _Avoid_: 临时修改 site-packages、被忽略的未加载源码副本
 
+**交易日成交明细**:
+A per-trading-day HTML report where each record is one round's filled order lifecycle—its submission, its fill, and the flatten that closed it. The trading day follows the exchange trading-day calendar (CTP `TradeDate`), so night-session trades roll into the next trading day. Cancelled quote attempts of the same round are not part of the record; it is a view of audit facts, never a second live data path.
+_Avoid_: 策略运行时产出报表、在线合并当日文件、逐笔委托流水、按本地自然日切分
+
+**资金差净盈亏**:
+The real net profit or loss for one run or trading day, derived from the account balance sampled before the first order submission and after the last flatten reaches terminal state. The gap between it and the sum of gross round PnL is the implied commission.
+_Avoid_: 从成交回报取手续费、逐轮资金差归因
+
 **持仓查询关联号**:
 The gateway's increasing CTP request identifier returned with each position-query completion event. A safety gate accepts only the result for the query it initiated.
 _Avoid_: 最近一次结果、后台轮询结果猜测性复用
