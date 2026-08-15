@@ -130,6 +130,34 @@ def quoted_round(
     ]
 
 
+def run_summary_doc(
+    contract_rows: list[dict],
+    terminal_states: dict[str, str] | None = None,
+) -> dict:
+    return {
+        "terminal_states": terminal_states or {},
+        "contracts": contract_rows,
+    }
+
+
+def contract_summary_row(
+    symbol: str = "al2609",
+    exchange: str = "SHFE",
+    terminal_state: str = "FINISHED",
+    round_trips: int = 1,
+    failure_reason: str | None = None,
+    stop_reason: str | None = None,
+) -> dict:
+    return {
+        "target_symbol": symbol,
+        "target_exchange": exchange,
+        "terminal_state": terminal_state,
+        "round_trips": round_trips,
+        "failure_reason": failure_reason,
+        "stop_reason": stop_reason,
+    }
+
+
 class BuildDaysTests(unittest.TestCase):
     def test_one_round_record_from_a_timed_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -286,6 +314,94 @@ class BuildDaysTests(unittest.TestCase):
                 sorted(contract.contract for contract in days["2026-08-17"].contracts),
                 ["al2609@SHFE", "cu2609@SHFE"],
             )
+
+
+class GrossPnlAndOverviewTests(unittest.TestCase):
+    def test_round_rows_show_price_diff_ticks_and_gross_pnl(self) -> None:
+        model = self._one_round_model()
+        html_text = report.render_html(model)
+
+        self.assertIn("价差", html_text)
+        self.assertIn("tick 数", html_text)
+        self.assertIn("毛盈亏", html_text)
+        self.assertIn("-30", html_text)
+        self.assertIn("-6", html_text)
+        self.assertIn("-150", html_text)
+        self.assertIn("毛盈亏未含手续费", html_text)
+
+    def test_short_round_pnl_is_signed_by_opening_side(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lines = quoted_round(
+                start_at=50,
+                sequence=7,
+                insert_time="2026-08-17T21:15:00+08:00",
+                open_time="2026-08-17T21:15:30+08:00",
+                open_side="SELL",
+                open_price=24050.0,
+                close_price=24020.0,
+            )
+            write_run(root, "20260817T130000.000000Z-abc", {"al2609@SHFE": lines})
+
+            days, _ = report.build_days(root)
+
+            html_text = report.render_html(days["2026-08-17"])
+            self.assertIn("+30", html_text)
+            self.assertIn("+6", html_text)
+            self.assertIn("+150", html_text)
+
+    def test_run_overview_lists_every_contract_with_state_and_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_run(
+                root,
+                "20260817T130000.000000Z-run1",
+                {"al2609@SHFE": quoted_round(start_at=10, sequence=1, insert_time="2026-08-17T21:00:00+08:00", open_time="2026-08-17T21:00:42+08:00")},
+                run_summary=run_summary_doc(
+                    [contract_summary_row(round_trips=1, stop_reason="session_end")],
+                    {"al2609@SHFE": "FINISHED"},
+                ),
+            )
+            # 发过委托但零成交的 run：有报单时间，应出现在总览里。
+            write_run(
+                root,
+                "20260817T140000.000000Z-run2",
+                {
+                    "cu2609@SHFE": [
+                        contract_line(1),
+                        order_line(2, "o1", "quote-1-buy", "BUY", "2026-08-17T21:20:00+08:00", status="CANCELLED"),
+                        order_line(3, "o1", "quote-1-sell", "SELL", "2026-08-17T21:20:00+08:00", status="CANCELLED"),
+                    ]
+                },
+                run_summary=run_summary_doc(
+                    [contract_summary_row(symbol="cu2609", terminal_state="FAILED", round_trips=0, failure_reason="nonzero_startup_position")],
+                    {"cu2609@SHFE": "FAILED"},
+                ),
+            )
+
+            days, skipped = report.build_days(root)
+
+            self.assertEqual(skipped, 0)
+            html_text = report.render_html(days["2026-08-17"])
+            self.assertIn("当日 run 总览", html_text)
+            self.assertIn("20260817T130000.000000Z-run1", html_text)
+            self.assertIn("20260817T140000.000000Z-run2", html_text)
+            self.assertIn("nonzero_startup_position", html_text)
+            self.assertIn("session_end", html_text)
+            self.assertIn("FINISHED", html_text)
+            self.assertIn("FAILED", html_text)
+
+    @staticmethod
+    def _one_round_model() -> report.DayModel:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_run(
+                root,
+                "20260817T155000.000000Z-abc",
+                {"al2609@SHFE": quoted_round(start_at=10, sequence=3, insert_time="2026-08-17T23:50:00+08:00", open_time="2026-08-17T23:50:42+08:00")},
+            )
+            days, _ = report.build_days(root)
+            return days["2026-08-17"]
 
 
 class RenderAndCliTests(unittest.TestCase):

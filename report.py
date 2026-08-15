@@ -82,9 +82,15 @@ class RunFacts:
 
 
 @dataclass
+class RunInfo:
+    directory: str
+    rows: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
 class DayModel:
     day: str
-    runs: list[str] = field(default_factory=list)
+    runs: list[RunInfo] = field(default_factory=list)
     contracts: list[ContractDay] = field(default_factory=list)
     account_snapshots: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
@@ -176,6 +182,32 @@ def _build_rounds(events: list[dict[str, Any]]) -> tuple[list[RoundRecord], floa
     return rounds, pricetick, size
 
 
+def _run_overview_rows(run_summary: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = [
+        {
+            "contract": f"{entry.get('target_symbol')}@{entry.get('target_exchange')}",
+            "terminal_state": entry.get("terminal_state"),
+            "round_trips": entry.get("round_trips"),
+            "failure_reason": entry.get("failure_reason"),
+            "stop_reason": entry.get("stop_reason"),
+        }
+        for entry in run_summary.get("contracts", [])
+        if entry.get("target_symbol")
+    ]
+    if rows:
+        return rows
+    return [
+        {
+            "contract": contract,
+            "terminal_state": state,
+            "round_trips": None,
+            "failure_reason": None,
+            "stop_reason": None,
+        }
+        for contract, state in sorted(run_summary.get("terminal_states", {}).items())
+    ]
+
+
 def build_days(audit_root: str | Path) -> tuple[dict[str, DayModel], int]:
     """Group every timed run in the audit root into per-trading-day models."""
     root = Path(audit_root)
@@ -190,7 +222,7 @@ def build_days(audit_root: str | Path) -> tuple[dict[str, DayModel], int]:
             skipped += 1
             continue
         model = days.setdefault(day, DayModel(day=day))
-        model.runs.append(run.directory)
+        model.runs.append(RunInfo(directory=run.directory, rows=_run_overview_rows(run.run_summary)))
         account_file = run_dir / "account.jsonl"
         if account_file.exists():
             model.account_snapshots[run.directory] = [
@@ -222,14 +254,55 @@ def _price(value: float | None) -> str:
     return f"{value:g}"
 
 
+def _signed(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value:+g}"
+
+
+def _gross_pnl(record: RoundRecord, contract: ContractDay) -> tuple[float | None, float | None, float | None]:
+    """Signed price diff, tick count, and gross cash PnL for one round."""
+    if not record.opens or not record.closes:
+        return None, None, None
+    diff = record.close_avg_price - record.open_avg_price
+    if record.side == "SELL":
+        diff = -diff
+    matched = min(record.open_volume, record.close_volume)
+    ticks = diff / contract.pricetick if contract.pricetick else None
+    cash = diff * matched * contract.size if contract.size else None
+    return diff, ticks, cash
+
+
+def _render_overview(model: DayModel) -> list[str]:
+    rows: list[str] = ["<h2>当日 run 总览</h2>"]
+    rows.append(
+        "<table><tr><th>run</th><th>合约</th><th>终态</th><th>轮数</th><th>失败原因</th><th>停止原因</th></tr>"
+    )
+    for run in model.runs:
+        for index, row in enumerate(run.rows):
+            rows.append(
+                "<tr>"
+                f"<td>{escape(run.directory) if index == 0 else ''}</td>"
+                f"<td>{escape(str(row['contract']))}</td>"
+                f"<td>{escape(str(row['terminal_state']))}</td>"
+                f"<td>{row['round_trips'] if row['round_trips'] is not None else '—'}</td>"
+                f"<td>{escape(str(row['failure_reason'] or '—'))}</td>"
+                f"<td>{escape(str(row['stop_reason'] or '—'))}</td>"
+                "</tr>"
+            )
+    rows.append("</table>")
+    return rows
+
+
 def render_html(model: DayModel) -> str:
-    rows: list[str] = []
+    sections: list[str] = _render_overview(model)
     for contract in model.contracts:
-        rows.append(f"<h2>{escape(contract.contract)}</h2>")
-        rows.append(
+        sections.append(f"<h2>{escape(contract.contract)}</h2>")
+        sections.append(
             "<table><tr><th>#</th><th>方向</th><th>挂单时刻</th><th>挂单价</th><th>挂单量</th>"
             "<th>成交时刻</th><th>成交价</th><th>成交量</th>"
-            "<th>平仓时刻</th><th>平仓价</th><th>平仓量</th></tr>"
+            "<th>平仓时刻</th><th>平仓价</th><th>平仓量</th>"
+            "<th>价差</th><th>tick 数</th><th>毛盈亏</th></tr>"
         )
         for index, record in enumerate(contract.rounds, 1):
             open_times = _time_of_day(record.open_first_time)
@@ -238,17 +311,19 @@ def render_html(model: DayModel) -> str:
             close_times = _time_of_day(record.close_first_time)
             if record.close_last_time != record.close_first_time:
                 close_times += f" → {_time_of_day(record.close_last_time)}"
-            rows.append(
+            diff, ticks, cash = _gross_pnl(record, contract)
+            sections.append(
                 "<tr>"
                 f"<td>{index}</td><td>{escape(record.side)}</td>"
                 f"<td>{escape(_time_of_day(record.submit_time))}</td>"
                 f"<td>{_price(record.submit_price)}</td><td>{record.submit_volume if record.submit_volume is not None else '—'}</td>"
                 f"<td>{escape(open_times)}</td><td>{_price(record.open_avg_price)}</td><td>{record.open_volume}</td>"
                 f"<td>{escape(close_times)}</td><td>{_price(record.close_avg_price)}</td><td>{record.close_volume}</td>"
+                f"<td>{_signed(diff)}</td><td>{_signed(ticks)}</td><td>{_signed(cash)}</td>"
                 "</tr>"
             )
-        rows.append("</table>")
-    body = "\n".join(rows)
+        sections.append("</table>")
+    body = "\n".join(sections)
     return (
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
         f"<title>交易日成交明细 {escape(model.day)}</title>"
@@ -258,8 +333,10 @@ def render_html(model: DayModel) -> str:
         "table{border-collapse:collapse;margin-top:8px}"
         "th,td{border:1px solid #ccc;padding:4px 10px;text-align:right;font-variant-numeric:tabular-nums}"
         "th{background:#f5f5f5}td:nth-child(2){text-align:center}"
+        ".note{color:#666;font-size:13px;margin-top:6px}"
         "</style></head><body>"
         f"<h1>交易日成交明细 · {escape(model.day)}</h1>"
+        "<p class=\"note\">毛盈亏未含手续费，按成交价与合约乘数计算。</p>"
         f"{body}"
         "</body></html>"
     )
