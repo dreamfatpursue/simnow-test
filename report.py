@@ -85,6 +85,7 @@ class RunFacts:
 class RunInfo:
     directory: str
     rows: list[dict[str, Any]] = field(default_factory=list)
+    gross_pnl: float | None = None
 
 
 @dataclass
@@ -196,7 +197,7 @@ def _build_rounds(events: list[dict[str, Any]]) -> tuple[list[RoundRecord], floa
 
 
 def _run_overview_rows(run_summary: dict[str, Any]) -> list[dict[str, Any]]:
-    rows = [
+    return [
         {
             "contract": f"{entry.get('target_symbol')}@{entry.get('target_exchange')}",
             "terminal_state": entry.get("terminal_state"),
@@ -206,18 +207,6 @@ def _run_overview_rows(run_summary: dict[str, Any]) -> list[dict[str, Any]]:
         }
         for entry in run_summary.get("contracts", [])
         if entry.get("target_symbol")
-    ]
-    if rows:
-        return rows
-    return [
-        {
-            "contract": contract,
-            "terminal_state": state,
-            "round_trips": None,
-            "failure_reason": None,
-            "stop_reason": None,
-        }
-        for contract, state in sorted(run_summary.get("terminal_states", {}).items())
     ]
 
 
@@ -272,7 +261,30 @@ def build_days(audit_root: str | Path) -> tuple[dict[str, DayModel], int]:
             skipped += 1
             continue
         model = days.setdefault(day, DayModel(day=day))
-        model.runs.append(RunInfo(directory=run.directory, rows=_run_overview_rows(run.run_summary)))
+        run_gross: float | None = None
+        run_gross_unknown = False
+        for contract, events in sorted(run.contract_events.items()):
+            rounds, pricetick, size = _build_rounds(events)
+            if not rounds:
+                continue
+            existing = next((entry for entry in model.contracts if entry.contract == contract), None)
+            if existing is None:
+                existing = ContractDay(contract=contract, pricetick=pricetick, size=size)
+                model.contracts.append(existing)
+            existing.rounds.extend(rounds)
+            for record in rounds:
+                cash = _gross_pnl(record, existing)[2]
+                if cash is None:
+                    run_gross_unknown = True
+                else:
+                    run_gross = (run_gross or 0.0) + cash
+        model.runs.append(
+            RunInfo(
+                directory=run.directory,
+                rows=_run_overview_rows(run.run_summary),
+                gross_pnl=None if run_gross_unknown else run_gross,
+            )
+        )
         account_file = run_dir / "account.jsonl"
         if account_file.exists():
             snapshots = [
@@ -284,15 +296,6 @@ def build_days(audit_root: str | Path) -> tuple[dict[str, DayModel], int]:
             funds = _build_funds(run, snapshots)
             if funds is not None:
                 model.funds.append(funds)
-        for contract, events in sorted(run.contract_events.items()):
-            rounds, pricetick, size = _build_rounds(events)
-            if not rounds:
-                continue
-            existing = next((entry for entry in model.contracts if entry.contract == contract), None)
-            if existing is None:
-                existing = ContractDay(contract=contract, pricetick=pricetick, size=size)
-                model.contracts.append(existing)
-            existing.rounds.extend(rounds)
     return days, skipped
 
 
@@ -315,15 +318,22 @@ def _signed(value: float | None) -> str:
 
 
 def _gross_pnl(record: RoundRecord, contract: ContractDay) -> tuple[float | None, float | None, float | None]:
-    """Signed price diff, tick count, and gross cash PnL for one round."""
+    """Signed price diff, tick count, and gross cash PnL for one round.
+
+    Rounds with mixed opening sides or unmatched open/close volumes have no
+    well-defined gross PnL and render as em-dashes.
+    """
     if not record.opens or not record.closes:
+        return None, None, None
+    if len({fill.side for fill in record.opens}) > 1:
+        return None, None, None
+    if record.open_volume != record.close_volume:
         return None, None, None
     diff = record.close_avg_price - record.open_avg_price
     if record.side == "SELL":
         diff = -diff
-    matched = min(record.open_volume, record.close_volume)
     ticks = diff / contract.pricetick if contract.pricetick else None
-    cash = diff * matched * contract.size if contract.size else None
+    cash = diff * record.open_volume * contract.size if contract.size else None
     return diff, ticks, cash
 
 
@@ -354,17 +364,6 @@ def _money(value: float | None) -> str:
     return f"{value:,.2f}"
 
 
-def _day_gross_pnl(model: DayModel) -> float | None:
-    total: float | None = None
-    for contract in model.contracts:
-        for record in contract.rounds:
-            _, _, cash = _gross_pnl(record, contract)
-            if cash is None:
-                continue
-            total = cash if total is None else total + cash
-    return total
-
-
 def _render_funds(model: DayModel) -> list[str]:
     rows: list[str] = ["<h2>资金汇总</h2>"]
     if not model.funds:
@@ -384,8 +383,17 @@ def _render_funds(model: DayModel) -> list[str]:
             f"<td>{escape(note)}</td>"
             "</tr>"
         )
-    day_gross = _day_gross_pnl(model)
     day_net = sum(funds.net for funds in model.funds)
+    # 推算手续费只聚合有资金快照的 run：混入无快照 run 的毛盈亏会污染口径。
+    funded_directories = {funds.directory for funds in model.funds}
+    day_gross: float | None = None
+    for info in model.runs:
+        if info.directory not in funded_directories:
+            continue
+        if info.gross_pnl is None:
+            day_gross = None
+            break
+        day_gross = (day_gross or 0.0) + info.gross_pnl
     implied_fees = day_gross - day_net if day_gross is not None else None
     rows.append(
         "<tr>"

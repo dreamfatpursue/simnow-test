@@ -472,6 +472,58 @@ class FundsSummaryTests(unittest.TestCase):
             html_text = report.render_html(days["2026-08-17"])
             self.assertIn("边界快照缺失", html_text)
 
+    def test_day_fees_only_count_runs_with_funds_snapshots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_run(
+                root,
+                "20260817T130000.000000Z-run1",
+                {"al2609@SHFE": funds_round_lines()},
+                account_lines=[
+                    {"at": 9.0, "balance": 1_000_000.0, "available": 900_000.0},
+                    {"at": 21.0, "balance": 999_820.0, "available": 899_820.0},
+                ],
+            )
+            # 同日另一个有成交但没有资金快照的 run：它的毛盈亏不得混入推算手续费。
+            write_run(
+                root,
+                "20260817T140000.000000Z-run2",
+                {
+                    "cu2609@SHFE": quoted_round(
+                        start_at=10,
+                        sequence=1,
+                        insert_time="2026-08-17T21:30:00+08:00",
+                        open_time="2026-08-17T21:30:42+08:00",
+                    )
+                },
+                account_lines=None,
+            )
+
+            days, _ = report.build_days(root)
+            html_text = report.render_html(days["2026-08-17"])
+
+            self.assertIn("推算手续费 30.00", html_text)
+            self.assertNotIn("推算手续费 180.00", html_text)
+
+    def test_volume_mismatch_round_has_no_gross_pnl(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lines = [
+                contract_line(1),
+                order_line(2, "o1", "quote-1-buy", "BUY", "2026-08-17T21:00:00+08:00", volume=2, price=23990.0),
+                trade_line(3, "o1", "quote-1-buy", "BUY", 1, 23990.0, "t1", "2026-08-17T21:00:05+08:00"),
+                trade_line(4, "o1", "quote-1-buy", "BUY", 1, 23995.0, "t2", "2026-08-17T21:00:09+08:00"),
+                order_line(5, "o2", "flatten-2", "SELL", "2026-08-17T21:00:15+08:00", volume=2, price=23960.0, status="ALLTRADED"),
+                trade_line(6, "o2", "flatten-2", "SELL", 1, 23960.0, "tf1", "2026-08-17T21:00:15+08:00"),
+            ]
+            write_run(root, "20260817T130000.000000Z-abc", {"al2609@SHFE": lines})
+
+            days, _ = report.build_days(root)
+            html_text = report.render_html(days["2026-08-17"])
+
+            self.assertNotIn("-162.5", html_text)
+            self.assertNotIn("-6.5", html_text)
+
     def test_run_without_funds_snapshots_has_no_funds_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -547,6 +599,30 @@ class RenderAndCliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertEqual(list(Path(out_tmp).iterdir()), [Path(out_tmp) / "trades-20260817.html"])
             self.assertIn("跳过 1 个缺少交易所时间戳的 run", printed)
+
+    def test_open_flag_opens_the_generated_report_in_a_browser(self) -> None:
+        with tempfile.TemporaryDirectory() as audit_tmp, tempfile.TemporaryDirectory() as out_tmp:
+            root = Path(audit_tmp)
+            write_run(
+                root,
+                "20260817T155000.000000Z-abc",
+                {"al2609@SHFE": quoted_round(start_at=10, sequence=1, insert_time="2026-08-17T23:50:00+08:00", open_time="2026-08-17T23:50:42+08:00")},
+            )
+            argv = [
+                "report.py",
+                "--audit-dir",
+                str(root),
+                "--out-dir",
+                str(out_tmp),
+                "--open",
+            ]
+            with patch("sys.argv", argv), patch("webbrowser.open") as open_mock:
+                exit_code = report.main()
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(open_mock.call_count, 1)
+            opened_uri = open_mock.call_args[0][0]
+            self.assertTrue(opened_uri.endswith("trades-20260817.html"))
 
 
 if __name__ == "__main__":

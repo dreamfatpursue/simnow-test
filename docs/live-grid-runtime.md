@@ -20,7 +20,7 @@
 - 每个合约一个独立的 `LiveGridSession`（状态机本身未变）；适配层按 `(symbol, exchange)` 路由合约/行情/委托/成交事件，订阅全部目标合约。
 - 持仓查询仍是账户级一次查询，完成事件按合约扇出；任一待查合约非零仓则整个运行拒绝（非零会话失败、零仓会话中断，不发任何委托）。
 - 报撤限额、首次成交收口、失败与超时均按会话独立；操作员中断广播至全部会话；运行在全部会话终态后结束。
-- 审计目录每次运行一个 run 目录，内含每合约子目录（`symbol@exchange`，各自 `effective_strategy.json`/`events.jsonl`/`summary.json`），run 根目录另写整份生效配置与全合约汇总 `summary.json`（`terminal_states`/`all_finished`/逐合约摘要）。
+- 审计目录每次运行一个 run 目录，内含每合约子目录（`symbol@exchange`，各自 `effective_strategy.json`/`events.jsonl`/`summary.json`），run 根目录另写整份生效配置、无凭证资金快照 `account.jsonl` 与全合约汇总 `summary.json`（`terminal_states`/`all_finished`/逐合约摘要）。
 
 自 ADR 0003 起收口语义升级为连续挂单：每轮成交平仓回零后清锚重挂，直至 `session_end_time` 收盘时刻、`max_round_trips` 轮数上限或操作员中断任一停止条件生效；摘要新增 `round_trips` 与 `stop_reason`。下文其余章节描述的单合约状态机与收口规则对每个会话逐合约、逐轮成立。
 
@@ -30,14 +30,16 @@
 | --- | --- | --- |
 | [`run.py`](../run.py) | 只读 CTP 连接命令 | 环境变量读取、登录、合约订阅、只读边界 |
 | [`run_live_grid.py`](../run_live_grid.py) | 报撤测试入口 | 预览/确认、审计目录、启动异常、Ctrl+C 收口 |
+| [`report.py`](../report.py) | 离线交易日成交明细报告 | 审计目录扫描、交易日归组、轮次重建、资金汇总 |
 | [`live_grid/config.py`](../live_grid/config.py) | 策略配置校验与哈希 | 凭证拒绝、默认值、规范化 JSON、SimNow 确认和策略身份 |
 | [`live_grid/session.py`](../live_grid/session.py) | 与 CTP 无关的确定性状态机 | 状态迁移、报价、撤换、收口、FAK、最终摘要 |
 | [`live_grid/ctp_adapter.py`](../live_grid/ctp_adapter.py) | vn.py/CTP 与状态机之间的薄适配层 | 回报转换、请求号关联、委托/撤单/查仓动作转换 |
-| [`live_grid/audit.py`](../live_grid/audit.py) | 每次运行的无凭证审计写入 | `effective_strategy.json`、`events.jsonl`、`summary.json` |
+| [`live_grid/audit.py`](../live_grid/audit.py) | 每次运行的无凭证审计写入 | `effective_strategy.json`、`events.jsonl`、`summary.json`、`account.jsonl` |
 | [`vendor/vnpy_ctp`](../vendor/vnpy_ctp) | 项目内可追踪的 CTP 依赖 | 持仓查询完成事件和原生 CTP 扩展 |
 | [`tests/test_session.py`](../tests/test_session.py) | 状态机主测试 seam | 所有关键安全路径，不需要真实 CTP |
 | [`tests/test_ctp_adapter.py`](../tests/test_ctp_adapter.py) | CTP 依赖和适配层测试 | 空/非空持仓查询、请求关联、事件/动作转换 |
 | [`tests/test_run_live_grid.py`](../tests/test_run_live_grid.py) | 入口异常审计测试 | adapter 尚未创建时摘要字段仍完整 |
+| [`tests/test_report.py`](../tests/test_report.py) | 报告工具测试 | 合成审计目录进、HTML 出；交易日归组与盈亏口径 |
 | [`.scratch/live-grid-simnow/PRD.md`](../.scratch/live-grid-simnow/PRD.md) | 功能规格 | 需求、测试决策、人工验收阶段 |
 | [`docs/adr/0001-live-grid-state-uses-ctp-callbacks.md`](adr/0001-live-grid-state-uses-ctp-callbacks.md) | 架构约束 | CTP 回报是真实状态来源，不能复用行情模拟成交 |
 
@@ -398,11 +400,12 @@ EVENT_LOG
 EVENT_TICK
 EVENT_ORDER
 EVENT_TRADE
+EVENT_ACCOUNT
 EVENT_POSITION_QUERY_COMPLETE
 EVENT_TIMER
 ```
 
-`EVENT_LOG` 用于把网关认证、结算和请求错误直接打印到终端，便于实盘启动时定位 CTP 侧问题。
+`EVENT_LOG` 用于把网关认证、结算和请求错误直接打印到终端，便于实盘启动时定位 CTP 侧问题。`EVENT_ACCOUNT` 消费网关定时器约每 4 秒轮询的资金回报，把仅含余额/可用/单调时间的资金快照写入 run 级 `account.jsonl`（资金账号属凭证，禁止落盘），供离线报告推算资金差净盈亏。
 
 每个回调都在同一个 `RLock` 保护下进入 session，并把事件、产生的动作、状态前后值写入审计。
 
@@ -491,13 +494,17 @@ late_opening_fill_after_finish
 late_flatten_fill_after_finish
 ```
 
+### 13.4 `account.jsonl`
+
+run 根目录的资金快照流水，每行是网关一次资金回报的 `at`（单调时间，与逐事件审计同时钟域）、`balance`、`available`。资金账号等凭证字段在审计边界被拒绝，永远不会出现在该文件。离线报告用它取"首个委托前最后一个快照"与"最后平仓终态后第一个快照"的资金差作为真实净盈亏，缺失边界时取最近快照并在报告标注。
+
 ## 14. 推荐交接/验收顺序
 
 ### 阶段 A：本地无凭证验证
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -q
-.venv/bin/python -m compileall -q live_grid run_live_grid.py tests vendor/vnpy_ctp/vnpy_ctp
+.venv/bin/python -m compileall -q live_grid run_live_grid.py report.py tests vendor/vnpy_ctp/vnpy_ctp
 ```
 
 当前测试 seam 不需要真实 CTP 凭证，覆盖配置确认、零仓门槛、稳定行情、盘口保护、重定锚、替换、普通/安全动作限流、部分/全部成交、晚到回报、关联查仓、FAK、拒单、超时和中断。

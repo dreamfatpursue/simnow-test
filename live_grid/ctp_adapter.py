@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .audit import AuditWriter
+from .audit import AuditWriter, MultiContractAuditWriter
 from .session import (
     Action,
     ClockEvent,
@@ -63,7 +63,7 @@ class CtpLiveGridAdapter:
         gateway_setting: dict[str, str],
         audits: list[AuditWriter],
         project_root: str | Path | None = None,
-        run_audit: Any | None = None,
+        run_audit: MultiContractAuditWriter | None = None,
     ) -> None:
         if not sessions or len(sessions) != len(audits):
             raise CtpAdapterError("适配器需要一一对应的会话与审计写入器列表")
