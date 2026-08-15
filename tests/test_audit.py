@@ -130,6 +130,38 @@ class MultiContractAuditTests(unittest.TestCase):
             self.assertNotIn("password", content)
             self.assertNotIn("auth_code", content)
 
+    def test_run_writer_records_account_snapshots_without_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            run_audit = MultiContractAuditWriter(multi_config(), root)
+
+            run_audit.record_account(balance=1_000_000.0, available=999_000.0, at=12.5)
+            run_audit.record_account(balance=1_000_050.0, available=998_950.0, at=16.5)
+
+            snapshots = [
+                json.loads(line)
+                for line in (run_audit.directory / "account.jsonl").read_text().splitlines()
+            ]
+            self.assertEqual(
+                snapshots,
+                [
+                    {"at": 12.5, "balance": 1_000_000.0, "available": 999_000.0},
+                    {"at": 16.5, "balance": 1_000_050.0, "available": 998_950.0},
+                ],
+            )
+
+            run_audit.finish({"terminal_states": {"rb2601@SHFE": "FINISHED"}})
+            with self.assertRaises(AuditError):
+                run_audit.record_account(balance=1.0, available=1.0, at=20.0)
+
+    def test_account_id_is_rejected_at_audit_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            writer = AuditWriter(config(), root)
+            with self.assertRaises(AuditError):
+                writer.record({"accountid": "SimNow8888"}, [], "PREVIEW", 0)
+            with self.assertRaises(AuditError):
+                writer.record({"account_id": "SimNow8888"}, [], "PREVIEW", 0)
+            writer.close()
+
 
 if __name__ == "__main__":
     unittest.main()

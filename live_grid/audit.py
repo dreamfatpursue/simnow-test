@@ -26,6 +26,8 @@ _FORBIDDEN_KEYS = {
     "market_front",
     "app_id",
     "auth_code",
+    "accountid",
+    "account_id",
     "产品名称",
     "用户名",
     "密码",
@@ -34,6 +36,7 @@ _FORBIDDEN_KEYS = {
     "授权编码",
     "交易服务器",
     "行情服务器",
+    "资金账号",
     "CTP_USER_ID",
     "CTP_PASSWORD",
     "CTP_BROKER_ID",
@@ -55,6 +58,12 @@ def _write_json_file(directory: Path, name: str, value: Any) -> None:
         json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def _write_json_line(handle: Any, value: Any) -> None:
+    AuditWriter._assert_safe(value)
+    handle.write(json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n")
+    handle.flush()
 
 
 class AuditWriter:
@@ -116,9 +125,7 @@ class AuditWriter:
             self._closed = True
 
     def _write_line(self, value: Any) -> None:
-        self._assert_safe(value)
-        self._events.write(json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n")
-        self._events.flush()
+        _write_json_line(self._events, value)
 
     def _ensure_open(self) -> None:
         if self._closed:
@@ -171,11 +178,18 @@ class MultiContractAuditWriter:
             for contract_config in config.contracts
         ]
         self._closed = False
+        self._account_events = self.directory.joinpath("account.jsonl").open("w", encoding="utf-8")
         _write_json_file(
             self.directory,
             "effective_strategy.json",
             {"effective": config.effective, "sha256": config.sha256},
         )
+
+    def record_account(self, *, balance: float, available: float, at: float) -> None:
+        """Append one credential-free account balance snapshot for this run."""
+        if self._closed:
+            raise AuditError("审计目录已经关闭")
+        _write_json_line(self._account_events, {"at": at, "balance": balance, "available": available})
 
     def finish(self, run_summary: dict[str, Any]) -> Path:
         if self._closed:
@@ -183,6 +197,7 @@ class MultiContractAuditWriter:
         for writer in self.writers:
             writer.close()
         _write_json_file(self.directory, "summary.json", run_summary)
+        self._account_events.close()
         self._closed = True
         return self.directory
 
@@ -190,4 +205,5 @@ class MultiContractAuditWriter:
         if not self._closed:
             for writer in self.writers:
                 writer.close()
+            self._account_events.close()
             self._closed = True

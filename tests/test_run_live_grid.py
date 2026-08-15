@@ -118,6 +118,13 @@ class ScriptedAdapter(CtpLiveGridAdapter):
             )
         )
 
+    def _account(self, balance, available):
+        self._on_account(
+            SimpleNamespace(
+                data=SimpleNamespace(accountid="SimNow8888", balance=balance, available=available)
+            )
+        )
+
     def _position_result(self, positions=()):
         self._on_position_query_complete(
             SimpleNamespace(
@@ -162,6 +169,7 @@ class ScriptedAdapter(CtpLiveGridAdapter):
             )
         )
         self._position_result()
+        self._account(1_000_000.0, 900_000.0)
 
         assert self._pump_until(
             lambda: rb.state.value == "QUOTING"
@@ -200,6 +208,7 @@ class ScriptedAdapter(CtpLiveGridAdapter):
         assert self._wait_for(lambda: len(engine.sent) >= 5)
         self._order("5", "rb2601", "SHFE", "空", "全部成交", 1, 1, 60.0)
         self._trade("5", "rb2601", "SHFE", "空", 1, 60.0, "trade-2")
+        self._account(1_000_040.0, 899_940.0)
         assert self._wait_for(lambda: rb.state.value in {"FINISHED", "FAILED"})
         self.rb_finished = True
 
@@ -398,6 +407,15 @@ class RunLiveGridTests(unittest.TestCase):
             self.assertGreater(len(ap_events.splitlines()), 0)
             self.assertNotIn("AP610", rb_events)
             self.assertNotIn("rb2601", ap_events)
+
+            account_lines = (run_directory / "account.jsonl").read_text().splitlines()
+            self.assertEqual(len(account_lines), 2)
+            snapshots = [json.loads(line) for line in account_lines]
+            self.assertEqual(snapshots[0]["balance"], 1_000_000.0)
+            self.assertEqual(snapshots[1]["available"], 899_940.0)
+            for snapshot in snapshots:
+                self.assertEqual(set(snapshot), {"at", "balance", "available"})
+            self.assertNotIn("SimNow8888", "\n".join(account_lines))
 
 
 if __name__ == "__main__":

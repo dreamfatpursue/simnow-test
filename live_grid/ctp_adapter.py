@@ -63,12 +63,14 @@ class CtpLiveGridAdapter:
         gateway_setting: dict[str, str],
         audits: list[AuditWriter],
         project_root: str | Path | None = None,
+        run_audit: Any | None = None,
     ) -> None:
         if not sessions or len(sessions) != len(audits):
             raise CtpAdapterError("适配器需要一一对应的会话与审计写入器列表")
         self.sessions = list(sessions)
         self.gateway_setting = gateway_setting
         self.audits = list(audits)
+        self.run_audit = run_audit
         self.project_root = Path(project_root or Path(__file__).resolve().parents[1]).resolve()
         self.main_engine: Any | None = None
         self._session_map: dict[tuple[str, str], LiveGridSession] = {}
@@ -93,6 +95,7 @@ class CtpLiveGridAdapter:
         try:
             from vnpy.event import EventEngine
             from vnpy.trader.event import (
+                EVENT_ACCOUNT,
                 EVENT_CONTRACT,
                 EVENT_LOG,
                 EVENT_ORDER,
@@ -113,6 +116,7 @@ class CtpLiveGridAdapter:
         engine.register(EVENT_TICK, self._on_tick)
         engine.register(EVENT_ORDER, self._on_order)
         engine.register(EVENT_TRADE, self._on_trade)
+        engine.register(EVENT_ACCOUNT, self._on_account)
         engine.register(EVENT_POSITION_QUERY_COMPLETE, self._on_position_query_complete)
         engine.register(EVENT_TIMER, self._on_timer)
         self.main_engine.connect(self.gateway_setting, GATEWAY_NAME)
@@ -232,6 +236,18 @@ class CtpLiveGridAdapter:
                     exchange_time=self._exchange_time(trade),
                 ),
                 session,
+            )
+
+    def _on_account(self, event: Any) -> None:
+        """Persist gateway account snapshots for the run; account ids are credentials."""
+        with self._lock:
+            if self.run_audit is None:
+                return
+            account = event.data
+            self.run_audit.record_account(
+                balance=float(account.balance),
+                available=float(account.available),
+                at=time.monotonic(),
             )
 
     def _on_position_query_complete(self, event: Any) -> None:

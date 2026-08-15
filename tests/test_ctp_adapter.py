@@ -89,6 +89,14 @@ class RecordingAudit:
         self.closed = True
 
 
+class RecordingRunAudit:
+    def __init__(self) -> None:
+        self.snapshots = []
+
+    def record_account(self, *, balance, available, at) -> None:
+        self.snapshots.append({"balance": balance, "available": available, "at": at})
+
+
 class FakeGateway:
     def __init__(self) -> None:
         self.query_count = 0
@@ -400,6 +408,40 @@ class CtpAdapterTests(unittest.TestCase):
         self.assertEqual(contract.size, 5.0)
         self.assertEqual(order.exchange_time, "2026-08-17T21:00:01+08:00")
         self.assertEqual(trade.exchange_time, "2026-08-17T21:03:05+08:00")
+
+    def test_account_events_become_run_level_snapshots_without_account_id(self) -> None:
+        session = LiveGridSession(config("rb2601", "SHFE"), simnow_confirmed=True)
+        run_audit = RecordingRunAudit()
+        adapter = CtpLiveGridAdapter([session], {}, [RecordingAudit()], run_audit=run_audit)
+        started = time.monotonic()
+
+        adapter._on_account(
+            SimpleNamespace(
+                data=SimpleNamespace(accountid="SimNow8888", balance=1_000_000.0, available=900_000.0)
+            )
+        )
+        adapter._on_account(
+            SimpleNamespace(
+                data=SimpleNamespace(accountid="SimNow8888", balance=1_000_050.0, available=899_900.0)
+            )
+        )
+
+        self.assertEqual(len(run_audit.snapshots), 2)
+        self.assertEqual(run_audit.snapshots[0]["balance"], 1_000_000.0)
+        self.assertEqual(run_audit.snapshots[0]["available"], 900_000.0)
+        for snapshot in run_audit.snapshots:
+            self.assertGreaterEqual(snapshot["at"], started)
+            self.assertEqual(set(snapshot), {"balance", "available", "at"})
+
+    def test_account_events_without_run_audit_are_ignored(self) -> None:
+        session = LiveGridSession(config("rb2601", "SHFE"), simnow_confirmed=True)
+        adapter = CtpLiveGridAdapter([session], {}, [RecordingAudit()])
+        adapter._on_account(
+            SimpleNamespace(
+                data=SimpleNamespace(accountid="SimNow8888", balance=1_000_000.0, available=900_000.0)
+            )
+        )
+        self.assertEqual(adapter.sessions[0].state.value, "WAITING_FOR_CONTRACT")
 
     def test_position_query_send_refusal_retries_on_timer_until_sent(self) -> None:
         class FlowControlledGateway:

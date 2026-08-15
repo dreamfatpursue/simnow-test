@@ -122,6 +122,7 @@ def main() -> int:
                 sessions=sessions,
                 gateway_setting=settings.gateway_setting(),
                 audits=audits,
+                run_audit=run_audit,
             )
             adapter.start()
             _wait_terminal(sessions)
