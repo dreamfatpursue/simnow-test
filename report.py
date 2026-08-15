@@ -88,10 +88,23 @@ class RunInfo:
 
 
 @dataclass
+class RunFunds:
+    directory: str
+    start_balance: float
+    end_balance: float
+    boundary_note: bool = False
+
+    @property
+    def net(self) -> float:
+        return self.end_balance - self.start_balance
+
+
+@dataclass
 class DayModel:
     day: str
     runs: list[RunInfo] = field(default_factory=list)
     contracts: list[ContractDay] = field(default_factory=list)
+    funds: list[RunFunds] = field(default_factory=list)
     account_snapshots: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
 
@@ -208,6 +221,43 @@ def _run_overview_rows(run_summary: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _build_funds(
+    run: RunFacts,
+    snapshots: list[dict[str, Any]],
+) -> RunFunds | None:
+    """资金差净盈亏窗口：首个委托前与最后平仓终态后的资金快照。"""
+    if not snapshots:
+        return None
+    first_submit_at: float | None = None
+    last_flatten_terminal_at: float | None = None
+    has_fill = False
+    for events in run.contract_events.values():
+        for record in events:
+            data = record["event"]["data"]
+            if record["event"]["type"] == "TradeEvent" and data.get("client_id"):
+                has_fill = True
+            if any(action.get("kind") == "submit_order" for action in record["actions"]):
+                at = record["at"]
+                if first_submit_at is None or at < first_submit_at:
+                    first_submit_at = at
+            if (
+                record["event"]["type"] == "OrderEvent"
+                and (data.get("client_id") or "").startswith("flatten-")
+                and data["status"] in {"ALLTRADED", "CANCELLED", "REJECTED"}
+            ):
+                at = record["at"]
+                if last_flatten_terminal_at is None or at > last_flatten_terminal_at:
+                    last_flatten_terminal_at = at
+    if not has_fill or first_submit_at is None or last_flatten_terminal_at is None:
+        return None
+    before = [snap for snap in snapshots if snap["at"] <= first_submit_at]
+    after = [snap for snap in snapshots if snap["at"] >= last_flatten_terminal_at]
+    boundary_note = not before or not after
+    start = before[-1]["balance"] if before else snapshots[0]["balance"]
+    end = after[0]["balance"] if after else snapshots[-1]["balance"]
+    return RunFunds(directory=run.directory, start_balance=start, end_balance=end, boundary_note=boundary_note)
+
+
 def build_days(audit_root: str | Path) -> tuple[dict[str, DayModel], int]:
     """Group every timed run in the audit root into per-trading-day models."""
     root = Path(audit_root)
@@ -225,11 +275,15 @@ def build_days(audit_root: str | Path) -> tuple[dict[str, DayModel], int]:
         model.runs.append(RunInfo(directory=run.directory, rows=_run_overview_rows(run.run_summary)))
         account_file = run_dir / "account.jsonl"
         if account_file.exists():
-            model.account_snapshots[run.directory] = [
+            snapshots = [
                 json.loads(line)
                 for line in account_file.read_text(encoding="utf-8").splitlines()
                 if line.strip()
             ]
+            model.account_snapshots[run.directory] = snapshots
+            funds = _build_funds(run, snapshots)
+            if funds is not None:
+                model.funds.append(funds)
         for contract, events in sorted(run.contract_events.items()):
             rounds, pricetick, size = _build_rounds(events)
             if not rounds:
@@ -294,8 +348,62 @@ def _render_overview(model: DayModel) -> list[str]:
     return rows
 
 
+def _money(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value:,.2f}"
+
+
+def _day_gross_pnl(model: DayModel) -> float | None:
+    total: float | None = None
+    for contract in model.contracts:
+        for record in contract.rounds:
+            _, _, cash = _gross_pnl(record, contract)
+            if cash is None:
+                continue
+            total = cash if total is None else total + cash
+    return total
+
+
+def _render_funds(model: DayModel) -> list[str]:
+    rows: list[str] = ["<h2>资金汇总</h2>"]
+    if not model.funds:
+        rows.append("<p class=\"note\">无资金快照（该交易日没有可计算资金差的成交 run）。</p>")
+        return rows
+    rows.append(
+        "<table><tr><th>run</th><th>起始资金</th><th>结束资金</th><th>真实净盈亏</th><th>备注</th></tr>"
+    )
+    for funds in model.funds:
+        note = "边界快照缺失，取最近快照" if funds.boundary_note else ""
+        rows.append(
+            "<tr>"
+            f"<td>{escape(funds.directory)}</td>"
+            f"<td>{_money(funds.start_balance)}</td>"
+            f"<td>{_money(funds.end_balance)}</td>"
+            f"<td>{_money(funds.net)}</td>"
+            f"<td>{escape(note)}</td>"
+            "</tr>"
+        )
+    day_gross = _day_gross_pnl(model)
+    day_net = sum(funds.net for funds in model.funds)
+    implied_fees = day_gross - day_net if day_gross is not None else None
+    rows.append(
+        "<tr>"
+        "<td>日合计</td>"
+        f"<td>{_money(model.funds[0].start_balance)}</td>"
+        f"<td>{_money(model.funds[-1].end_balance)}</td>"
+        f"<td>{_money(day_net)}</td>"
+        f"<td>推算手续费 {_money(implied_fees)}</td>"
+        "</tr>"
+    )
+    rows.append("</table>")
+    rows.append("<p class=\"note\">真实净盈亏已含手续费（账户资金差）；手续费为推算值（Σ毛盈亏 − 资金差）。</p>")
+    return rows
+
+
 def render_html(model: DayModel) -> str:
     sections: list[str] = _render_overview(model)
+    sections.extend(_render_funds(model))
     for contract in model.contracts:
         sections.append(f"<h2>{escape(contract.contract)}</h2>")
         sections.append(

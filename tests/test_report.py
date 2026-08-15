@@ -404,6 +404,91 @@ class GrossPnlAndOverviewTests(unittest.TestCase):
             return days["2026-08-17"]
 
 
+def funds_round_lines() -> list[dict]:
+    """One BUY round whose submit action sits at 10 and flatten terminal at 20."""
+    quote = order_line(10, "o1", "quote-1-buy", "BUY", "2026-08-17T21:00:00+08:00")
+    quote["actions"] = [
+        {
+            "type": "Action",
+            "kind": "submit_order",
+            "payload": {"client_id": "quote-1-buy", "side": "BUY", "volume": 1, "price": 23990.0},
+        }
+    ]
+    return [
+        contract_line(1),
+        quote,
+        order_line(11, "o1", "quote-1-sell", "SELL", "2026-08-17T21:00:00+08:00"),
+        trade_line(15, "o1", "quote-1-buy", "BUY", 1, 23990.0, "t1", "2026-08-17T21:00:42+08:00"),
+        order_line(20, "o2", "flatten-2", "SELL", "2026-08-17T21:01:10+08:00", price=23960.0, status="ALLTRADED"),
+        trade_line(20, "o2", "flatten-2", "SELL", 1, 23960.0, "tf1", "2026-08-17T21:01:10+08:00"),
+    ]
+
+
+class FundsSummaryTests(unittest.TestCase):
+    def test_real_net_pnl_and_implied_fees_from_balance_delta(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_run(
+                root,
+                "20260817T130000.000000Z-run1",
+                {"al2609@SHFE": funds_round_lines()},
+                account_lines=[
+                    {"at": 9.0, "balance": 1_000_000.0, "available": 900_000.0},
+                    {"at": 21.0, "balance": 999_820.0, "available": 899_820.0},
+                ],
+            )
+
+            days, _ = report.build_days(root)
+            html_text = report.render_html(days["2026-08-17"])
+
+            self.assertIn("资金汇总", html_text)
+            self.assertIn("1,000,000.00", html_text)
+            self.assertIn("999,820.00", html_text)
+            self.assertIn("-180.00", html_text)
+            self.assertIn("30.00", html_text)
+            self.assertIn("净盈亏已含手续费", html_text)
+            self.assertIn("手续费为推算值", html_text)
+
+    def test_missing_boundary_snapshot_falls_back_to_nearest_with_note(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_run(
+                root,
+                "20260817T130000.000000Z-run1",
+                {"al2609@SHFE": funds_round_lines()},
+                account_lines=[
+                    {"at": 12.0, "balance": 1_000_000.0, "available": 900_000.0},
+                    {"at": 18.0, "balance": 999_820.0, "available": 899_820.0},
+                ],
+            )
+
+            days, _ = report.build_days(root)
+
+            funds = days["2026-08-17"].funds
+            self.assertEqual(len(funds), 1)
+            self.assertEqual(funds[0].start_balance, 1_000_000.0)
+            self.assertEqual(funds[0].end_balance, 999_820.0)
+            self.assertTrue(funds[0].boundary_note)
+            html_text = report.render_html(days["2026-08-17"])
+            self.assertIn("边界快照缺失", html_text)
+
+    def test_run_without_funds_snapshots_has_no_funds_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_run(
+                root,
+                "20260817T130000.000000Z-run1",
+                {"al2609@SHFE": funds_round_lines()},
+                account_lines=None,
+            )
+
+            days, _ = report.build_days(root)
+
+            self.assertEqual(days["2026-08-17"].funds, [])
+            html_text = report.render_html(days["2026-08-17"])
+            self.assertIn("无资金快照", html_text)
+
+
 class RenderAndCliTests(unittest.TestCase):
     def test_main_writes_self_contained_html_with_round_rows(self) -> None:
         with tempfile.TemporaryDirectory() as audit_tmp, tempfile.TemporaryDirectory() as out_tmp:
