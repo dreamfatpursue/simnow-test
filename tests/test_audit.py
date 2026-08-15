@@ -5,7 +5,7 @@ from pathlib import Path
 
 from live_grid.audit import AuditError, AuditWriter, MultiContractAuditWriter
 from live_grid.config import MultiContractConfig, StrategyConfig
-from live_grid.session import Action, ClockEvent
+from live_grid.session import Action, ClockEvent, ContractEvent, TradeEvent
 
 
 def config() -> StrategyConfig:
@@ -64,6 +64,29 @@ class AuditTests(unittest.TestCase):
             with self.assertRaises(AuditError):
                 writer.record({"密码": "secret"}, [], "PREVIEW", 0)
             writer.close()
+
+    def test_exchange_time_and_contract_size_persist_in_events_log(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            writer = AuditWriter(config(), root)
+            writer.record(
+                ContractEvent("rb2601", "SHFE", 1.0, size=10.0),
+                [],
+                "WAITING_FOR_ZERO_POSITION",
+                1,
+            )
+            writer.record(
+                TradeEvent("order-1", "rb2601", "SHFE", "BUY", 1, 3410.0, "trade-1", exchange_time="2026-08-17T21:03:05+08:00"),
+                [],
+                "QUOTING",
+                2,
+            )
+            writer.finish({"terminal_state": "FINISHED", "failure_reason": None})
+
+            lines = (writer.directory / "events.jsonl").read_text().splitlines()
+            contract = json.loads(lines[0])["event"]["data"]
+            trade = json.loads(lines[1])["event"]["data"]
+            self.assertEqual(contract["size"], 10.0)
+            self.assertEqual(trade["exchange_time"], "2026-08-17T21:03:05+08:00")
 
 
 class MultiContractAuditTests(unittest.TestCase):

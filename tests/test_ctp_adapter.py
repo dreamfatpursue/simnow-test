@@ -1,12 +1,20 @@
 import importlib.util
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
 from live_grid.ctp_adapter import CtpLiveGridAdapter, verify_project_gateway
 from live_grid.config import StrategyConfig
-from live_grid.session import ClockEvent, LiveGridSession, PositionQueryCompleteEvent, TradeEvent
+from live_grid.session import (
+    ClockEvent,
+    ContractEvent,
+    LiveGridSession,
+    OrderEvent,
+    PositionQueryCompleteEvent,
+    TradeEvent,
+)
 from vnpy.trader.constant import Exchange
 from vnpy_ctp.api import THOST_FTDC_PD_Long
 from vnpy_ctp.gateway.ctp_gateway import CtpTdApi, symbol_contract_map
@@ -33,12 +41,13 @@ def make_adapter(*specs: tuple[str, str], stable_market_seconds: float = 2.0):
     return adapter, sessions, audits
 
 
-def contract_event(symbol: str, exchange: str, pricetick: float = 1.0) -> SimpleNamespace:
+def contract_event(symbol: str, exchange: str, pricetick: float = 1.0, size: float | None = None) -> SimpleNamespace:
     return SimpleNamespace(
         data=SimpleNamespace(
             symbol=symbol,
             exchange=SimpleNamespace(value=exchange),
             pricetick=pricetick,
+            size=size,
         )
     )
 
@@ -332,6 +341,65 @@ class CtpAdapterTests(unittest.TestCase):
         self.assertIsInstance(audit.events[-1][0], TradeEvent)
         self.assertEqual(audit.events[-1][0].volume, 1)
         self.assertEqual(len(engine.cancelled), 2)
+
+    def test_adapter_passes_exchange_time_and_contract_size_into_events(self) -> None:
+        adapter, sessions, audits = make_adapter(("rb2601", "SHFE"))
+        session, audit = sessions[0], audits[0]
+        adapter.main_engine.gateway.query_count = 0
+
+        adapter._on_contract(contract_event("rb2601", "SHFE", size=5.0))
+        adapter._on_position_query_complete(position_result(41))
+        now = time.monotonic()
+        adapter._on_tick(tick_event("rb2601", "SHFE"))
+        for action in session.handle(ClockEvent(now + 2.1)):
+            adapter._dispatch(action)
+
+        insert_time = datetime(2026, 8, 17, 21, 0, 1, tzinfo=timezone(timedelta(hours=8)))
+        trade_time = datetime(2026, 8, 17, 21, 3, 5, tzinfo=timezone(timedelta(hours=8)))
+        adapter._on_order(
+            SimpleNamespace(
+                data=SimpleNamespace(
+                    orderid="1",
+                    reference=None,
+                    symbol="rb2601",
+                    exchange=SimpleNamespace(value="SHFE"),
+                    direction=SimpleNamespace(value="多"),
+                    status=SimpleNamespace(value="未成交"),
+                    volume=1,
+                    traded=0,
+                    price=60,
+                    datetime=insert_time,
+                )
+            )
+        )
+        adapter._on_trade(
+            SimpleNamespace(
+                data=SimpleNamespace(
+                    orderid="1",
+                    reference=None,
+                    symbol="rb2601",
+                    exchange=SimpleNamespace(value="SHFE"),
+                    direction=SimpleNamespace(value="多"),
+                    volume=1,
+                    price=60,
+                    tradeid="trade-1",
+                    datetime=trade_time,
+                )
+            )
+        )
+
+        contract = next(
+            event for event, *_ in audit.events if isinstance(event, ContractEvent)
+        )
+        order = next(
+            event for event, *_ in reversed(audit.events) if isinstance(event, OrderEvent)
+        )
+        trade = next(
+            event for event, *_ in reversed(audit.events) if isinstance(event, TradeEvent)
+        )
+        self.assertEqual(contract.size, 5.0)
+        self.assertEqual(order.exchange_time, "2026-08-17T21:00:01+08:00")
+        self.assertEqual(trade.exchange_time, "2026-08-17T21:03:05+08:00")
 
     def test_position_query_send_refusal_retries_on_timer_until_sent(self) -> None:
         class FlowControlledGateway:

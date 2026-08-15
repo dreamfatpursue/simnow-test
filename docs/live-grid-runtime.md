@@ -224,6 +224,8 @@ stateDiagram-v2
 | `ClockEvent` | `EVENT_TIMER` | 推进稳定时间、撤单超时、FAK 超时和滚动限流窗口 |
 | `InterruptEvent` | `Ctrl+C`/adapter interrupt | 进入人工结束收口路径 |
 
+其中 `ContractEvent.size`（合约乘数）、`OrderEvent.exchange_time`（交易所报单时间）、`TradeEvent.exchange_time`（交易所成交时间）是随事件落审计的交易所事实，供离线交易日成交明细报告使用；状态机逻辑不读取它们，时间来自网关回报而非本地时钟。
+
 所有事件先经过目标合约过滤。目标不是策略 JSON 指定的 `symbol + exchange` 时，状态机不处理。
 
 ### 6.2 状态机产生的动作

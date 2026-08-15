@@ -44,6 +44,7 @@ class ContractEvent:
     symbol: str
     exchange: str
     pricetick: float
+    size: float | None = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,7 @@ class OrderEvent:
     traded: int = 0
     price: float = 0
     client_id: str | None = None
+    exchange_time: str | None = None
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,7 @@ class TradeEvent:
     price: float
     trade_id: str = ""
     client_id: str | None = None
+    exchange_time: str | None = None
 
 
 @dataclass(frozen=True)

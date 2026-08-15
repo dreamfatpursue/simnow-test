@@ -60,6 +60,48 @@ class LiveGridSessionTests(unittest.TestCase):
             "query_position",
         )
 
+    def test_exchange_time_and_contract_size_are_recorded_verbatim_in_audit_events(self) -> None:
+        session = LiveGridSession(make_config(), simnow_confirmed=True)
+        session.handle(ContractEvent("rb2601", "SHFE", 1.0, size=5.0))
+        session.handle(PositionQueryCompleteEvent("position-1", "rb2601", "SHFE", 0))
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
+        session.handle(ClockEvent(2))
+        buy = next(
+            action
+            for action in session.actions
+            if action.kind == "submit_order" and action.payload["side"] == "BUY"
+        )
+        session.handle(
+            OrderEvent(
+                "buy-1",
+                "rb2601",
+                "SHFE",
+                "BUY",
+                "NOTTRADED",
+                1,
+                client_id=buy.payload["client_id"],
+                exchange_time="2026-08-17T21:00:01+08:00",
+            )
+        )
+        session.handle(
+            TradeEvent(
+                "buy-1",
+                "rb2601",
+                "SHFE",
+                "BUY",
+                1,
+                60,
+                "trade-1",
+                exchange_time="2026-08-17T21:03:05+08:00",
+            )
+        )
+        contract_record = next(record for record in session.audit_events if record["event"]["type"] == "ContractEvent")
+        order_record = next(record for record in session.audit_events if record["event"]["type"] == "OrderEvent")
+        trade_record = next(record for record in session.audit_events if record["event"]["type"] == "TradeEvent")
+        self.assertEqual(contract_record["event"]["data"]["size"], 5.0)
+        self.assertEqual(order_record["event"]["data"]["exchange_time"], "2026-08-17T21:00:01+08:00")
+        self.assertEqual(trade_record["event"]["data"]["exchange_time"], "2026-08-17T21:03:05+08:00")
+
     def test_no_quote_until_contract_position_and_two_second_stable_market(self) -> None:
         config = make_config()
         session = LiveGridSession(config, simnow_confirmed=True)

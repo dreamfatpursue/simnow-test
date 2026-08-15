@@ -137,7 +137,15 @@ class CtpLiveGridAdapter:
         session = self._session_map.get(key)
         if session is None:
             return
-        self._consume(ContractEvent(contract.symbol, contract.exchange.value, contract.pricetick), session)
+        self._consume(
+            ContractEvent(
+                contract.symbol,
+                contract.exchange.value,
+                contract.pricetick,
+                size=getattr(contract, "size", None),
+            ),
+            session,
+        )
         if self.main_engine is None or key in self._subscribed:
             return
         self._subscribed.add(key)
@@ -172,6 +180,11 @@ class CtpLiveGridAdapter:
                 session,
             )
 
+    @staticmethod
+    def _exchange_time(data: Any) -> str | None:
+        reported = getattr(data, "datetime", None)
+        return reported.isoformat() if reported is not None else None
+
     def _on_order(self, event: Any) -> None:
         with self._lock:
             order = event.data
@@ -194,6 +207,7 @@ class CtpLiveGridAdapter:
                     traded=int(order.traded),
                     price=order.price,
                     client_id=client_id,
+                    exchange_time=self._exchange_time(order),
                 ),
                 session,
             )
@@ -215,6 +229,7 @@ class CtpLiveGridAdapter:
                     price=trade.price,
                     trade_id=trade.tradeid,
                     client_id=client_id,
+                    exchange_time=self._exchange_time(trade),
                 ),
                 session,
             )
