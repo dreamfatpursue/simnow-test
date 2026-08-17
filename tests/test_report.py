@@ -205,6 +205,26 @@ class BuildDaysTests(unittest.TestCase):
             record = days["2026-08-17"].contracts[0].rounds[0]
             self.assertEqual(record.submit_time, "2026-08-17T21:00:00+08:00")
 
+    def test_submit_time_uses_earliest_report_time_across_order_callbacks(self) -> None:
+        """实盘序列：同一委托的录入确认回报可能比撮合回报的时间戳晚 1 秒。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lines = [
+                contract_line(1),
+                order_line(2, "o1", "quote-1-buy", "BUY", None),
+                order_line(3, "o1", "quote-1-buy", "BUY", "2026-08-17T09:55:33+08:00"),
+                order_line(4, "o1", "quote-1-buy", "BUY", "2026-08-17T09:55:32+08:00"),
+                trade_line(5, "o1", "quote-1-buy", "BUY", 1, 7852.0, "t1", "2026-08-17T09:55:32+08:00"),
+                order_line(6, "o2", "flatten-2", "SELL", "2026-08-17T09:55:32+08:00", price=7851.0, status="ALLTRADED"),
+                trade_line(7, "o2", "flatten-2", "SELL", 1, 7851.0, "tf1", "2026-08-17T09:55:32+08:00"),
+            ]
+            write_run(root, "20260817T130000.000000Z-abc", {"al2609@SHFE": lines})
+
+            days, _ = report.build_days(root)
+
+            record = days["2026-08-17"].contracts[0].rounds[0]
+            self.assertEqual(record.submit_time, "2026-08-17T09:55:32+08:00")
+
     def test_one_round_record_from_a_timed_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

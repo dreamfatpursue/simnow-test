@@ -164,8 +164,12 @@ def _build_rounds(events: list[dict[str, Any]]) -> tuple[list[RoundRecord], floa
             client_id = data.get("client_id")
             if client_id:
                 existing = submissions.get(client_id)
-                # vnpy 本地先推一条无交易所时间的 SUBMITTING；以带 InsertTime 的回报为准。
-                if existing is None or (not existing.get("exchange_time") and data.get("exchange_time")):
+                new_time = data.get("exchange_time")
+                # 同一委托的录入确认回报可能比撮合回报晚 1 秒：挂单时刻取全部回报中最早的时间。
+                if (
+                    existing is None
+                    or (new_time and (not existing.get("exchange_time") or new_time < existing["exchange_time"]))
+                ):
                     submissions[client_id] = data
         elif event_type == "TradeEvent":
             client_id = data.get("client_id")
