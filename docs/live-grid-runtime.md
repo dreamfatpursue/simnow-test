@@ -167,6 +167,9 @@ confirm-simnow = true
 | `cancel_timeout_seconds` | `10` | 收口撤单等待终态的上限 |
 | `flatten_timeout_seconds` | `3` | 一次受限 FAK 收口的时间上限 |
 | `flatten_adverse_ticks` | `10` | FAK 允许相对初始可执行价的不利方向最大偏移 |
+| `max_round_trips` | `10` | 单次运行完成的往返轮数上限 |
+| `session_end_time` | `""` | 收盘停止时刻（HH:MM，本地时钟，支持跨午夜） |
+| `closing_wait_seconds` | `1` | 非负数，价差窗口时长；首次成交后对侧报价继续挂满该时长，0 表示不留窗口直接平仓 |
 
 配置还会拒绝：凭证字段、未知字段、空 symbol、非法交易所、非正数和非有限数。策略文件不应出现账号、密码、前置地址、AppID 或授权码。
 
@@ -195,14 +198,19 @@ stateDiagram-v2
     WAITING_FOR_STABLE_QUOTE --> QUOTING: 有效盘口连续稳定 2 秒
     QUOTING --> REPLACING: 盘口异常或越带确认完成
     REPLACING --> WAITING_FOR_STABLE_QUOTE: 旧订单全部收到终态回报
-    QUOTING --> CLOSING_CANCELS: 首次部分/全部成交
-    REPLACING --> CLOSING_CANCELS: 首次部分/全部成交
+    QUOTING --> CLOSING_WAIT: 首次部分/全部成交
+    REPLACING --> CLOSING_WAIT: 首次部分/全部成交
+    CLOSING_WAIT --> CLOSING_RECONCILE: 窗口内对侧成交且全部委托终态
+    CLOSING_WAIT --> CLOSING_CANCELS: 窗口内对侧部分成交撤余量 / 操作者中断
+    CLOSING_WAIT --> FLATTENING: 窗口超时按本轮净仓直接 FAK
     QUOTING --> CLOSING_CANCELS: 操作者中断
     CLOSING_CANCELS --> CLOSING_RECONCILE: 撤单全部终态或 10 秒超时
     CLOSING_RECONCILE --> FLATTENING: 关联查仓确认净仓非零
     CLOSING_RECONCILE --> FINISHED: 关联查仓确认净仓为零
+    FLATTENING --> CLOSING_CANCELS: 净仓归零后撤剩余对侧委托
+    FLATTENING --> CLOSING_RECONCILE: 平仓终态且无剩余委托
     FLATTENING --> FLATTENING: FAK 终态后仍有残仓
-    FLATTENING --> FINISHED: 净仓为零且所有平仓单终态
+    FLATTENING --> FINISHED: 收尾对账确认净仓为零
     CLOSING_CANCELS --> FAILED: 收口过程中不可恢复错误
     CLOSING_RECONCILE --> FAILED: 查仓失败或无可执行盘口
     FLATTENING --> FAILED: 拒单、3 秒超时或仍有残仓
@@ -308,37 +316,42 @@ LastPrice 超出当前 band 后，不会立即替换：
 
 普通动作限额是滚动一分钟 60 次，普通报价提交和重定锚撤单都会计入。达到上限时只产生审计警告并暂停普通报价；成交收口、人工中断和盘口保护所需的安全撤单不因普通限流而静默跳过。
 
-## 9. 首次成交后的单次收口
+## 9. 首次成交后的价差窗口收口
 
-### 9.1 触发条件
+### 9.1 触发条件与等待窗口
 
 在 `QUOTING` 或 `REPLACING` 中，只要目标开仓单出现第一次 CTP 成交：
 
 - 部分成交和全部成交一视同仁；
-- 停止新增开仓报价；
-- 记录 `first_fill`；
-- 进入 `CLOSING_CANCELS`；
-- 对所有剩余测试订单发起安全撤单。
+- 停止新增开仓报价，记录 `first_fill`；
+- 进入 `CLOSING_WAIT`，**不撤销对侧报价**，对侧继续挂满 `closing_wait_seconds`（默认 1 秒，0 表示不留窗口）。
 
 价格穿过限价但没有 `TradeEvent`，不会触发这条路径。
 
-订单回报中的累计 `traded` 和成交回报中的 `TradeEvent.volume` 都会参与成交量更新；成交回报按 `trade_id` 去重。晚到的开仓订单/成交回报会在收口、平仓甚至终态后继续校正最终净仓，不能被忽略。
+订单回报中的累计 `traded` 和成交回报中的 `TradeEvent.volume` 都会参与成交量更新；成交回报按 `trade_id` 去重，窗口记账按每个委托的已入账差额累计，同一成交的两个回报只计一次。晚到的开仓订单/成交回报会在窗口、平仓甚至终态后继续校正最终净仓，不能被忽略。
 
-### 9.2 撤单终态和超时
+### 9.2 窗口的两条出口
 
-`CLOSING_CANCELS` 会持续等待所有已知订单和待绑定订单的 CTP 终态：
+- **窗口内对侧成交（价差完成）**：立即结束窗口，不等满时长。若全部委托自然终态，直接发起关联持仓查仓；若对侧只是部分成交，先撤掉剩余委托再查仓。查仓净仓为零即本轮完成，全程不产生任何 FAK。
+- **窗口超时**：按本轮开仓净仓（窗口记账）直接进入受限 FAK 平仓，**平仓终态后**才撤销对侧报价，全部委托终态后发起收尾关联持仓查仓。窗口内同一委托的补成交会实时加大超时平仓量。
+
+两条出口都以"全部委托终态 + 关联持仓查仓净仓为零"收尾；一轮结束不遗留委托、不遗留仓位。查仓失败即净仓未知，沿用失败路径并清空记账净仓。
+
+### 9.3 撤单终态和超时
+
+`CLOSING_CANCELS`（窗口内中断、对侧部分成交撤余量、平仓后撤对侧）会持续等待所有已知订单和待绑定订单的 CTP 终态：
 
 - 全部收到 `ALLTRADED`、`CANCELLED` 或 `REJECTED`：记录 `cancellation_terminal=true`，发起新的 closing 持仓查询；
 - 超过 `cancel_timeout_seconds`，默认 10 秒：记录 `cancel_timeout` 和 `cancellation_terminal=false`，仍然发起关联持仓查询，不恢复报价。
 
 必要的安全撤单每次时钟事件都会重试。超时并不代表可以猜测仓位或直接断开连接。
 
-### 9.3 关联持仓查询
+### 9.4 关联持仓查询
 
 closing query 必须匹配本次收口发起的 `closing_position_request_id`：
 
 - request id 不匹配：忽略，不能启动平仓；
-- 查询错误：`FAILED`，原因 `closing_position_query_failed`；
+- 查询错误：`FAILED`，原因 `closing_position_query_failed`，净仓记为未知；
 - 净仓为 0：根据此前是否有失败原因，进入 `FINISHED` 或 `FAILED`；
 - 净仓非零：进入 `FLATTENING`。
 
@@ -372,6 +385,7 @@ adapter 的 `interrupt()` 只向 session 注入 `InterruptEvent`，不会立即�
 
 - `WAITING_FOR_CONTRACT` / `WAITING_FOR_ZERO_POSITION`：尚未证明零仓，直接失败，原因 `interrupted_before_zero_position`；
 - `WAITING_FOR_STABLE_QUOTE`：还没有开仓，可安全结束；
+- `CLOSING_WAIT`：窗口期间中断，立即结束窗口并撤全部委托，走查仓、必要时 FAK 的人工结束收口；
 - `QUOTING` / `REPLACING`：进入与首次成交相同的撤单、查仓、必要时 FAK 平仓路径；
 - 已在 closing/flattening：继续等待已有收口链路；
 - 终态：不重复处理。

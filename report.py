@@ -81,6 +81,15 @@ class RoundRecord:
             return None
         return self.closes[-1].at - self.opens[0].at
 
+    @property
+    def ending(self) -> str:
+        """本轮结束方式：价差完成、FAK 平仓或未平仓。"""
+        if self.closes:
+            return "FAK 平仓"
+        if len({fill.side for fill in self.opens}) > 1:
+            return "价差完成"
+        return "未平仓"
+
 
 @dataclass
 class ContractDay:
@@ -395,15 +404,28 @@ def _gross_pnl(record: RoundRecord, contract: ContractDay) -> tuple[float | None
     """Signed price diff, tick count, and gross cash PnL for one round.
 
     Rounds with mixed opening sides or unmatched open/close volumes have no
-    well-defined gross PnL and render as em-dashes.
+    well-defined gross PnL and render as em-dashes. 价差完成轮按两侧成交均价计价差。
     """
-    if not record.opens or not record.closes:
+    if not record.opens:
         return None, None, None
-    if len({fill.side for fill in record.opens}) > 1:
-        return None, None, None
-    if record.open_volume != record.close_volume:
-        return None, None, None
-    diff = record.close_avg_price - record.open_avg_price
+    if record.closes:
+        if len({fill.side for fill in record.opens}) > 1 or record.open_volume != record.close_volume:
+            return None, None, None
+        diff = record.close_avg_price - record.open_avg_price
+    else:
+        buys = [fill for fill in record.opens if fill.side == "BUY"]
+        sells = [fill for fill in record.opens if fill.side == "SELL"]
+        if not buys or not sells:
+            return None, None, None
+        matched = min(sum(f.volume for f in buys), sum(f.volume for f in sells))
+        if matched <= 0:
+            return None, None, None
+        buy_avg = _weighted_price(buys)
+        sell_avg = _weighted_price(sells)
+        diff = sell_avg - buy_avg
+        if contract.size:
+            return diff, diff / contract.pricetick if contract.pricetick else None, diff * matched * contract.size
+        return diff, diff / contract.pricetick if contract.pricetick else None, None
     if record.side == "SELL":
         diff = -diff
     ticks = diff / contract.pricetick if contract.pricetick else None
@@ -495,7 +517,7 @@ def render_html(model: DayModel) -> str:
             "<table><tr><th>#</th><th>方向</th><th>挂单时刻</th><th>挂单价</th><th>挂单量</th>"
             "<th>成交时刻</th><th>成交价</th><th>成交量</th>"
             "<th>平仓时刻</th><th>平仓价</th><th>平仓量</th>"
-            "<th>挂单→成交</th><th>成交→平仓</th><th>价差</th><th>tick 数</th><th>毛盈亏</th></tr>"
+            "<th>挂单→成交</th><th>成交→平仓</th><th>结束方式</th><th>价差</th><th>tick 数</th><th>毛盈亏</th></tr>"
         )
         for index, record in enumerate(contract.rounds, 1):
             open_times = _time_of_day(record.open_first_time)
@@ -513,6 +535,7 @@ def render_html(model: DayModel) -> str:
                 f"<td>{escape(open_times)}</td><td>{_price(record.open_avg_price)}</td><td>{record.open_volume}</td>"
                 f"<td>{escape(close_times)}</td><td>{_price(record.close_avg_price)}</td><td>{record.close_volume}</td>"
                 f"<td>{_seconds(record.wait_seconds)}</td><td>{_seconds(record.hold_seconds)}</td>"
+                f"<td>{escape(record.ending)}</td>"
                 f"<td>{_signed(diff)}</td><td>{_signed(ticks)}</td><td>{_signed(cash)}</td>"
                 "</tr>"
             )

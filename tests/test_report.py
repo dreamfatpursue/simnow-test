@@ -500,6 +500,46 @@ def funds_round_lines() -> list[dict]:
     ]
 
 
+class EndingAndSpreadPnlTests(unittest.TestCase):
+    def test_spread_completed_round_shows_ending_and_spread_pnl(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lines = [
+                contract_line(1),
+                order_line(2, "o1", "quote-1-buy", "BUY", "2026-08-17T21:00:00+08:00"),
+                order_line(3, "o1", "quote-1-sell", "SELL", "2026-08-17T21:00:00+08:00", price=7862.0),
+                trade_line(4, "o1", "quote-1-buy", "BUY", 1, 7852.0, "t1", "2026-08-17T21:00:05+08:00"),
+                trade_line(5, "o1", "quote-1-sell", "SELL", 1, 7862.0, "t2", "2026-08-17T21:00:42+08:00"),
+            ]
+            write_run(root, "20260817T130000.000000Z-abc", {"al2609@SHFE": lines})
+
+            days, _ = report.build_days(root)
+
+            record = days["2026-08-17"].contracts[0].rounds[0]
+            self.assertEqual(record.ending, "价差完成")
+            html_text = report.render_html(days["2026-08-17"])
+            self.assertIn("结束方式", html_text)
+            self.assertIn("价差完成", html_text)
+            # 价差 7862-7852=10 元/吨 × 5 吨/手 = +50（夹具乘数为 5）。
+            self.assertIn("+50", html_text)
+
+    def test_flattened_round_shows_fak_ending(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_run(
+                root,
+                "20260817T130000.000000Z-abc",
+                {"al2609@SHFE": quoted_round(start_at=10, sequence=1, insert_time="2026-08-17T21:00:00+08:00", open_time="2026-08-17T21:00:42+08:00")},
+            )
+
+            days, _ = report.build_days(root)
+
+            record = days["2026-08-17"].contracts[0].rounds[0]
+            self.assertEqual(record.ending, "FAK 平仓")
+            html_text = report.render_html(days["2026-08-17"])
+            self.assertIn("FAK 平仓", html_text)
+
+
 class FundsSummaryTests(unittest.TestCase):
     def test_real_net_pnl_and_implied_fees_from_balance_delta(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
