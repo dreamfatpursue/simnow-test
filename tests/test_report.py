@@ -500,7 +500,54 @@ def funds_round_lines() -> list[dict]:
     ]
 
 
+def spread_round_lines(start_at: float, sequence: int, insert_time: str) -> list[dict]:
+    """一轮价差完成：同一对挂单两侧都成交，无平仓。"""
+    return [
+        order_line(start_at + 1, f"o{sequence}-buy", f"quote-{sequence}-buy", "BUY", insert_time),
+        order_line(start_at + 1, f"o{sequence}-sell", f"quote-{sequence}-sell", "SELL", insert_time, price=7862.0),
+        trade_line(start_at + 2, f"o{sequence}-buy", f"quote-{sequence}-buy", "BUY", 1, 7852.0, f"t{sequence}b", "2026-08-17T21:00:05+08:00"),
+        trade_line(start_at + 3, f"o{sequence}-sell", f"quote-{sequence}-sell", "SELL", 1, 7862.0, f"t{sequence}s", "2026-08-17T21:00:42+08:00"),
+    ]
+
+
 class EndingAndSpreadPnlTests(unittest.TestCase):
+    def test_consecutive_spread_rounds_are_not_merged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lines = [contract_line(1)]
+            lines += spread_round_lines(10, 1, "2026-08-17T21:00:00+08:00")
+            lines += spread_round_lines(30, 3, "2026-08-17T21:10:00+08:00")
+            write_run(root, "20260817T130000.000000Z-abc", {"al2609@SHFE": lines})
+
+            days, _ = report.build_days(root)
+
+            rounds = days["2026-08-17"].contracts[0].rounds
+            self.assertEqual(len(rounds), 2)
+            self.assertEqual([record.ending for record in rounds], ["价差完成", "价差完成"])
+            self.assertEqual(rounds[0].open_volume, 2)
+            self.assertEqual(rounds[1].open_volume, 2)
+
+    def test_spread_round_followed_by_flattened_round_stays_separate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lines = [contract_line(1)]
+            lines += spread_round_lines(10, 1, "2026-08-17T21:00:00+08:00")
+            lines += quoted_round(
+                start_at=30,
+                sequence=3,
+                insert_time="2026-08-17T21:10:00+08:00",
+                open_time="2026-08-17T21:10:42+08:00",
+            )
+            write_run(root, "20260817T130000.000000Z-abc", {"al2609@SHFE": lines})
+
+            days, _ = report.build_days(root)
+
+            rounds = days["2026-08-17"].contracts[0].rounds
+            self.assertEqual(len(rounds), 2)
+            self.assertEqual([record.ending for record in rounds], ["价差完成", "FAK 平仓"])
+            self.assertEqual(rounds[0].close_volume, 0)
+            self.assertEqual(rounds[1].close_volume, 1)
+
     def test_spread_completed_round_shows_ending_and_spread_pnl(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

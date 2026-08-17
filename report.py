@@ -174,6 +174,16 @@ def _run_day(run: RunFacts) -> str | None:
     return earliest[:10] if earliest else None
 
 
+def _quote_sequence(client_id: str) -> int | None:
+    parts = client_id.split("-")
+    if len(parts) != 3 or parts[0] != "quote":
+        return None
+    try:
+        return int(parts[1])
+    except ValueError:
+        return None
+
+
 def _build_rounds(events: list[dict[str, Any]]) -> tuple[list[RoundRecord], float | None, float | None]:
     submissions: dict[str, dict[str, Any]] = {}
     submit_ats: dict[str, float] = {}
@@ -226,9 +236,15 @@ def _build_rounds(events: list[dict[str, Any]]) -> tuple[list[RoundRecord], floa
             )
     rounds: list[RoundRecord] = []
     current: RoundRecord | None = None
+    current_sequence: int | None = None
     for fill in fills:
         if fill.client_id.startswith("quote-"):
-            if current is not None and current.closes:
+            sequence = _quote_sequence(fill.client_id)
+            # 轮次边界：上一轮已有平仓，或成交来自另一对挂单（新报价对/迟到成交）。
+            if current is not None and (
+                current.closes
+                or (sequence is not None and current_sequence is not None and sequence != current_sequence)
+            ):
                 current = None
             if current is None:
                 submission = submissions.get(fill.client_id, {})
@@ -239,6 +255,7 @@ def _build_rounds(events: list[dict[str, Any]]) -> tuple[list[RoundRecord], floa
                     submit_volume=submission.get("volume"),
                     submit_at=submit_ats.get(fill.client_id),
                 )
+                current_sequence = sequence
                 rounds.append(current)
             current.opens.append(fill)
         elif fill.client_id.startswith("flatten-"):
