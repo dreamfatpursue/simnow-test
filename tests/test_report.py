@@ -252,6 +252,14 @@ class BuildDaysTests(unittest.TestCase):
             self.assertEqual(record.close_first_time, "2026-08-17T23:51:10+08:00")
             self.assertEqual(record.close_avg_price, 23960.0)
             self.assertEqual(record.close_volume, 1)
+            self.assertAlmostEqual(record.wait_seconds, 1.0)
+            self.assertAlmostEqual(record.hold_seconds, 2.0)
+            html_text = report.render_html(days["2026-08-17"])
+            self.assertIn("挂单→成交", html_text)
+            self.assertIn("成交→平仓", html_text)
+            self.assertIn("1.0s", html_text)
+            self.assertIn("2.0s", html_text)
+            self.assertIn("两个间隔列按审计单调钟毫秒精度计算", html_text)
 
     def test_night_session_fill_groups_by_exchange_trading_day(self) -> None:
         """The gateway encodes the trading day in the date part, ahead of the calendar day."""

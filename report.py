@@ -20,6 +20,7 @@ class Fill:
     volume: int
     price: float
     exchange_time: str
+    at: float = 0.0
 
 
 @dataclass
@@ -30,6 +31,7 @@ class RoundRecord:
     submit_time: str | None
     submit_price: float | None
     submit_volume: int | None
+    submit_at: float | None = None
     opens: list[Fill] = field(default_factory=list)
     closes: list[Fill] = field(default_factory=list)
 
@@ -64,6 +66,20 @@ class RoundRecord:
     @property
     def close_last_time(self) -> str | None:
         return self.closes[-1].exchange_time if self.closes else None
+
+    @property
+    def wait_seconds(self) -> float | None:
+        """挂单到成交的等待，按审计单调钟毫秒精度计算。"""
+        if self.submit_at is None or not self.opens:
+            return None
+        return self.opens[0].at - self.submit_at
+
+    @property
+    def hold_seconds(self) -> float | None:
+        """首次成交到最后平仓的持仓时长，按审计单调钟毫秒精度计算。"""
+        if not self.opens or not self.closes:
+            return None
+        return self.closes[-1].at - self.opens[0].at
 
 
 @dataclass
@@ -151,18 +167,32 @@ def _run_day(run: RunFacts) -> str | None:
 
 def _build_rounds(events: list[dict[str, Any]]) -> tuple[list[RoundRecord], float | None, float | None]:
     submissions: dict[str, dict[str, Any]] = {}
+    submit_ats: dict[str, float] = {}
     fills: list[Fill] = []
     pricetick: float | None = None
     size: float | None = None
     for record in events:
+        at = record["at"]
         event_type = record["event"]["type"]
         data = record["event"]["data"]
+        for action in record["actions"]:
+            if _action_kind(action) != "submit_order":
+                continue
+            payload = (action.get("data") or {}).get("payload") or action.get("payload") or {}
+            action_client = payload.get("client_id")
+            if action_client:
+                previous = submit_ats.get(action_client)
+                if previous is None or at < previous:
+                    submit_ats[action_client] = at
         if event_type == "ContractEvent":
             pricetick = data["pricetick"]
             size = data.get("size")
         elif event_type == "OrderEvent":
             client_id = data.get("client_id")
             if client_id:
+                previous = submit_ats.get(client_id)
+                if previous is None or at < previous:
+                    submit_ats[client_id] = at
                 existing = submissions.get(client_id)
                 new_time = data.get("exchange_time")
                 # 同一委托的录入确认回报可能比撮合回报晚 1 秒：挂单时刻取全部回报中最早的时间。
@@ -182,6 +212,7 @@ def _build_rounds(events: list[dict[str, Any]]) -> tuple[list[RoundRecord], floa
                     volume=int(data["volume"]),
                     price=float(data["price"]),
                     exchange_time=data["exchange_time"],
+                    at=at,
                 )
             )
     rounds: list[RoundRecord] = []
@@ -197,12 +228,19 @@ def _build_rounds(events: list[dict[str, Any]]) -> tuple[list[RoundRecord], floa
                     submit_time=submission.get("exchange_time"),
                     submit_price=submission.get("price"),
                     submit_volume=submission.get("volume"),
+                    submit_at=submit_ats.get(fill.client_id),
                 )
                 rounds.append(current)
             current.opens.append(fill)
         elif fill.client_id.startswith("flatten-"):
             if current is None:
-                current = RoundRecord(side=fill.side, submit_time=None, submit_price=None, submit_volume=None)
+                current = RoundRecord(
+                    side=fill.side,
+                    submit_time=None,
+                    submit_price=None,
+                    submit_volume=None,
+                    submit_at=submit_ats.get(fill.client_id),
+                )
                 rounds.append(current)
             current.closes.append(fill)
     return rounds, pricetick, size
@@ -341,6 +379,12 @@ def _price(value: float | None) -> str:
     return f"{value:g}"
 
 
+def _seconds(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value:.1f}s"
+
+
 def _signed(value: float | None) -> str:
     if value is None:
         return "—"
@@ -451,7 +495,7 @@ def render_html(model: DayModel) -> str:
             "<table><tr><th>#</th><th>方向</th><th>挂单时刻</th><th>挂单价</th><th>挂单量</th>"
             "<th>成交时刻</th><th>成交价</th><th>成交量</th>"
             "<th>平仓时刻</th><th>平仓价</th><th>平仓量</th>"
-            "<th>价差</th><th>tick 数</th><th>毛盈亏</th></tr>"
+            "<th>挂单→成交</th><th>成交→平仓</th><th>价差</th><th>tick 数</th><th>毛盈亏</th></tr>"
         )
         for index, record in enumerate(contract.rounds, 1):
             open_times = _time_of_day(record.open_first_time)
@@ -468,6 +512,7 @@ def render_html(model: DayModel) -> str:
                 f"<td>{_price(record.submit_price)}</td><td>{record.submit_volume if record.submit_volume is not None else '—'}</td>"
                 f"<td>{escape(open_times)}</td><td>{_price(record.open_avg_price)}</td><td>{record.open_volume}</td>"
                 f"<td>{escape(close_times)}</td><td>{_price(record.close_avg_price)}</td><td>{record.close_volume}</td>"
+                f"<td>{_seconds(record.wait_seconds)}</td><td>{_seconds(record.hold_seconds)}</td>"
                 f"<td>{_signed(diff)}</td><td>{_signed(ticks)}</td><td>{_signed(cash)}</td>"
                 "</tr>"
             )
@@ -485,7 +530,8 @@ def render_html(model: DayModel) -> str:
         ".note{color:#666;font-size:13px;margin-top:6px}"
         "</style></head><body>"
         f"<h1>交易日成交明细 · {escape(model.day)}</h1>"
-        "<p class=\"note\">毛盈亏未含手续费，按成交价与合约乘数计算。</p>"
+        "<p class=\"note\">毛盈亏未含手续费，按成交价与合约乘数计算。"
+        "时刻列为交易所秒级时间戳（SimNow 可能带 ±1 秒抖动）；两个间隔列按审计单调钟毫秒精度计算。</p>"
         f"{body}"
         "</body></html>"
     )
