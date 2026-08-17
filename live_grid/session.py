@@ -370,7 +370,7 @@ class LiveGridSession:
             # 上一轮撤单竞速失败的迟到成交：立即按新一轮收口处理（净仓以对账查询为准）。
             self._enter_closing("late_fill", order=order, volume=traded_delta)
         elif traded_delta > 0 and self.state == SessionState.CLOSING_WAIT:
-            self._apply_window_fill(order, traded_delta)
+            self._apply_window_fill(order)
         elif traded_delta > 0 and self.state in {
             SessionState.CLOSING_RECONCILE,
             SessionState.FLATTENING,
@@ -441,7 +441,7 @@ class LiveGridSession:
                 trade_id=event.trade_id,
             )
         elif self.state == SessionState.CLOSING_WAIT:
-            self._apply_window_fill(order, event.volume)
+            self._apply_window_fill(order)
         elif self.state in {
             SessionState.CLOSING_RECONCILE,
             SessionState.FLATTENING,
@@ -716,7 +716,7 @@ class LiveGridSession:
         self.state = SessionState.CLOSING_WAIT
         self._window_started_at = self._now
         self._round_has_fill = True
-        self._round_open_net += volume if order.side == "BUY" else -volume
+        self._account_window_fill(order)
         self.first_fill = {
             "order_id": order.order_id,
             "client_id": order.client_id,
@@ -727,11 +727,19 @@ class LiveGridSession:
         }
         self.final_net_position = None
 
-    def _apply_window_fill(self, order: _Order, volume: int) -> None:
-        """窗口期间的报价成交：计入本轮净仓；对侧成交则立即结束窗口。"""
-        self._round_open_net += volume if order.side == "BUY" else -volume
-        if self._is_opposite_of_first_fill(order):
+    def _apply_window_fill(self, order: _Order) -> None:
+        """窗口期间的报价成交：按已入账差额计入本轮净仓；对侧成交立即结束窗口。"""
+        if self._account_window_fill(order) and self._is_opposite_of_first_fill(order):
             self._cancel_remaining_and_reconcile()
+
+    def _account_window_fill(self, order: _Order) -> int:
+        """同一成交的委托/成交回报只计一次；返回本次新计入的量。"""
+        delta = order.traded - order.accounted_opening_traded
+        if delta <= 0:
+            return 0
+        order.accounted_opening_traded = order.traded
+        self._round_open_net += delta if order.side == "BUY" else -delta
+        return delta
 
     def _is_opposite_of_first_fill(self, order: _Order) -> bool:
         first_id = (self.first_fill or {}).get("client_id") or ""
@@ -992,7 +1000,7 @@ class LiveGridSession:
         self.final_net_position += volume if order.side == "BUY" else -volume
         if self.state == SessionState.FLATTENING and self.final_net_position == 0:
             if self._flatten_client_id is None:
-                self._finish_or_fail()
+                self._cancel_remaining_and_reconcile()
             else:
                 self._cancel_all(safety=True)
         elif self.state == SessionState.FINISHED:
