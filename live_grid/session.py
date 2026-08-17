@@ -765,6 +765,9 @@ class LiveGridSession:
 
     def _cancel_remaining_and_reconcile(self) -> None:
         """撤掉剩余委托（对侧报价等），全部终态后对账净仓收尾。"""
+        if self.state in {SessionState.FINISHED, SessionState.FAILED}:
+            # 已终态的会话（如平仓拒单失败）不得被重复回报复活回收口状态。
+            return
         if self._active_orders() or self._pending_clients:
             self.state = SessionState.CLOSING_CANCELS
             self._closing_started_at = self._now

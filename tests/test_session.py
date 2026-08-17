@@ -308,6 +308,26 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 0))
         self.assertEqual(session.state, SessionState.FINISHED)
 
+    def test_flatten_rejection_with_zero_net_stays_failed_without_resurrection(self) -> None:
+        session = start_session(make_config(max_round_trips=1))
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
+        submitted = session.handle(ClockEvent(2))
+        buy = next(action for action in submitted if action.payload["side"] == "BUY")
+        sell = next(action for action in submitted if action.payload["side"] == "SELL")
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
+        session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
+        session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
+        open_window(session, "buy-1", "BUY", traded=1)
+        flatten = expire_window(session)[0]
+        client_id = flatten.payload["client_id"]
+        session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=client_id))
+        # 迟到对侧成交把净仓打到 0，随后 FAK 拒单：必须保持 FAILED，不被复活回收口。
+        session.handle(TradeEvent("sell-1", "rb2601", "SHFE", "SELL", 1, 140, "late-trade"))
+        actions = session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "REJECTED", 1, client_id=client_id))
+        self.assertEqual(session.state, SessionState.FAILED)
+        self.assertEqual(session.failure_reason, "flatten_rejected")
+        self.assertFalse(any(action.kind == "query_position" for action in actions))
+
     def test_first_fill_opens_window_then_flattens_and_cancels_opposite_after_timeout(self) -> None:
         session = start_session(make_config(closing_wait_seconds=1, max_round_trips=1))
         session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
