@@ -28,9 +28,9 @@ _Avoid_: 仅报撤测试、无上限自动交易
 A first SimNow test phase that submits, cancels, replaces, and observes fills for one contract only. It deliberately does not submit an automatic hedge order.
 _Avoid_: 受限完整链路、最终策略运行
 
-**单轮成交收口**:
-The mandatory sequence after any confirmed fill within a round: cancel every remaining quote, reconcile CTP order and position callbacks, flatten the net position, then either resume quoting for the next round or stop per the stop conditions. A closing or flatten failure fails the session; it never resumes quoting with an open position.
-_Avoid_: 持续持仓、带仓重挂、跨轮合并对账
+**价差窗口收口**:
+The closing sequence after the first fill in a round: the opposite quote rests for the configured window (`closing_wait_seconds`, default 1; 0 means no window). If it fills within the window, the round ends with the spread collected and no flatten; otherwise the net position is flattened with the bounded FAK close and the opposite quote is cancelled after the flatten reaches terminal state. Both branches end only after every order is terminal and the reconciled net position is zero; a closing failure fails the session and never resumes quoting with an open position.
+_Avoid_: 立即撤单收口、平仓前撤对侧、跳过对账查仓、带遗留委托或仓位结束一轮
 
 **收盘停止**:
 The configured local-clock time (`session_end_time`, HH:MM) at which each contract's session runs the same closing sequence as an operator interrupt and ends normally. The deadline is the next occurrence of that time within 24 hours, so cross-midnight night-session ends (e.g. 01:00) are supported.
@@ -89,8 +89,8 @@ The first test may quote only when valid bid, ask, and last prices exist and `W 
 _Avoid_: 薄盘口继续挂单、忽略无效行情
 
 **轮内成交触发**:
-The first CTP-reported partial or complete fill for either quote of the current round. It immediately starts that round's closing sequence; remaining quantity and the opposite quote cannot continue trading.
-_Avoid_: 等待全额成交、保留另一侧报价
+The first CTP-reported partial or complete fill for either quote of the current round. It starts that round's spread-window closing while the opposite quote stays resting.
+_Avoid_: 等待全额成交、成交即撤销对侧报价
 
 **撤单终态上限**:
 The test waits at most ten seconds after entering the closing sequence for every test order to reach a terminal CTP status. On timeout it queries the target position, closes any net position with bounded FAK, and ends as a failure.
