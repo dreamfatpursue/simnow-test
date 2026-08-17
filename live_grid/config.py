@@ -55,6 +55,7 @@ _DEFAULTS: dict[str, Any] = {
     "flatten_adverse_ticks": 10,
     "max_round_trips": 10,
     "session_end_time": "",
+    "closing_wait_seconds": 1,
 }
 _REQUIRED = {"version", "symbol", "exchange", "target_lots"}
 _POSITIVE_FIELDS = {
@@ -66,6 +67,7 @@ _POSITIVE_FIELDS = {
     "flatten_timeout_seconds",
     "flatten_adverse_ticks",
 }
+_NON_NEGATIVE_FIELDS = {"closing_wait_seconds"}
 _POSITIVE_INTEGER_FIELDS = {"target_lots", "w_ticks", "d_ticks", "s_ticks", "max_round_trips"}
 
 _SESSION_END_PATTERN = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -100,6 +102,18 @@ def _require_positive(effective: Mapping[str, Any], names: set[str]) -> None:
             or value <= 0
         ):
             raise StrategyConfigError(f"{name} 必须是正数")
+
+
+def _require_non_negative(effective: Mapping[str, Any], names: set[str]) -> None:
+    for name in names:
+        value = effective[name]
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not isfinite(value)
+            or value < 0
+        ):
+            raise StrategyConfigError(f"{name} 必须是非负数")
 
 
 def _identity(effective: Mapping[str, Any]) -> tuple[str, str]:
@@ -145,6 +159,7 @@ class StrategyConfig:
         effective["symbol"] = effective["symbol"].strip()
         _require_positive_integers(effective, _POSITIVE_INTEGER_FIELDS)
         _require_positive(effective, _POSITIVE_FIELDS)
+        _require_non_negative(effective, _NON_NEGATIVE_FIELDS)
         _validate_session_end_time(effective)
         if (
             isinstance(effective["version"], bool)
@@ -211,6 +226,7 @@ class MultiContractConfig:
         common.update({name: raw[name] for name in _DEFAULTS if name in raw})
         _require_positive_integers(common, _POSITIVE_INTEGER_FIELDS - {"target_lots"})
         _require_positive(common, _POSITIVE_FIELDS)
+        _require_non_negative(common, _NON_NEGATIVE_FIELDS)
         _validate_session_end_time(common)
 
         per_contract: list[StrategyConfig] = []

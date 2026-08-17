@@ -60,6 +60,25 @@ class StrategyConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(StrategyConfigError, "flatten_timeout_seconds"):
             StrategyConfig.from_mapping(valid_config() | {"flatten_timeout_seconds": math.inf})
 
+    def test_closing_wait_seconds_defaults_to_one_and_allows_zero(self) -> None:
+        config = StrategyConfig.from_mapping(valid_config())
+        self.assertEqual(config.effective["closing_wait_seconds"], 1)
+
+        zero = StrategyConfig.from_mapping(valid_config() | {"closing_wait_seconds": 0})
+        self.assertEqual(zero.effective["closing_wait_seconds"], 0)
+        self.assertNotEqual(zero.sha256, config.sha256)
+
+        explicit = StrategyConfig.from_mapping(valid_config() | {"closing_wait_seconds": 2.5})
+        self.assertEqual(explicit.effective["closing_wait_seconds"], 2.5)
+        self.assertIn("closing_wait_seconds", explicit.canonical_json)
+
+        with self.assertRaisesRegex(StrategyConfigError, "closing_wait_seconds"):
+            StrategyConfig.from_mapping(valid_config() | {"closing_wait_seconds": -1})
+        with self.assertRaisesRegex(StrategyConfigError, "closing_wait_seconds"):
+            StrategyConfig.from_mapping(valid_config() | {"closing_wait_seconds": True})
+        with self.assertRaisesRegex(StrategyConfigError, "closing_wait_seconds"):
+            StrategyConfig.from_mapping(valid_config() | {"closing_wait_seconds": math.inf})
+
     def test_config_loads_from_json_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "strategy.json"

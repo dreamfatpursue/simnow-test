@@ -20,6 +20,7 @@ class SessionState(str, Enum):
     WAITING_FOR_STABLE_QUOTE = "WAITING_FOR_STABLE_QUOTE"
     QUOTING = "QUOTING"
     REPLACING = "REPLACING"
+    CLOSING_WAIT = "CLOSING_WAIT"
     CLOSING_CANCELS = "CLOSING_CANCELS"
     CLOSING_RECONCILE = "CLOSING_RECONCILE"
     FLATTENING = "FLATTENING"
@@ -30,6 +31,7 @@ class SessionState(str, Enum):
 # 收口中与终态的合集：处于其中任何状态时不得开启新一轮收口或报价。
 _CLOSING_OR_TERMINAL = frozenset(
     {
+        SessionState.CLOSING_WAIT,
         SessionState.CLOSING_CANCELS,
         SessionState.CLOSING_RECONCILE,
         SessionState.FLATTENING,
@@ -183,6 +185,8 @@ class LiveGridSession:
     _replacement_warning_emitted: bool = field(default=False, init=False)
     _round_trips: int = field(default=0, init=False)
     _round_has_fill: bool = field(default=False, init=False)
+    _round_open_net: int = field(default=0, init=False)
+    _window_started_at: float | None = field(default=None, init=False)
     _end_at: float | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
@@ -353,20 +357,20 @@ class LiveGridSession:
                     self._cancel_all(safety=True)
                 elif order.terminal and order.client_id == self._flatten_client_id:
                     self._flatten_client_id = None
-                    if self.final_net_position == 0:
-                        if self._flatten_orders_terminal():
-                            self._finish_or_fail()
-                        else:
-                            self._cancel_all(safety=True)
+                if self.final_net_position == 0:
+                    if self._flatten_orders_terminal():
+                        self._cancel_remaining_and_reconcile()
                     else:
-                        self._try_flatten()
-                elif self.final_net_position == 0:
-                    self._cancel_all(safety=True)
+                        self._cancel_all(safety=True)
+                elif self._flatten_client_id is None:
+                    self._try_flatten()
         elif self.state in {SessionState.QUOTING, SessionState.REPLACING} and traded_delta > 0:
             self._enter_closing("first_fill", order=order, volume=traded_delta)
         elif traded_delta > 0 and self.state == SessionState.WAITING_FOR_STABLE_QUOTE:
             # 上一轮撤单竞速失败的迟到成交：立即按新一轮收口处理（净仓以对账查询为准）。
             self._enter_closing("late_fill", order=order, volume=traded_delta)
+        elif traded_delta > 0 and self.state == SessionState.CLOSING_WAIT:
+            self._apply_window_fill(order, traded_delta)
         elif traded_delta > 0 and self.state in {
             SessionState.CLOSING_RECONCILE,
             SessionState.FLATTENING,
@@ -414,7 +418,7 @@ class LiveGridSession:
                 self._flatten_client_id = None
             if self.final_net_position == 0:
                 if self._flatten_orders_terminal():
-                    self._finish_or_fail()
+                    self._cancel_remaining_and_reconcile()
                 else:
                     self._cancel_all(safety=True)
             elif current_flatten_terminal:
@@ -436,6 +440,8 @@ class LiveGridSession:
                 price=event.price,
                 trade_id=event.trade_id,
             )
+        elif self.state == SessionState.CLOSING_WAIT:
+            self._apply_window_fill(order, event.volume)
         elif self.state in {
             SessionState.CLOSING_RECONCILE,
             SessionState.FLATTENING,
@@ -475,6 +481,8 @@ class LiveGridSession:
                 "error_id": event.error_id,
                 "error_msg": event.error_msg,
             }
+            # 查仓失败即净仓未知：不得沿用窗口记账的旧值。
+            self.final_net_position = None
             self._fail("closing_position_query_failed")
             return
         for order in self._orders.values():
@@ -524,6 +532,11 @@ class LiveGridSession:
                 self._submit_quotes()
             return
 
+        if self.state == SessionState.CLOSING_WAIT:
+            if self._window_started_at is not None and self._now - self._window_started_at >= self.config.effective["closing_wait_seconds"]:
+                self._flatten_window_net()
+            return
+
         if self.state == SessionState.REPLACING:
             self._retry_replacement_cancels()
             self._warn_if_replacement_delayed()
@@ -560,6 +573,15 @@ class LiveGridSession:
             return
         if self.state == SessionState.WAITING_FOR_STABLE_QUOTE:
             self.state = SessionState.FINISHED
+            return
+        if self.state == SessionState.CLOSING_WAIT:
+            # 窗口期间中断：立即结束窗口，走撤全部委托的人工结束收口。
+            self.state = SessionState.CLOSING_CANCELS
+            self._closing_started_at = self._now
+            self.cancellation_terminal = None
+            self.final_net_position = None
+            self._cancel_all(safety=True)
+            self._maybe_reconcile()
             return
         if self.state not in {SessionState.CLOSING_CANCELS, SessionState.CLOSING_RECONCILE, SessionState.FLATTENING}:
             self._enter_closing("interrupt")
@@ -611,6 +633,7 @@ class LiveGridSession:
                 price=order.price,
             )
             self._record_normal_action()
+        self._round_open_net = 0
         self.state = SessionState.QUOTING
         return True
 
@@ -666,10 +689,15 @@ class LiveGridSession:
     def _enter_closing(self, reason: str, *, order: _Order | None = None, volume: int = 0, price: float = 0, trade_id: str = "") -> None:
         if self.state in _CLOSING_OR_TERMINAL:
             return
+        if reason == "first_fill" and order is not None:
+            self._enter_window(order, volume, price=price, trade_id=trade_id)
+            if self.config.effective["closing_wait_seconds"] <= 0:
+                self._flatten_window_net()
+            return
         self.state = SessionState.CLOSING_CANCELS
         self._closing_started_at = self._now
         self.cancellation_terminal = None
-        self._round_has_fill = order is not None
+        self._round_has_fill = order is not None or self._round_has_fill
         if order is not None:
             self.first_fill = {
                 "order_id": order.order_id,
@@ -682,6 +710,61 @@ class LiveGridSession:
         self.final_net_position = None
         self._cancel_all(safety=True)
         self._maybe_reconcile()
+
+    def _enter_window(self, order: _Order, volume: int, *, price: float = 0, trade_id: str = "") -> None:
+        """价差窗口：首次成交后对侧报价继续挂单，等待配置的窗口时长。"""
+        self.state = SessionState.CLOSING_WAIT
+        self._window_started_at = self._now
+        self._round_has_fill = True
+        self._round_open_net += volume if order.side == "BUY" else -volume
+        self.first_fill = {
+            "order_id": order.order_id,
+            "client_id": order.client_id,
+            "side": order.side,
+            "volume": volume,
+            "price": price or order.price,
+            "trade_id": trade_id,
+        }
+        self.final_net_position = None
+
+    def _apply_window_fill(self, order: _Order, volume: int) -> None:
+        """窗口期间的报价成交：计入本轮净仓；对侧成交则立即结束窗口。"""
+        self._round_open_net += volume if order.side == "BUY" else -volume
+        if self._is_opposite_of_first_fill(order):
+            self._cancel_remaining_and_reconcile()
+
+    def _is_opposite_of_first_fill(self, order: _Order) -> bool:
+        first_id = (self.first_fill or {}).get("client_id") or ""
+        if not first_id.startswith("quote-"):
+            return False
+        prefix, side = first_id.rsplit("-", 1)
+        return order.client_id == f"{prefix}-{'sell' if side == 'buy' else 'buy'}"
+
+    def _flatten_window_net(self) -> None:
+        """窗口超时：按本轮开仓净仓直接受限 FAK，平仓终态后再撤对侧。"""
+        self.final_net_position = self._round_open_net
+        for order in self._orders.values():
+            if not order.is_flatten:
+                # 已计入窗口净仓的成交在迟到回报记账时不得重复累计。
+                order.accounted_opening_traded = order.traded
+        if self.final_net_position == 0:
+            self._cancel_remaining_and_reconcile()
+            return
+        self.state = SessionState.FLATTENING
+        self._flatten_started_at = self._now
+        self._flatten_initial_price = None
+        self._try_flatten()
+
+    def _cancel_remaining_and_reconcile(self) -> None:
+        """撤掉剩余委托（对侧报价等），全部终态后对账净仓收尾。"""
+        if self._active_orders() or self._pending_clients:
+            self.state = SessionState.CLOSING_CANCELS
+            self._closing_started_at = self._now
+            self.cancellation_terminal = None
+            self._cancel_all(safety=True)
+            self._maybe_reconcile()
+        else:
+            self._begin_reconcile()
 
     def _cancel_all(self, *, safety: bool) -> None:
         for order in self._orders.values():
@@ -714,7 +797,11 @@ class LiveGridSession:
             self._begin_reconcile()
 
     def _begin_reconcile(self) -> None:
-        if self.state != SessionState.CLOSING_CANCELS:
+        if self.state not in {
+            SessionState.CLOSING_CANCELS,
+            SessionState.CLOSING_WAIT,
+            SessionState.FLATTENING,
+        }:
             return
         self._request_sequence += 1
         self.closing_position_request_id = f"position-{self._request_sequence}"

@@ -46,6 +46,43 @@ def start_session(config: StrategyConfig | None = None) -> LiveGridSession:
     return session
 
 
+def open_window(session: LiveGridSession, order_id: str, side: str, *, traded: int, volume: int | None = None, exchange: str = "SHFE") -> None:
+    """首成交已进入价差窗口后，把已成交侧委托推到终态。"""
+    session.handle(
+        OrderEvent(order_id, "rb2601", exchange, side, "ALLTRADED", volume if volume is not None else traded, traded=traded)
+    )
+
+
+def expire_window(session: LiveGridSession):
+    """价差窗口超时，进入 FLATTENING；返回本次产生的动作。"""
+    wait = session.config.effective["closing_wait_seconds"]
+    return session.handle(ClockEvent(session._now + wait + 0.1))
+
+
+def drive_to_final_reconcile(session: LiveGridSession, *, filled: str = "buy-1", side: str = "BUY", exchange: str = "SHFE", opposite_id: str = "sell-1", opposite_side: str = "SELL") -> str:
+    """首成交 → 窗口超时 → FAK 平仓 → 撤对侧；返回收尾对账的 request_id。"""
+    open_window(session, filled, side, traded=1, exchange=exchange)
+    flatten = expire_window(session)[0]
+    client_id = flatten.payload["client_id"]
+    flatten_side = "SELL" if side == "BUY" else "BUY"
+    session.handle(
+        OrderEvent("f-1", "rb2601", exchange, flatten_side, "ALLTRADED", 1, price=99 if flatten_side == "SELL" else 101, traded=1, client_id=client_id)
+    )
+    closing = session.handle(OrderEvent(opposite_id, "rb2601", exchange, opposite_side, "CANCELLED", 1))
+    return next(action for action in closing if action.kind == "query_position").payload["request_id"]
+
+
+def finish_flattened_round(session: LiveGridSession, flatten_id: str, *, flatten_side: str, exchange: str = "SHFE", opposite_id: str | None = None, opposite_side: str | None = None) -> None:
+    """平仓成交 → 撤对侧 → 对账净仓为零收尾（对侧默认 sell-1/SELL）。"""
+    session.handle(OrderEvent(flatten_id, "rb2601", exchange, flatten_side, "ALLTRADED", 1, traded=1, client_id=flatten_id))
+    session.handle(TradeEvent(flatten_id, "rb2601", exchange, flatten_side, 1, 99 if flatten_side == "SELL" else 101, "flat-trade", client_id=flatten_id))
+    opposite_id = opposite_id or "sell-1"
+    opposite_side = opposite_side or "SELL"
+    closing = session.handle(OrderEvent(opposite_id, "rb2601", exchange, opposite_side, "CANCELLED", 1))
+    query = next(action for action in closing if action.kind == "query_position").payload["request_id"]
+    session.handle(PositionQueryCompleteEvent(query, "rb2601", exchange, 0))
+
+
 class LiveGridSessionTests(unittest.TestCase):
     def test_confirmation_is_required_before_session_can_emit_any_action(self) -> None:
         config = make_config()
@@ -124,7 +161,7 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(TickEvent("rb2601", "SHFE", 60, 59, 61, 3))
         self.assertEqual(session.state, SessionState.QUOTING)
 
-    def test_first_partial_trade_cancels_remaining_orders_and_reconciles(self) -> None:
+    def test_partial_first_fill_flattens_residual_after_window(self) -> None:
         session = start_session(make_config(target_lots=2))
         session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
         submitted = session.handle(ClockEvent(2))
@@ -133,21 +170,59 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 2, client_id=buy.payload["client_id"]))
         session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 2, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
-        self.assertEqual(session.state, SessionState.CLOSING_CANCELS)
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 2, traded=1))
-        actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 2))
-        self.assertEqual(session.state, SessionState.CLOSING_RECONCILE)
-        self.assertEqual([action.kind for action in actions], ["query_position"])
-        closing_query = actions[0].payload["request_id"]
-        flatten_actions = session.handle(PositionQueryCompleteEvent(closing_query, "rb2601", "SHFE", 1))
+        self.assertEqual(session.state, SessionState.CLOSING_WAIT)
+        open_window(session, "buy-1", "BUY", traded=1, volume=2)
+
+        flatten_actions = expire_window(session)
+
         self.assertEqual(session.state, SessionState.FLATTENING)
         flatten = flatten_actions[0]
         self.assertEqual(flatten.kind, "submit_order")
         self.assertEqual(flatten.payload["side"], "SELL")
         self.assertEqual(flatten.payload["offset"], "CLOSETODAY")
         self.assertEqual(flatten.payload["order_type"], "FAK")
+        self.assertEqual(flatten.payload["volume"], 1)
 
-    def test_first_full_trade_cancels_remaining_orders_and_records_successful_cancellation(self) -> None:
+    def test_first_fill_opens_window_then_flattens_and_cancels_opposite_after_timeout(self) -> None:
+        session = start_session(make_config(closing_wait_seconds=1, max_round_trips=1))
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
+        submitted = session.handle(ClockEvent(2))
+        buy = next(action for action in submitted if action.payload["side"] == "BUY")
+        sell = next(action for action in submitted if action.payload["side"] == "SELL")
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
+        session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
+
+        actions = session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
+        self.assertEqual(session.state, SessionState.CLOSING_WAIT)
+        self.assertEqual(actions, [])
+        self.assertEqual(session.first_fill["volume"], 1)
+        self.assertFalse(any(action.kind == "cancel_order" for action in session.actions))
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "ALLTRADED", 1, traded=1))
+
+        self.assertEqual(session.handle(ClockEvent(2.5)), [])
+
+        flatten_actions = session.handle(ClockEvent(3.0))
+        self.assertEqual(session.state, SessionState.FLATTENING)
+        self.assertEqual([action.kind for action in flatten_actions], ["submit_order"])
+        flatten = flatten_actions[0]
+        self.assertEqual(flatten.payload["order_type"], "FAK")
+        self.assertEqual(flatten.payload["side"], "SELL")
+        self.assertEqual(flatten.payload["volume"], 1)
+        self.assertFalse(any(action.kind == "cancel_order" for action in session.actions))
+
+        cancel_actions = session.handle(OrderEvent("f-1", "rb2601", "SHFE", "SELL", "ALLTRADED", 1, price=99, traded=1, client_id=flatten.payload["client_id"]))
+        self.assertEqual([action.kind for action in cancel_actions], ["cancel_order"])
+        self.assertEqual(session.handle(TradeEvent("f-1", "rb2601", "SHFE", "SELL", 1, 99, "trade-2")), [])
+
+        query_actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
+        self.assertEqual(session.state, SessionState.CLOSING_RECONCILE)
+        self.assertEqual([action.kind for action in query_actions], ["query_position"])
+
+        session.handle(PositionQueryCompleteEvent(query_actions[0].payload["request_id"], "rb2601", "SHFE", 0))
+        self.assertEqual(session.state, SessionState.FINISHED)
+        self.assertEqual(session.summary()["round_trips"], 1)
+
+    def test_first_full_fill_flattens_then_cancels_opposite_and_reconciles(self) -> None:
         session = start_session()
         session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
         submitted = session.handle(ClockEvent(2))
@@ -157,15 +232,21 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
 
         actions = session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
-        self.assertEqual(session.state, SessionState.CLOSING_CANCELS)
+        self.assertEqual(session.state, SessionState.CLOSING_WAIT)
         self.assertEqual(session.first_fill["volume"], 1)
-        self.assertEqual([action.kind for action in actions], ["cancel_order", "cancel_order"])
+        self.assertEqual(actions, [])
+        open_window(session, "buy-1", "BUY", traded=1)
+        flatten = expire_window(session)[0]
 
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "ALLTRADED", 1, traded=1))
-        actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
+        cancel_actions = session.handle(
+            OrderEvent("f-1", "rb2601", "SHFE", "SELL", "ALLTRADED", 1, price=99, traded=1, client_id=flatten.payload["client_id"])
+        )
+        self.assertEqual([action.kind for action in cancel_actions], ["cancel_order"])
+
+        closing = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
         self.assertEqual(session.state, SessionState.CLOSING_RECONCILE)
         self.assertTrue(session.cancellation_terminal)
-        self.assertEqual([action.kind for action in actions], ["query_position"])
+        self.assertEqual([action.kind for action in closing], ["query_position"])
 
     def test_rolling_action_limit_pauses_after_sixty_normal_actions(self) -> None:
         session = start_session(
@@ -349,6 +430,8 @@ class LiveGridSessionTests(unittest.TestCase):
                 )
             )
         session.handle(TradeEvent("order-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
+        self.assertEqual(session.state, SessionState.CLOSING_WAIT)
+        session.handle(InterruptEvent())
         actions = session.handle(ClockEvent(12))
         self.assertEqual(session.state, SessionState.CLOSING_RECONCILE)
         self.assertEqual(session.failure_reason, "cancel_timeout")
@@ -363,9 +446,7 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
         session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
-        actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
-        query = actions[0].payload["request_id"]
+        query = drive_to_final_reconcile(session)
         session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 0, error_id=9, error_msg="query failed"))
         self.assertEqual(session.state, SessionState.FAILED)
         self.assertEqual(session.failure_reason, "closing_position_query_failed")
@@ -380,8 +461,7 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
         session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
-        query = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))[0].payload["request_id"]
+        query = drive_to_final_reconcile(session)
         self.assertEqual(session.handle(PositionQueryCompleteEvent("stale", "rb2601", "SHFE", 1)), [])
         self.assertEqual(session.state, SessionState.CLOSING_RECONCILE)
         self.assertEqual(session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 1))[0].kind, "submit_order")
@@ -395,10 +475,8 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
         session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
-        actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
-        query = actions[0].payload["request_id"]
-        session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 1))
+        open_window(session, "buy-1", "BUY", traded=1)
+        expire_window(session)
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "late-trade"))
         self.assertEqual(session.final_net_position, 2)
         self.assertEqual(session.state, SessionState.FLATTENING)
@@ -412,12 +490,9 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
         session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
-        actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
-        query = actions[0].payload["request_id"]
-        flatten = session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 1))[0]
-        client_id = flatten.payload["client_id"]
-        session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "REJECTED", 1, client_id=client_id))
+        open_window(session, "buy-1", "BUY", traded=1)
+        flatten = expire_window(session)[0]
+        session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "REJECTED", 1, client_id=flatten.payload["client_id"]))
         session.handle(TradeEvent("sell-1", "rb2601", "SHFE", "SELL", 1, 140, "late-trade"))
         self.assertEqual(session.state, SessionState.FAILED)
         self.assertEqual(session.failure_reason, "flatten_rejected")
@@ -432,12 +507,10 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
         session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
-        actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
-        query = actions[0].payload["request_id"]
-        session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 1))
+        open_window(session, "buy-1", "BUY", traded=1)
+        expire_window(session)
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "late-trade"))
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "ALLTRADED", 2, traded=2))
         self.assertEqual(session.final_net_position, 2)
 
     def test_late_fill_that_offsets_flatten_waits_for_flatten_terminal_callback(self) -> None:
@@ -449,15 +522,14 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
         session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
-        actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
-        query = actions[0].payload["request_id"]
-        flatten = session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 1))[0]
+        open_window(session, "buy-1", "BUY", traded=1)
+        flatten = expire_window(session)[0]
         client_id = flatten.payload["client_id"]
         session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=client_id))
         session.handle(TradeEvent("sell-1", "rb2601", "SHFE", "SELL", 1, 140, "late-trade"))
         self.assertEqual(session.state, SessionState.FLATTENING)
         session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1, traded=0, client_id=client_id))
+        finish_flattened_round(session, "flatten-1", flatten_side="SELL")
         self.assertEqual(session.state, SessionState.FINISHED)
 
     def test_late_fill_from_previous_flatten_attempt_is_accounted(self) -> None:
@@ -469,10 +541,8 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
         session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
-        actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
-        query = actions[0].payload["request_id"]
-        flatten = session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 1))[0]
+        open_window(session, "buy-1", "BUY", traded=1)
+        flatten = expire_window(session)[0]
         client_id = flatten.payload["client_id"]
         second = session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1, client_id=client_id))[0]
         self.assertEqual(second.kind, "submit_order")
@@ -480,6 +550,7 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(TradeEvent("flatten-1", "rb2601", "SHFE", "SELL", 1, 99, "late-flatten", client_id=client_id))
         self.assertEqual(session.final_net_position, 0)
         session.handle(OrderEvent("flatten-2", "rb2601", "SHFE", "SELL", "CANCELLED", 1, client_id=second_id))
+        finish_flattened_round(session, "flatten-2", flatten_side="SELL")
         self.assertEqual(session.state, SessionState.FINISHED)
 
     def test_short_position_uses_buy_close_on_non_shfe(self) -> None:
@@ -491,10 +562,8 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("buy-1", "rb2601", "DCE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
         session.handle(OrderEvent("sell-1", "rb2601", "DCE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("sell-1", "rb2601", "DCE", "SELL", 1, 140, "trade-1"))
-        session.handle(OrderEvent("buy-1", "rb2601", "DCE", "BUY", "CANCELLED", 1))
-        actions = session.handle(OrderEvent("sell-1", "rb2601", "DCE", "SELL", "CANCELLED", 1))
-        query = actions[0].payload["request_id"]
-        flatten = session.handle(PositionQueryCompleteEvent(query, "rb2601", "DCE", -1))[0]
+        open_window(session, "sell-1", "SELL", traded=1, exchange="DCE")
+        flatten = expire_window(session)[0]
         self.assertEqual(flatten.payload["side"], "BUY")
         self.assertEqual(flatten.payload["offset"], "CLOSE")
         self.assertEqual(flatten.payload["price"], 101)
@@ -508,24 +577,22 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("buy-1", "rb2601", "INE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
         session.handle(OrderEvent("sell-1", "rb2601", "INE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("buy-1", "rb2601", "INE", "BUY", 1, 60, "trade-1"))
-        session.handle(OrderEvent("buy-1", "rb2601", "INE", "BUY", "CANCELLED", 1, traded=1))
-        actions = session.handle(OrderEvent("sell-1", "rb2601", "INE", "SELL", "CANCELLED", 1))
-        query = actions[0].payload["request_id"]
-        flatten = session.handle(PositionQueryCompleteEvent(query, "rb2601", "INE", 1))[0]
+        open_window(session, "buy-1", "BUY", traded=1, exchange="INE")
+        flatten = expire_window(session)[0]
         self.assertEqual(flatten.payload["offset"], "CLOSETODAY")
 
     def test_partial_flatten_retries_only_residual_position(self) -> None:
-        session = start_session()
+        session = start_session(make_config(target_lots=2))
         session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
         submitted = session.handle(ClockEvent(2))
         buy = next(action for action in submitted if action.payload["side"] == "BUY")
         sell = next(action for action in submitted if action.payload["side"] == "SELL")
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
-        session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
-        session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
-        query = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))[0].payload["request_id"]
-        flatten = session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 2))[0]
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 2, client_id=buy.payload["client_id"]))
+        session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 2, client_id=sell.payload["client_id"]))
+        session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 2, 60, "trade-1"))
+        open_window(session, "buy-1", "BUY", traded=2, volume=2)
+        flatten = expire_window(session)[0]
+        self.assertEqual(flatten.payload["volume"], 2)
         client_id = flatten.payload["client_id"]
         session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "PARTTRADED", 2, traded=1, client_id=client_id))
         session.handle(TradeEvent("flatten-1", "rb2601", "SHFE", "SELL", 1, 99, "flatten-trade", client_id=client_id))
@@ -542,16 +609,15 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
         session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
-        query = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))[0].payload["request_id"]
-        flatten = session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 1))[0]
+        open_window(session, "buy-1", "BUY", traded=1)
+        flatten = expire_window(session)[0]
         client_id = flatten.payload["client_id"]
         session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=client_id))
-        actions = session.handle(ClockEvent(5.1))
+        actions = session.handle(ClockEvent(session._now + session.config.effective["flatten_timeout_seconds"] + 0.1))
         self.assertEqual(session.state, SessionState.FAILED)
         self.assertEqual(session.failure_reason, "flatten_timeout")
         self.assertEqual(session.final_net_position, 1)
-        self.assertEqual([action.kind for action in actions], ["cancel_order"])
+        self.assertEqual([action.kind for action in actions], ["cancel_order", "cancel_order"])
 
     def test_flatten_adverse_price_is_capped_at_ten_ticks(self) -> None:
         session = start_session()
@@ -562,9 +628,8 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
         session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
-        query = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))[0].payload["request_id"]
-        flatten = session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 1))[0]
+        open_window(session, "buy-1", "BUY", traded=1)
+        flatten = expire_window(session)[0]
         client_id = flatten.payload["client_id"]
         session.handle(TickEvent("rb2601", "SHFE", 80, 80, 81, 1))
         retry = session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1, client_id=client_id))
@@ -580,18 +645,16 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
         session.handle(TickEvent("rb2601", "SHFE", 0, 0, 0, 3))
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
-        actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
-        query = actions[0].payload["request_id"]
+        open_window(session, "buy-1", "BUY", traded=1)
 
-        # 无有效盘口：等待而不立即失败
-        self.assertEqual(session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 1)), [])
+        # 窗口超时但无有效盘口：等待而不立即失败
+        self.assertEqual(expire_window(session), [])
         self.assertEqual(session.state, SessionState.FLATTENING)
         self.assertIsNone(session.failure_reason)
-        self.assertEqual(session.handle(ClockEvent(4)), [])
+        self.assertEqual(session.handle(ClockEvent(session._now + 0.5)), [])
 
         # 盘口恢复：行情事件本身触发受限 FAK 平仓（仍在 flatten_timeout 窗口内）
-        flatten = session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 4.2))
+        flatten = session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, session._now + 0.2))
         self.assertEqual(flatten[0].kind, "submit_order")
         self.assertEqual(flatten[0].payload["order_type"], "FAK")
 
@@ -605,13 +668,10 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
         session.handle(TickEvent("rb2601", "SHFE", 0, 0, 0, 3))
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
-        actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
-        query = actions[0].payload["request_id"]
-        session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 1))
-        self.assertEqual(session.handle(ClockEvent(5.5)), [])
+        open_window(session, "buy-1", "BUY", traded=1)
+        expire_window(session)
         self.assertEqual(session.state, SessionState.FLATTENING)
-        session.handle(ClockEvent(6.2))
+        session.handle(ClockEvent(session._now + session.config.effective["flatten_timeout_seconds"] + 0.1))
         self.assertEqual(session.state, SessionState.FAILED)
         self.assertEqual(session.failure_reason, "flatten_timeout")
 
@@ -624,12 +684,9 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
         session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
-        actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
-        query = actions[0].payload["request_id"]
-        flatten = session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 1))[0]
-        client_id = flatten.payload["client_id"]
-        session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "REJECTED", 1, client_id=client_id))
+        open_window(session, "buy-1", "BUY", traded=1)
+        flatten = expire_window(session)[0]
+        session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "REJECTED", 1, client_id=flatten.payload["client_id"]))
         self.assertEqual(session.state, SessionState.FAILED)
         self.assertEqual(session.failure_reason, "flatten_rejected")
 
@@ -642,15 +699,14 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
         session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
         session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
-        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1))
-        actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
-        query = actions[0].payload["request_id"]
-        flatten = session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 1))[0]
+        open_window(session, "buy-1", "BUY", traded=1)
+        flatten = expire_window(session)[0]
         client_id = flatten.payload["client_id"]
         session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "PARTTRADED", 1, traded=1, client_id=client_id))
         session.handle(TradeEvent("flatten-1", "rb2601", "SHFE", "SELL", 1, 99, "flatten-trade", client_id=client_id))
         self.assertEqual(session.state, SessionState.FLATTENING)
         session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "ALLTRADED", 1, traded=1, client_id=client_id))
+        finish_flattened_round(session, "flatten-1", flatten_side="SELL")
         self.assertEqual(session.state, SessionState.FINISHED)
 
     def test_interrupt_uses_cancel_and_reconcile_instead_of_direct_exit(self) -> None:
@@ -683,17 +739,42 @@ def bind_quotes(session: LiveGridSession, submitted, tag: str) -> tuple[str, str
     return buy_id, sell_id
 
 
-def complete_round(session: LiveGridSession, tag: str, filled_side: str, net: int) -> None:
-    """成交一侧后撤单对账并以 FAK 平回零仓。"""
+def complete_round(session: LiveGridSession, tag: str, filled_side: str, net: int) -> str:
+    """价差窗口超时后：FAK 平回零仓、平仓终态撤对侧、对账收尾；返回平仓委托 client_id。"""
     buy_id, sell_id = f"{tag}-buy", f"{tag}-sell"
     filled = buy_id if filled_side == "BUY" else sell_id
-    session.handle(OrderEvent(buy_id, "rb2601", "SHFE", "BUY", "CANCELLED", 1, traded=1 if filled == buy_id else 0))
-    actions = session.handle(OrderEvent(sell_id, "rb2601", "SHFE", "SELL", "CANCELLED", 1, traded=1 if filled == sell_id else 0))
-    query = next(action for action in actions if action.kind == "query_position").payload["request_id"]
+    open_window(session, filled, filled_side, traded=1)
+    flatten = expire_window(session)[0]
+    client_id = flatten.payload["client_id"]
+    flatten_side = "SELL" if net > 0 else "BUY"
+    session.handle(OrderEvent(f"{tag}-flat", "rb2601", "SHFE", flatten_side, "ALLTRADED", 1, traded=1, client_id=client_id))
+    session.handle(TradeEvent(f"{tag}-flat", "rb2601", "SHFE", flatten_side, 1, 99 if net > 0 else 101, f"{tag}-f-trade", client_id=client_id))
+    opposite = sell_id if filled == buy_id else buy_id
+    opposite_side = "SELL" if opposite == sell_id else "BUY"
+    closing = session.handle(OrderEvent(opposite, "rb2601", "SHFE", opposite_side, "CANCELLED", 1))
+    query = next(action for action in closing if action.kind == "query_position").payload["request_id"]
+    session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", 0))
+    return client_id
+
+
+def complete_interrupted_round(session: LiveGridSession, tag: str, filled_side: str, net: int) -> None:
+    """窗口期间中断后：撤全部 → 对账 → FAK 平净仓 → 对账收尾。"""
+    buy_id, sell_id = f"{tag}-buy", f"{tag}-sell"
+    filled = buy_id if filled_side == "BUY" else sell_id
+    session.handle(OrderEvent(filled, "rb2601", "SHFE", filled_side, "CANCELLED", 1, traded=1))
+    opposite = sell_id if filled == buy_id else buy_id
+    opposite_side = "SELL" if opposite == sell_id else "BUY"
+    closing = session.handle(OrderEvent(opposite, "rb2601", "SHFE", opposite_side, "CANCELLED", 1))
+    query = next(action for action in closing if action.kind == "query_position").payload["request_id"]
     flatten = session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", net))[0]
     client_id = flatten.payload["client_id"]
-    session.handle(OrderEvent(f"{tag}-flat", "rb2601", "SHFE", "SELL" if net > 0 else "BUY", "ALLTRADED", 1, traded=1, client_id=client_id))
-    session.handle(TradeEvent(f"{tag}-flat", "rb2601", "SHFE", "SELL" if net > 0 else "BUY", 1, 99 if net > 0 else 101, f"{tag}-f-trade", client_id=client_id))
+    flatten_side = "SELL" if net > 0 else "BUY"
+    final = session.handle(OrderEvent(f"{tag}-flat", "rb2601", "SHFE", flatten_side, "ALLTRADED", 1, traded=1, client_id=client_id))
+    session.handle(TradeEvent(f"{tag}-flat", "rb2601", "SHFE", flatten_side, 1, 99 if net > 0 else 101, f"{tag}-f-trade", client_id=client_id))
+    if final and final[0].kind == "cancel_order":
+        final = session.handle(OrderEvent(opposite, "rb2601", "SHFE", opposite_side, "CANCELLED", 1))
+    query2 = next(action for action in final if action.kind == "query_position").payload["request_id"]
+    session.handle(PositionQueryCompleteEvent(query2, "rb2601", "SHFE", 0))
 
 
 class ContinuousQuotingTests(unittest.TestCase):
@@ -781,8 +862,11 @@ class ContinuousQuotingTests(unittest.TestCase):
         query = session.actions[-1].payload["request_id"]
         flatten = session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", -1))[0]
         client_id = flatten.payload["client_id"]
-        session.handle(OrderEvent("r1-late-flat", "rb2601", "SHFE", "BUY", "ALLTRADED", 1, traded=1, client_id=client_id))
-        session.handle(TradeEvent("r1-late-flat", "rb2601", "SHFE", "BUY", 1, 101, "f2-trade", client_id=client_id))
+        final = session.handle(OrderEvent("r1-late-flat", "rb2601", "SHFE", "BUY", "ALLTRADED", 1, traded=1, client_id=client_id))
+        if not any(action.kind == "query_position" for action in final):
+            final += session.handle(TradeEvent("r1-late-flat", "rb2601", "SHFE", "BUY", 1, 101, "f2-trade", client_id=client_id))
+        query2 = next(action for action in final if action.kind == "query_position").payload["request_id"]
+        session.handle(PositionQueryCompleteEvent(query2, "rb2601", "SHFE", 0))
         self.assertEqual(session.state, SessionState.WAITING_FOR_STABLE_QUOTE)
         self.assertEqual(session.summary()["round_trips"], 2)
 
@@ -792,9 +876,11 @@ class ContinuousQuotingTests(unittest.TestCase):
         submitted = session.handle(ClockEvent(2))
         bind_quotes(session, submitted, "r1")
         session.handle(TradeEvent("r1-buy", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
+        self.assertEqual(session.state, SessionState.CLOSING_WAIT)
         session.handle(InterruptEvent())
         self.assertEqual(session.stop_reason, "interrupted")
-        complete_round(session, "r1", "BUY", 1)
+        self.assertEqual(session.state, SessionState.CLOSING_CANCELS)
+        complete_interrupted_round(session, "r1", "BUY", 1)
         self.assertEqual(session.state, SessionState.FINISHED)
         summary = session.summary()
         self.assertEqual(summary["stop_reason"], "interrupted")
@@ -807,7 +893,7 @@ class ContinuousQuotingTests(unittest.TestCase):
         bind_quotes(session, submitted, "r1")
         session.handle(TradeEvent("r1-buy", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
         session.handle(InterruptEvent())
-        complete_round(session, "r1", "BUY", 1)
+        complete_interrupted_round(session, "r1", "BUY", 1)
         self.assertEqual(session.state, SessionState.FINISHED)
         self.assertEqual(session.summary()["stop_reason"], "interrupted")
 
@@ -817,9 +903,8 @@ class ContinuousQuotingTests(unittest.TestCase):
         submitted = session.handle(ClockEvent(2))
         bind_quotes(session, submitted, "r1")
         session.handle(TradeEvent("r1-buy", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
-        complete_round(session, "r1", "BUY", 1)
+        flatten_client = complete_round(session, "r1", "BUY", 1)
         self.assertEqual(session.state, SessionState.WAITING_FOR_STABLE_QUOTE)
-        flatten_client = session.actions[-1].payload["client_id"]
 
         # 平仓单迟到成交回报（新的成交编号）使净仓再次非零
         session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 4))
@@ -830,8 +915,11 @@ class ContinuousQuotingTests(unittest.TestCase):
         query = session.actions[-1].payload["request_id"]
         flatten = session.handle(PositionQueryCompleteEvent(query, "rb2601", "SHFE", -1))[0]
         client_id = flatten.payload["client_id"]
-        session.handle(OrderEvent("r2-flat", "rb2601", "SHFE", "BUY", "ALLTRADED", 1, traded=1, client_id=client_id))
-        session.handle(TradeEvent("r2-flat", "rb2601", "SHFE", "BUY", 1, 101, "r2-flat-trade", client_id=client_id))
+        final = session.handle(OrderEvent("r2-flat", "rb2601", "SHFE", "BUY", "ALLTRADED", 1, traded=1, client_id=client_id))
+        if not any(action.kind == "query_position" for action in final):
+            final += session.handle(TradeEvent("r2-flat", "rb2601", "SHFE", "BUY", 1, 101, "r2-flat-trade", client_id=client_id))
+        query2 = next(action for action in final if action.kind == "query_position").payload["request_id"]
+        session.handle(PositionQueryCompleteEvent(query2, "rb2601", "SHFE", 0))
         self.assertEqual(session.state, SessionState.WAITING_FOR_STABLE_QUOTE)
         self.assertEqual(session.summary()["round_trips"], 2)
 

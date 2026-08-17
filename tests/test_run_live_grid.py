@@ -189,26 +189,19 @@ class ScriptedAdapter(CtpLiveGridAdapter):
             )
 
         self._trade("1", "rb2601", "SHFE", "多", 1, 60.0, "trade-1")
-        assert self._wait_for(lambda: any(req.orderid in {"1", "2"} for req in engine.cancelled))
-        answered_queries = engine.gateway.query_count
+        assert self._wait_for(lambda: rb.state.value == "CLOSING_WAIT")
         self._order("1", "rb2601", "SHFE", "多", "全部成交", 1, 1, 60.0)
-        self._order("2", "rb2601", "SHFE", "空", "已撤销", 1, 0, 0)
-        assert self._wait_for(lambda: engine.gateway.query_count > answered_queries)
-        self._position_result(
-            (
-                SimpleNamespace(
-                    symbol="rb2601",
-                    exchange=SimpleNamespace(value="SHFE"),
-                    direction=SimpleNamespace(value="多"),
-                    volume=1,
-                ),
-            )
-        )
-        answered_queries = engine.gateway.query_count
-        assert self._wait_for(lambda: len(engine.sent) >= 5)
+        # 价差窗口超时：不撤对侧，直接按净仓 FAK 平仓（第 5 笔委托）。
+        assert self._pump_until(lambda: len(engine.sent) >= 5)
         self._order("5", "rb2601", "SHFE", "空", "全部成交", 1, 1, 60.0)
         self._trade("5", "rb2601", "SHFE", "空", 1, 60.0, "trade-2")
         self._account(1_000_040.0, 899_940.0)
+        # 平仓终态后撤对侧报价（委托 2），随后收尾对账净仓为零。
+        assert self._wait_for(lambda: any(req.orderid == "2" for req in engine.cancelled))
+        answered_queries = engine.gateway.query_count
+        self._order("2", "rb2601", "SHFE", "空", "已撤销", 1, 0, 0)
+        assert self._wait_for(lambda: engine.gateway.query_count > answered_queries)
+        self._position_result()
         assert self._wait_for(lambda: rb.state.value in {"FINISHED", "FAILED"})
         self.rb_finished = True
 

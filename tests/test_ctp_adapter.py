@@ -201,12 +201,9 @@ class CtpAdapterTests(unittest.TestCase):
                 )
             )
         )
-        self.assertEqual(rb.state.value, "CLOSING_CANCELS")
+        self.assertEqual(rb.state.value, "CLOSING_WAIT")
         self.assertEqual(ap.state.value, "QUOTING")
-        self.assertEqual(
-            sorted(request.symbol for request, _ in engine.cancelled),
-            ["rb2601", "rb2601"],
-        )
+        self.assertEqual(engine.cancelled, [])
 
     def test_position_query_fan_out_rejects_whole_run_when_any_target_nonzero(self) -> None:
         adapter, sessions, audits = make_adapter(("rb2601", "SHFE"), ("AP610", "CZCE"), ("hc2601", "SHFE"))
@@ -348,7 +345,15 @@ class CtpAdapterTests(unittest.TestCase):
         )
         self.assertIsInstance(audit.events[-1][0], TradeEvent)
         self.assertEqual(audit.events[-1][0].volume, 1)
-        self.assertEqual(len(engine.cancelled), 2)
+        # 价差窗口：首成交不撤对侧，窗口超时后直接 FAK 平仓。
+        self.assertEqual(session.state.value, "CLOSING_WAIT")
+        self.assertEqual(engine.cancelled, [])
+        flatten_actions = session.handle(ClockEvent(now + 3.5))
+        for action in flatten_actions:
+            adapter._dispatch(action)
+        self.assertEqual(session.state.value, "FLATTENING")
+        self.assertEqual(len(engine.sent), 3)
+        self.assertEqual(engine.sent[-1][0].type.value, "FAK")
 
     def test_adapter_passes_exchange_time_and_contract_size_into_events(self) -> None:
         adapter, sessions, audits = make_adapter(("rb2601", "SHFE"))
