@@ -176,7 +176,7 @@ class BuildDaysTests(unittest.TestCase):
 
             days, _ = report.build_days(root)
 
-            record = days["2026-08-17"].contracts[0].rounds[0]
+            record = days["2026-08-18"].contracts[0].rounds[0]
             self.assertEqual(record.submit_time, "2026-08-17T21:00:16+08:00")
 
     def test_submit_time_prefers_exchange_report_over_local_submitting_push_funds(self) -> None:
@@ -201,8 +201,8 @@ class BuildDaysTests(unittest.TestCase):
 
             days, _ = report.build_days(root)
 
-            self.assertEqual(len(days["2026-08-17"].funds), 1)
-            record = days["2026-08-17"].contracts[0].rounds[0]
+            self.assertEqual(len(days["2026-08-18"].funds), 1)
+            record = days["2026-08-18"].contracts[0].rounds[0]
             self.assertEqual(record.submit_time, "2026-08-17T21:00:00+08:00")
 
     def test_submit_time_uses_earliest_report_time_across_order_callbacks(self) -> None:
@@ -237,8 +237,8 @@ class BuildDaysTests(unittest.TestCase):
             days, skipped = report.build_days(root)
 
             self.assertEqual(skipped, 0)
-            self.assertEqual(list(days), ["2026-08-17"])
-            contract = days["2026-08-17"].contracts[0]
+            self.assertEqual(list(days), ["2026-08-18"])
+            contract = days["2026-08-18"].contracts[0]
             self.assertEqual(contract.contract, "al2609@SHFE")
             self.assertEqual(len(contract.rounds), 1)
             record = contract.rounds[0]
@@ -254,7 +254,7 @@ class BuildDaysTests(unittest.TestCase):
             self.assertEqual(record.close_volume, 1)
             self.assertAlmostEqual(record.wait_seconds, 1.0)
             self.assertAlmostEqual(record.hold_seconds, 2.0)
-            html_text = report.render_html(days["2026-08-17"])
+            html_text = report.render_html(days["2026-08-18"])
             self.assertIn("挂单→成交", html_text)
             self.assertIn("成交→平仓", html_text)
             self.assertIn("1.0s", html_text)
@@ -262,12 +262,12 @@ class BuildDaysTests(unittest.TestCase):
             self.assertIn("两个间隔列按审计单调钟毫秒精度计算", html_text)
 
     def test_night_session_fill_groups_by_exchange_trading_day(self) -> None:
-        """The gateway encodes the trading day in the date part, ahead of the calendar day."""
+        """夜盘成交滚入下一交易日：网关时间戳的日期部分是自然日，交易日按夜盘规则顺延。"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             write_run(
                 root,
-                "20260814T155000.000000Z-abc",
+                "20260817T155000.000000Z-abc",
                 {
                     "al2609@SHFE": quoted_round(
                         start_at=10,
@@ -277,10 +277,23 @@ class BuildDaysTests(unittest.TestCase):
                     )
                 },
             )
+            write_run(
+                root,
+                "20260814T155000.000000Z-fri",
+                {
+                    "al2609@SHFE": quoted_round(
+                        start_at=10,
+                        sequence=1,
+                        insert_time="2026-08-14T23:50:00+08:00",
+                        open_time="2026-08-14T23:50:42+08:00",
+                        close_time="2026-08-14T23:51:10+08:00",
+                    )
+                },
+            )
 
             days, skipped = report.build_days(root)
 
-            self.assertEqual(list(days), ["2026-08-17"])
+            self.assertEqual(sorted(days), ["2026-08-17", "2026-08-18"])
             self.assertEqual(skipped, 0)
 
     def test_legacy_run_without_exchange_time_is_skipped_and_counted(self) -> None:
@@ -315,7 +328,7 @@ class BuildDaysTests(unittest.TestCase):
             days, skipped = report.build_days(root)
 
             self.assertEqual(skipped, 0)
-            rounds = days["2026-08-17"].contracts[0].rounds
+            rounds = days["2026-08-18"].contracts[0].rounds
             self.assertEqual(len(rounds), 1)
             record = rounds[0]
             self.assertEqual(record.submit_volume, 2)
@@ -355,7 +368,7 @@ class BuildDaysTests(unittest.TestCase):
 
             days, _ = report.build_days(root)
 
-            rounds = days["2026-08-17"].contracts[0].rounds
+            rounds = days["2026-08-18"].contracts[0].rounds
             self.assertEqual(len(rounds), 2)
             self.assertEqual(rounds[0].side, "BUY")
             self.assertEqual(rounds[1].side, "SELL")
@@ -383,9 +396,9 @@ class BuildDaysTests(unittest.TestCase):
             days, skipped = report.build_days(root)
 
             self.assertEqual(skipped, 0)
-            self.assertEqual(list(days), ["2026-08-17"])
+            self.assertEqual(list(days), ["2026-08-18"])
             self.assertEqual(
-                sorted(contract.contract for contract in days["2026-08-17"].contracts),
+                sorted(contract.contract for contract in days["2026-08-18"].contracts),
                 ["al2609@SHFE", "cu2609@SHFE"],
             )
 
@@ -419,7 +432,7 @@ class GrossPnlAndOverviewTests(unittest.TestCase):
 
             days, _ = report.build_days(root)
 
-            html_text = report.render_html(days["2026-08-17"])
+            html_text = report.render_html(days["2026-08-18"])
             self.assertIn("+30", html_text)
             self.assertIn("+6", html_text)
             self.assertIn("+150", html_text)
@@ -456,7 +469,7 @@ class GrossPnlAndOverviewTests(unittest.TestCase):
             days, skipped = report.build_days(root)
 
             self.assertEqual(skipped, 0)
-            html_text = report.render_html(days["2026-08-17"])
+            html_text = report.render_html(days["2026-08-18"])
             self.assertIn("当日 run 总览", html_text)
             self.assertIn("20260817T130000.000000Z-run1", html_text)
             self.assertIn("20260817T140000.000000Z-run2", html_text)
@@ -475,7 +488,7 @@ class GrossPnlAndOverviewTests(unittest.TestCase):
                 {"al2609@SHFE": quoted_round(start_at=10, sequence=3, insert_time="2026-08-17T23:50:00+08:00", open_time="2026-08-17T23:50:42+08:00")},
             )
             days, _ = report.build_days(root)
-            return days["2026-08-17"]
+            return days["2026-08-18"]
 
 
 def funds_round_lines() -> list[dict]:
@@ -521,7 +534,7 @@ class EndingAndSpreadPnlTests(unittest.TestCase):
 
             days, _ = report.build_days(root)
 
-            rounds = days["2026-08-17"].contracts[0].rounds
+            rounds = days["2026-08-18"].contracts[0].rounds
             self.assertEqual(len(rounds), 2)
             self.assertEqual([record.ending for record in rounds], ["价差完成", "价差完成"])
             self.assertEqual(rounds[0].open_volume, 2)
@@ -542,7 +555,7 @@ class EndingAndSpreadPnlTests(unittest.TestCase):
 
             days, _ = report.build_days(root)
 
-            rounds = days["2026-08-17"].contracts[0].rounds
+            rounds = days["2026-08-18"].contracts[0].rounds
             self.assertEqual(len(rounds), 2)
             self.assertEqual([record.ending for record in rounds], ["价差完成", "FAK 平仓"])
             self.assertEqual(rounds[0].close_volume, 0)
@@ -562,9 +575,9 @@ class EndingAndSpreadPnlTests(unittest.TestCase):
 
             days, _ = report.build_days(root)
 
-            record = days["2026-08-17"].contracts[0].rounds[0]
+            record = days["2026-08-18"].contracts[0].rounds[0]
             self.assertEqual(record.ending, "价差完成")
-            html_text = report.render_html(days["2026-08-17"])
+            html_text = report.render_html(days["2026-08-18"])
             self.assertIn("结束方式", html_text)
             self.assertIn("价差完成", html_text)
             # 价差 7862-7852=10 元/吨 × 5 吨/手 = +50（夹具乘数为 5）。
@@ -581,9 +594,9 @@ class EndingAndSpreadPnlTests(unittest.TestCase):
 
             days, _ = report.build_days(root)
 
-            record = days["2026-08-17"].contracts[0].rounds[0]
+            record = days["2026-08-18"].contracts[0].rounds[0]
             self.assertEqual(record.ending, "FAK 平仓")
-            html_text = report.render_html(days["2026-08-17"])
+            html_text = report.render_html(days["2026-08-18"])
             self.assertIn("FAK 平仓", html_text)
 
 
@@ -602,7 +615,7 @@ class FundsSummaryTests(unittest.TestCase):
             )
 
             days, _ = report.build_days(root)
-            html_text = report.render_html(days["2026-08-17"])
+            html_text = report.render_html(days["2026-08-18"])
 
             self.assertIn("资金汇总", html_text)
             self.assertIn("1,000,000.00", html_text)
@@ -627,12 +640,12 @@ class FundsSummaryTests(unittest.TestCase):
 
             days, _ = report.build_days(root)
 
-            funds = days["2026-08-17"].funds
+            funds = days["2026-08-18"].funds
             self.assertEqual(len(funds), 1)
             self.assertEqual(funds[0].start_balance, 1_000_000.0)
             self.assertEqual(funds[0].end_balance, 999_820.0)
             self.assertTrue(funds[0].boundary_note)
-            html_text = report.render_html(days["2026-08-17"])
+            html_text = report.render_html(days["2026-08-18"])
             self.assertIn("边界快照缺失", html_text)
 
     def test_day_fees_only_count_runs_with_funds_snapshots(self) -> None:
@@ -663,7 +676,7 @@ class FundsSummaryTests(unittest.TestCase):
             )
 
             days, _ = report.build_days(root)
-            html_text = report.render_html(days["2026-08-17"])
+            html_text = report.render_html(days["2026-08-18"])
 
             self.assertIn("推算手续费 30.00", html_text)
             self.assertNotIn("推算手续费 180.00", html_text)
@@ -682,7 +695,7 @@ class FundsSummaryTests(unittest.TestCase):
             write_run(root, "20260817T130000.000000Z-abc", {"al2609@SHFE": lines})
 
             days, _ = report.build_days(root)
-            html_text = report.render_html(days["2026-08-17"])
+            html_text = report.render_html(days["2026-08-18"])
 
             self.assertNotIn("-162.5", html_text)
             self.assertNotIn("-6.5", html_text)
@@ -699,8 +712,8 @@ class FundsSummaryTests(unittest.TestCase):
 
             days, _ = report.build_days(root)
 
-            self.assertEqual(days["2026-08-17"].funds, [])
-            html_text = report.render_html(days["2026-08-17"])
+            self.assertEqual(days["2026-08-18"].funds, [])
+            html_text = report.render_html(days["2026-08-18"])
             self.assertIn("无资金快照", html_text)
 
 
@@ -725,7 +738,7 @@ class RenderAndCliTests(unittest.TestCase):
                 exit_code = report.main()
 
             self.assertEqual(exit_code, 0)
-            out_path = Path(out_tmp) / "trades-20260817.html"
+            out_path = Path(out_tmp) / "trades-20260818.html"
             html_text = out_path.read_text(encoding="utf-8")
             self.assertIn("al2609@SHFE", html_text)
             self.assertIn("23:50:00", html_text)
@@ -753,14 +766,14 @@ class RenderAndCliTests(unittest.TestCase):
                 "--out-dir",
                 str(out_tmp),
                 "--date",
-                "20260817",
+                "20260818",
             ]
             with patch("sys.argv", argv), patch("sys.stdout") as stdout:
                 exit_code = report.main()
             printed = "".join(call.args[0] for call in stdout.write.call_args_list)
 
             self.assertEqual(exit_code, 0)
-            self.assertEqual(list(Path(out_tmp).iterdir()), [Path(out_tmp) / "trades-20260817.html"])
+            self.assertEqual(list(Path(out_tmp).iterdir()), [Path(out_tmp) / "trades-20260818.html"])
             self.assertIn("跳过 1 个缺少交易所时间戳的 run", printed)
 
     def test_open_flag_opens_the_generated_report_in_a_browser(self) -> None:
@@ -785,7 +798,7 @@ class RenderAndCliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertEqual(open_mock.call_count, 1)
             opened_uri = open_mock.call_args[0][0]
-            self.assertTrue(opened_uri.endswith("trades-20260817.html"))
+            self.assertTrue(opened_uri.endswith("trades-20260818.html"))
 
 
 if __name__ == "__main__":

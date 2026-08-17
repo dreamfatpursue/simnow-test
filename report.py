@@ -8,6 +8,7 @@ import json
 import sys
 import webbrowser
 from dataclasses import dataclass, field
+from datetime import datetime, time, timedelta
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -163,15 +164,36 @@ def _load_run(run_dir: Path) -> RunFacts | None:
     return RunFacts(run_dir.name, contract_events, run_summary)
 
 
+def _trading_day_of(exchange_time: str) -> str | None:
+    """网关时间戳的日期部分是自然日；夜盘成交滚入下一交易日。
+
+    20:00 之后（夜盘时段）成交归属下一个交易日，周五夜盘跳过周末归入周一。
+    节假日前夜交易所不开夜盘，因此该规则与交易日历在一切真实成交上一致。
+    """
+    try:
+        moment = datetime.fromisoformat(exchange_time)
+    except ValueError:
+        return None
+    day = moment.date()
+    if moment.time() >= time(20, 0):
+        day += timedelta(days=1)
+        while day.weekday() >= 5:
+            day += timedelta(days=1)
+    return day.isoformat()
+
+
 def _run_day(run: RunFacts) -> str | None:
-    """The run's exchange trading day: the date part of its earliest exchange time."""
+    """The run's exchange trading day: its earliest exchange time rolled by the night-session rule."""
     earliest: str | None = None
     for events in run.contract_events.values():
         for record in events:
             exchange_time = record["event"]["data"].get("exchange_time")
-            if exchange_time and (earliest is None or exchange_time < earliest):
-                earliest = exchange_time
-    return earliest[:10] if earliest else None
+            if not exchange_time:
+                continue
+            day = _trading_day_of(exchange_time)
+            if day and (earliest is None or day < earliest):
+                earliest = day
+    return earliest
 
 
 def _quote_sequence(client_id: str) -> int | None:
