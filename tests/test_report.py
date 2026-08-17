@@ -159,6 +159,52 @@ def contract_summary_row(
 
 
 class BuildDaysTests(unittest.TestCase):
+    def test_submit_time_prefers_exchange_report_over_local_submitting_push(self) -> None:
+        """实盘序列：vnpy 先推无时间的 SUBMITTING，交易所回报带 InsertTime 在后。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lines = [
+                contract_line(1),
+                order_line(2, "o1", "quote-1-buy", "BUY", None),
+                order_line(3, "o1", "quote-1-buy", "BUY", "2026-08-17T21:00:16+08:00"),
+                order_line(4, "o1", "quote-1-sell", "SELL", "2026-08-17T21:00:16+08:00"),
+                trade_line(5, "o1", "quote-1-buy", "BUY", 1, 7856.0, "t1", "2026-08-17T21:00:30+08:00"),
+                order_line(6, "o2", "flatten-2", "SELL", "2026-08-17T21:00:32+08:00", price=7856.0, status="ALLTRADED"),
+                trade_line(7, "o2", "flatten-2", "SELL", 1, 7856.0, "tf1", "2026-08-17T21:00:32+08:00"),
+            ]
+            write_run(root, "20260817T130000.000000Z-abc", {"al2609@SHFE": lines})
+
+            days, _ = report.build_days(root)
+
+            record = days["2026-08-17"].contracts[0].rounds[0]
+            self.assertEqual(record.submit_time, "2026-08-17T21:00:16+08:00")
+
+    def test_submit_time_prefers_exchange_report_over_local_submitting_push_funds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lines = funds_round_lines()
+            # 实盘序列里第一条委托回报来自 vnpy 本地推送，没有交易所时间。
+            local_push = order_line(9.9, "o1", "quote-1-buy", "BUY", None)
+            local_push["actions"] = [
+                {"type": "Action", "data": {"kind": "submit_order", "payload": {"client_id": "quote-1-buy"}}}
+            ]
+            lines.insert(1, local_push)
+            write_run(
+                root,
+                "20260817T130000.000000Z-run1",
+                {"al2609@SHFE": lines},
+                account_lines=[
+                    {"at": 9.0, "balance": 1_000_000.0, "available": 900_000.0},
+                    {"at": 21.0, "balance": 999_820.0, "available": 899_820.0},
+                ],
+            )
+
+            days, _ = report.build_days(root)
+
+            self.assertEqual(len(days["2026-08-17"].funds), 1)
+            record = days["2026-08-17"].contracts[0].rounds[0]
+            self.assertEqual(record.submit_time, "2026-08-17T21:00:00+08:00")
+
     def test_one_round_record_from_a_timed_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -410,8 +456,10 @@ def funds_round_lines() -> list[dict]:
     quote["actions"] = [
         {
             "type": "Action",
-            "kind": "submit_order",
-            "payload": {"client_id": "quote-1-buy", "side": "BUY", "volume": 1, "price": 23990.0},
+            "data": {
+                "kind": "submit_order",
+                "payload": {"client_id": "quote-1-buy", "side": "BUY", "volume": 1, "price": 23990.0},
+            },
         }
     ]
     return [

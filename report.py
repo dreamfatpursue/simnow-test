@@ -117,8 +117,6 @@ def _weighted_price(fills: list[Fill]) -> float:
 
 
 def _load_run(run_dir: Path) -> RunFacts | None:
-    if not (run_dir / "summary.json").exists():
-        return None
     contract_events: dict[str, list[dict[str, Any]]] = {}
     for events_file in sorted(run_dir.glob("*/events.jsonl")):
         contract_events[events_file.parent.name] = [
@@ -126,10 +124,17 @@ def _load_run(run_dir: Path) -> RunFacts | None:
             for record in events_file.read_text(encoding="utf-8").splitlines()
             if record.strip()
         ]
-    try:
-        run_summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        run_summary = {}
+    if not contract_events:
+        return None
+    summary_file = run_dir / "summary.json"
+    if summary_file.exists():
+        try:
+            run_summary = json.loads(summary_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            run_summary = {}
+    else:
+        # 崩溃 run：进程没走到写摘要就退出，事件与资金流水仍然可信。
+        run_summary = {"summary_missing": True}
     return RunFacts(run_dir.name, contract_events, run_summary)
 
 
@@ -157,8 +162,11 @@ def _build_rounds(events: list[dict[str, Any]]) -> tuple[list[RoundRecord], floa
             size = data.get("size")
         elif event_type == "OrderEvent":
             client_id = data.get("client_id")
-            if client_id and client_id not in submissions:
-                submissions[client_id] = data
+            if client_id:
+                existing = submissions.get(client_id)
+                # vnpy 本地先推一条无交易所时间的 SUBMITTING；以带 InsertTime 的回报为准。
+                if existing is None or (not existing.get("exchange_time") and data.get("exchange_time")):
+                    submissions[client_id] = data
         elif event_type == "TradeEvent":
             client_id = data.get("client_id")
             if not client_id:
@@ -197,7 +205,7 @@ def _build_rounds(events: list[dict[str, Any]]) -> tuple[list[RoundRecord], floa
 
 
 def _run_overview_rows(run_summary: dict[str, Any]) -> list[dict[str, Any]]:
-    return [
+    rows = [
         {
             "contract": f"{entry.get('target_symbol')}@{entry.get('target_exchange')}",
             "terminal_state": entry.get("terminal_state"),
@@ -208,6 +216,24 @@ def _run_overview_rows(run_summary: dict[str, Any]) -> list[dict[str, Any]]:
         for entry in run_summary.get("contracts", [])
         if entry.get("target_symbol")
     ]
+    if not rows and run_summary.get("summary_missing"):
+        rows = [
+            {
+                "contract": "—",
+                "terminal_state": "CRASHED",
+                "round_trips": None,
+                "failure_reason": "summary.json 缺失（进程未正常收尾）",
+                "stop_reason": None,
+            }
+        ]
+    return rows
+
+
+def _action_kind(action: Any) -> str | None:
+    data = action.get("data")
+    if isinstance(data, dict):
+        return data.get("kind")
+    return action.get("kind")
 
 
 def _build_funds(
@@ -225,7 +251,7 @@ def _build_funds(
             data = record["event"]["data"]
             if record["event"]["type"] == "TradeEvent" and data.get("client_id"):
                 has_fill = True
-            if any(action.get("kind") == "submit_order" for action in record["actions"]):
+            if any(_action_kind(action) == "submit_order" for action in record["actions"]):
                 at = record["at"]
                 if first_submit_at is None or at < first_submit_at:
                     first_submit_at = at
@@ -405,7 +431,10 @@ def _render_funds(model: DayModel) -> list[str]:
         "</tr>"
     )
     rows.append("</table>")
-    rows.append("<p class=\"note\">真实净盈亏已含手续费（账户资金差）；手续费为推算值（Σ毛盈亏 − 资金差）。</p>")
+    rows.append(
+        "<p class=\"note\">真实净盈亏已含手续费（账户资金差）；手续费为推算值（Σ毛盈亏 − 资金差）。"
+        "资金差只在账户仅运行本策略时才等于策略净盈亏——账户内其他仓位的浮动盈亏会直接混入该数字。</p>"
+    )
     return rows
 
 

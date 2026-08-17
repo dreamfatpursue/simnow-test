@@ -156,6 +156,10 @@ def main() -> int:
         except KeyboardInterrupt:
             if adapter is not None:
                 _interrupt_and_wait(adapter)
+        # 全部终态后先等网关轮询出最后一份资金快照再关引擎：
+        # 平仓终态后的余额（含手续费）是离线报告资金差净盈亏的右边界。
+        if adapter is not None:
+            time.sleep(5)
         # 先关引擎再写摘要：否则摘要落盘后引擎仍可能投递迟到事件给已关闭的审计写入器。
         if adapter is not None:
             adapter.close()

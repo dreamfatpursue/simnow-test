@@ -10212,6 +10212,8 @@ int TdApi::exit()
 {
     this->active = false;
     this->task_queue.terminate();
+    // 持有 GIL 时 join 工作线程，会与工作线程回调里的 gil_scoped_acquire 互等死锁。
+    pybind11::gil_scoped_release gil_release;
     this->task_thread.join();
 
     this->api->RegisterSpi(NULL);
