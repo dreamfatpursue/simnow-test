@@ -1,0 +1,52 @@
+{
+  "active_order_count": 0,
+  "active_orders": [],
+  "cancellation_terminal": true,
+  "closing_position_request_id": "position-2",
+  "closing_position_result": {
+    "error_id": 0,
+    "error_msg": "",
+    "net_position": 0,
+    "request_id": "position-2"
+  },
+  "failure_reason": null,
+  "final_net_position": 0,
+  "first_fill": null,
+  "flatten_attempts": [],
+  "startup_position_result": "zero",
+  "state_transitions": [
+    {
+      "from": "",
+      "to": "WAITING_FOR_CONTRACT"
+    },
+    {
+      "from": "WAITING_FOR_CONTRACT",
+      "to": "WAITING_FOR_ZERO_POSITION"
+    },
+    {
+      "from": "WAITING_FOR_ZERO_POSITION",
+      "to": "WAITING_FOR_STABLE_QUOTE"
+    },
+    {
+      "from": "WAITING_FOR_STABLE_QUOTE",
+      "to": "QUOTING"
+    },
+    {
+      "from": "QUOTING",
+      "to": "CLOSING_CANCELS"
+    },
+    {
+      "from": "CLOSING_CANCELS",
+      "to": "CLOSING_RECONCILE"
+    },
+    {
+      "from": "CLOSING_RECONCILE",
+      "to": "FINISHED"
+    }
+  ],
+  "strategy_hash": "3440ddd415d6ed29d068ff21b5fba324c8557ad23c7335230151813029e5d8b8",
+  "target_exchange": "SHFE",
+  "target_lots": 1,
+  "target_symbol": "rb2609",
+  "terminal_state": "FINISHED"
+}

@@ -4,6 +4,10 @@ This context records the shared language for applying a grid quoting algorithm t
 
 ## Language
 
+**SimNow 连接环境**:
+An explicitly selected SimNow service boundary for one run: `first` is the regular simulated-trading service, while `7x24` is the API-test service without settlement. Selecting one does not transfer state or imply automatic switching to the other.
+_Avoid_: 前置地址本身、自动故障切换、两套环境共享状态
+
 **SimNow 行情快照**:
 A timestamped top-of-book and last-price observation received from SimNow for one contract. It drives live quoting decisions but does not prove an order was filled.
 _Avoid_: 交易所成交回报
@@ -103,6 +107,42 @@ _Avoid_: 手工填写偏移、拒单后猜测性重试
 **目标委托手数**:
 The positive per-side quantity in the strategy configuration's contract entry. No separate absolute cap applies; its actual value is highlighted before submission and recorded for the run, and any first partial fill still triggers closing.
 _Avoid_: 隐式固定手数、成交后继续加仓、未展示的配置风险
+
+**逻辑委托**:
+One order instruction submitted to CTP together with its lifecycle through a terminal state. Repeated status callbacks still describe the same logical order; an order remains part of the audit view when it is cancelled, rejected, or never filled.
+_Avoid_: 把每条委托回报算作一笔新挂单、只统计成交委托、把委托等同于成交
+
+**运行委托成交报告**:
+A manually generated offline HTML view of one complete terminal audit run, covering every target contract, every logical order, its related fills, the effective strategy, round-level gross PnL, and run-level balance-delta net PnL with implied fees. Both successful and failed terminal runs are valid, while active or crashed runs without a complete run summary are rejected. It never assigns unreliable net PnL to an individual order. It requires the run's structured causal trace and rejects older runs that lack it rather than inferring or degrading; it never aggregates unrelated runs or participates in live order submission.
+_Avoid_: 交易日聚合报告、单合约事件摘录、策略运行时自动报表、旧日志推导或降级报告
+
+**审计品种身份**:
+The product code, exact contract symbol, exchange, contract multiplier, and minimum price tick recorded by one audit run. A human-readable Chinese product name is not part of the identity when the audit did not record it.
+_Avoid_: 报告自行补充品种名称、只写中文简称、用当前合约信息覆盖历史审计事实
+
+**运行参数**:
+The complete effective strategy and its hash retained by one audit run, including shared grid and safety settings plus each contract's configured quantity. It is the historical configuration actually used by that run, not a current source file or default value.
+_Avoid_: 当前策略文件、代码默认值、实际委托价格
+
+**委托参数**:
+The actual instruction submitted for one logical order: its purpose, side, offset, order type, limit price, and quantity. It is distinct from both the run parameters that produced it and the repeated CTP callbacks that report its lifecycle.
+_Avoid_: W/D/S 等运行参数、委托状态回报、成交结果
+
+**委托生命周期摘要**:
+One consolidated row for a logical order showing its actual parameters, deduplicated status path, terminal result, and related fills. Repeated callbacks are evidence for the row, not separate orders in the main report.
+_Avoid_: 每条回报一行、只展示最终状态、把成交回报并入委托状态
+
+**委托因果详情**:
+The expandable explanation beneath a logical order that connects each meaningful lifecycle change to its triggering event, contemporaneous market data, applicable price calculation, state transition, and resulting submit, cancel, or replace action. It explains only causes supported by the run's audit facts.
+_Avoid_: 原始 JSON 堆叠、根据结果猜原因、脱离当时行情解释撤单
+
+**审计因果轨迹**:
+A structured list attached to an audit event containing stable reason codes, affected logical orders, contemporaneous inputs, calculation operands, and decision results. It is emitted for state changes, actions, order-status changes, and fills; no-op market and clock events remain raw facts without explanatory noise. It contains no localized prose and is sufficient for an offline report to explain the decision without replaying the state machine.
+_Avoid_: 中文说明直接落盘、报告器反推原因、只记录前后状态不记录决策输入
+
+**运行因果时间线**:
+The contract-level chronological view of causal trace entries that explain session changes not owned by a single logical order, such as startup position validation, market qualification, round reconciliation, termination, and failure. Order-specific detail remains with the logical order and is linked by its client identity rather than duplicated.
+_Avoid_: 把运行级变化塞入最近委托、重复逐笔委托详情、只展示委托而丢失会话状态
 
 **测试审计目录**:
 The per-run directory holding one subdirectory per contract with its credential-free effective configuration, CTP market/order/trade events, and final safety summary, plus a run-level summary of every contract's position, active orders, and failures.

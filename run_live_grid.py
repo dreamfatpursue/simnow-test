@@ -13,13 +13,19 @@ from live_grid.audit import MultiContractAuditWriter
 from live_grid.config import MultiContractConfig, StrategyConfigError
 from live_grid.ctp_adapter import CtpLiveGridAdapter
 from live_grid.session import LiveGridSession, SessionState
-from run import load_settings
+from run import FRONT_ENV_BY_PROFILE, load_settings
 
 _TERMINAL_STATES = {SessionState.FINISHED, SessionState.FAILED}
 
 
-def print_preview(config: MultiContractConfig) -> None:
-    print(json.dumps({"effective": config.effective, "sha256": config.sha256}, ensure_ascii=False, indent=2))
+def print_preview(config: MultiContractConfig, environment: str) -> None:
+    print(
+        json.dumps(
+            {"environment": environment, "effective": config.effective, "sha256": config.sha256},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 def _contract_key(session: LiveGridSession) -> str:
@@ -29,12 +35,14 @@ def _contract_key(session: LiveGridSession) -> str:
 def _run_summary(
     config: MultiContractConfig,
     sessions: list[LiveGridSession],
+    environment: str,
     *,
     failure_reason: str | None = None,
     run_failed: bool = False,
     terminal_override: str | None = None,
 ) -> dict[str, Any]:
     summary: dict[str, Any] = {
+        "environment": environment,
         "strategy_hash": config.sha256,
         "terminal_states": {
             _contract_key(session): (
@@ -57,12 +65,14 @@ def _run_summary(
 def _finish_contract_summaries(
     sessions: list[LiveGridSession],
     audits: list,
+    environment: str,
     *,
     failure_reason: str | None = None,
     terminal_override: str | None = None,
 ) -> None:
     for session, audit in zip(sessions, audits):
         summary = session.summary()
+        summary["environment"] = environment
         if failure_reason is not None and summary.get("failure_reason") is None:
             summary["failure_reason"] = failure_reason
         if terminal_override is not None and session.state not in _TERMINAL_STATES:
@@ -88,6 +98,7 @@ def _interrupt_and_wait(adapter: CtpLiveGridAdapter) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="SimNow 多合约报撤联调入口")
     parser.add_argument("--config", required=True, help="无凭证多合约策略 JSON 配置")
+    parser.add_argument("--env", choices=FRONT_ENV_BY_PROFILE, default="first", help="SimNow 连接环境")
     parser.add_argument("--confirm-simnow", action="store_true", help="确认当前连接是 SimNow")
     parser.add_argument("--audit-dir", default="audit", help="测试审计根目录")
     args = parser.parse_args()
@@ -109,15 +120,23 @@ def main() -> int:
                 for contract in config.contracts
             ]
             audits = run_audit.writers
-            print_preview(config)
+            print_preview(config, args.env)
             if not args.confirm_simnow:
-                _finish_contract_summaries(sessions, audits, failure_reason="confirmation_required")
-                directory = run_audit.finish(
-                    _run_summary(config, sessions, failure_reason="confirmation_required")
+                _finish_contract_summaries(
+                    sessions,
+                    audits,
+                    args.env,
+                    failure_reason="confirmation_required",
                 )
-                print(f"当前为预览模式：缺少 SimNow 确认，未连接且不会下单。审计目录={directory}")
+                directory = run_audit.finish(
+                    _run_summary(config, sessions, args.env, failure_reason="confirmation_required")
+                )
+                print(
+                    f"当前为预览模式：environment={args.env}，缺少 SimNow 确认，未连接且不会下单。"
+                    f"审计目录={directory}"
+                )
                 return 0
-            settings = load_settings()
+            settings = load_settings(args.env)
             adapter = CtpLiveGridAdapter(
                 sessions=sessions,
                 gateway_setting=settings.gateway_setting(),
@@ -140,6 +159,7 @@ def main() -> int:
                 _finish_contract_summaries(
                     sessions,
                     audits,
+                    args.env,
                     failure_reason=str(exc),
                     terminal_override="FAILED",
                 )
@@ -147,6 +167,7 @@ def main() -> int:
                     _run_summary(
                         config,
                         sessions,
+                        args.env,
                         failure_reason=str(exc),
                         run_failed=True,
                         terminal_override="FAILED",
@@ -165,11 +186,11 @@ def main() -> int:
             adapter.close()
             adapter = None
         audits = run_audit.writers
-        _finish_contract_summaries(sessions, audits)
-        directory = run_audit.finish(_run_summary(config, sessions))
+        _finish_contract_summaries(sessions, audits, args.env)
+        directory = run_audit.finish(_run_summary(config, sessions, args.env))
         all_finished = all(session.state == SessionState.FINISHED for session in sessions)
         terminal_states = json.dumps({_contract_key(s): s.state.value for s in sessions}, ensure_ascii=False)
-        print(f"终态={terminal_states} 审计目录={directory}")
+        print(f"环境={args.env} 终态={terminal_states} 审计目录={directory}")
         return 0 if all_finished else 1
     finally:
         if adapter is not None:

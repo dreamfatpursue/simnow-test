@@ -31,7 +31,7 @@ python -m pip install -r requirements.txt
 cp .env.example .env
 ```
 
-编辑 `.env`，把 SimNow 当前页面给出的账号、密码、BrokerID、交易前置、行情前置、产品名称/AppID、授权编码填进去。不要复制旧教程里的前置地址。
+编辑 `.env`，填入 SimNow 当前页面给出的账号、密码、BrokerID、产品名称/AppID、授权编码和第一套前置。第一套继续使用 `CTP_TRADE_FRONT`、`CTP_MARKET_FRONT`；7×24 API 测试环境使用 `CTP_7X24_TRADE_FRONT`、`CTP_7X24_MARKET_FRONT`。两套环境共用账号类凭证，但连接环境必须在每次启动时人工选择，系统不会自动切换。
 
 加载配置并先做本地检查：
 
@@ -39,7 +39,7 @@ cp .env.example .env
 set -a
 source .env
 set +a
-python run.py --check
+python run.py --check --env first
 ```
 
 `CTP_SYMBOL` 可以先留空。要测试行情时，从 SimNow 当前返回的有效合约中填写，例如：
@@ -54,7 +54,7 @@ CTP_EXCHANGE=SHFE
 ## 3. 启动只读联调
 
 ```bash
-python run.py
+python run.py --env first
 ```
 
 重点观察：
@@ -79,7 +79,7 @@ python run.py
 ```bash
 cp strategy.example.json strategy.json
 # 把 contracts 条目改成当前 SimNow 合约查询返回的有效合约（v2 多合约格式）
-python run_live_grid.py --config strategy.json
+python run_live_grid.py --config strategy.json --env first
 ```
 
 该命令只显示标准化配置和 SHA-256 哈希，不会连接或下单。确认配置和目标合约无误后，只需显式确认当前连接是 SimNow：
@@ -87,9 +87,17 @@ python run_live_grid.py --config strategy.json
 ```bash
 python run_live_grid.py \
   --config strategy.json \
+  --env first \
   --confirm-simnow
 ```
 
-SHA-256 仍会用于预览展示、审计记录和复盘识别，但不参与下单授权。修改策略配置会产生新的哈希，不需要额外提供旧哈希或新哈希参数。
+收盘后可手工切换到 7×24 API 测试环境：
+
+```bash
+python run.py --check --env 7x24
+python run_live_grid.py --config strategy.json --env 7x24 --confirm-simnow
+```
+
+7×24 不提供结算服务。每次报撤启动仍会针对所选环境查询目标合约净仓，非零仓时拒绝开仓；不要根据第一套的仓位或结算状态推断 7×24 的结果。SHA-256 仍会用于预览展示、审计记录和复盘识别，但不参与下单授权。修改策略配置会产生新的哈希，不需要额外提供旧哈希或新哈希参数。
 
 CTP 凭证仍只从 `.env` 读取，策略配置和测试审计目录不得放入凭证。每次运行会在 `audit/` 下创建独立目录，记录无凭证事件和最终安全摘要。首次使用应先执行远价无成交后 `Ctrl+C` 的人工验收，再进行受控首次成交验收。

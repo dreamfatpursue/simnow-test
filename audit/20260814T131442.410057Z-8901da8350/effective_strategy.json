@@ -1,0 +1,28 @@
+{
+  "effective": {
+    "action_limit_per_minute": 60,
+    "book_protection_multiple": 2,
+    "cancel_timeout_seconds": 10,
+    "contracts": [
+      {
+        "exchange": "SHFE",
+        "symbol": "rb2609",
+        "target_lots": 1
+      },
+      {
+        "exchange": "CZCE",
+        "symbol": "TA612",
+        "target_lots": 1
+      }
+    ],
+    "d_ticks": 2,
+    "flatten_adverse_ticks": 10,
+    "flatten_timeout_seconds": 3,
+    "reanchor_confirmation_seconds": 1,
+    "s_ticks": 10,
+    "stable_market_seconds": 2,
+    "version": 2,
+    "w_ticks": 1
+  },
+  "sha256": "38783bd032fe0efd7f1f32b6c6d01d1e77148beadb0f536b729af87743553718"
+}

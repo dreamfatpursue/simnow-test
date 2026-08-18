@@ -19,15 +19,31 @@ REQUIRED_ENV = (
     "CTP_USER_ID",
     "CTP_PASSWORD",
     "CTP_BROKER_ID",
-    "CTP_TRADE_FRONT",
-    "CTP_MARKET_FRONT",
     "CTP_APP_ID",
     "CTP_AUTH_CODE",
 )
+FRONT_ENV_BY_PROFILE = {
+    "first": ("CTP_TRADE_FRONT", "CTP_MARKET_FRONT"),
+    "7x24": ("CTP_7X24_TRADE_FRONT", "CTP_7X24_MARKET_FRONT"),
+}
+_DIAGNOSTIC_MARKERS = {
+    "交易服务器连接成功": "td_front_connected",
+    "交易服务器连接断开": "td_front_disconnected",
+    "交易服务器授权验证成功": "td_authenticated",
+    "交易服务器授权验证失败": "td_authentication_failed",
+    "交易服务器登录成功": "td_logged_in",
+    "交易服务器登录失败": "td_login_failed",
+    "行情服务器连接成功": "md_front_connected",
+    "行情服务器连接断开": "md_front_disconnected",
+    "行情服务器登录成功": "md_logged_in",
+    "行情服务器登录失败": "md_login_failed",
+    "合约信息查询成功": "contracts_queried",
+}
 
 
 @dataclass(frozen=True)
 class Settings:
+    environment: str
     user_id: str
     password: str
     broker_id: str
@@ -56,17 +72,27 @@ class Settings:
         return f"{self.symbol}.{self.exchange}" if self.symbol else ""
 
 
-def load_settings() -> Settings:
-    missing = [name for name in REQUIRED_ENV if not os.environ.get(name, "").strip()]
+def load_settings(environment: str = "first") -> Settings:
+    try:
+        trade_front_key, market_front_key = FRONT_ENV_BY_PROFILE[environment]
+    except KeyError as exc:
+        raise ValueError(f"不支持的 SimNow 环境: {environment}") from exc
+
+    missing = [
+        name
+        for name in (*REQUIRED_ENV, trade_front_key, market_front_key)
+        if not os.environ.get(name, "").strip()
+    ]
     if missing:
         raise ValueError("缺少环境变量: " + ", ".join(missing))
 
     return Settings(
+        environment=environment,
         user_id=os.environ["CTP_USER_ID"].strip(),
         password=os.environ["CTP_PASSWORD"],
         broker_id=os.environ["CTP_BROKER_ID"].strip(),
-        trade_front=os.environ["CTP_TRADE_FRONT"].strip(),
-        market_front=os.environ["CTP_MARKET_FRONT"].strip(),
+        trade_front=os.environ[trade_front_key].strip(),
+        market_front=os.environ[market_front_key].strip(),
         app_id=os.environ["CTP_APP_ID"].strip(),
         auth_code=os.environ["CTP_AUTH_CODE"].strip(),
         product_info=os.getenv("CTP_PRODUCT_INFO", "").strip(),
@@ -75,7 +101,19 @@ def load_settings() -> Settings:
     )
 
 
-def install_handlers(event_engine: Any, main_engine: Any, settings: Settings) -> None:
+def _diagnostic_snapshot(diagnostics: dict[str, bool]) -> str:
+    def mark(name: str) -> str:
+        return "Y" if diagnostics[name] else "N"
+
+    return (
+        f"TD(front={mark('td_front_connected')},auth={mark('td_authenticated')},"
+        f"login={mark('td_logged_in')}) "
+        f"MD(front={mark('md_front_connected')},login={mark('md_logged_in')}) "
+        f"contracts={mark('contracts_queried')}"
+    )
+
+
+def install_handlers(event_engine: Any, main_engine: Any, settings: Settings) -> dict[str, bool]:
     """Print the events needed for the first connection acceptance check."""
 
     from vnpy.trader.event import (
@@ -88,9 +126,16 @@ def install_handlers(event_engine: Any, main_engine: Any, settings: Settings) ->
 
     subscribed = False
     last_tick_printed = 0.0
+    diagnostics = {name: False for name in _DIAGNOSTIC_MARKERS.values()}
 
     def on_log(event: Any) -> None:
-        print(f"[日志] {getattr(event.data, 'msg', event.data)}", flush=True)
+        message = str(getattr(event.data, "msg", event.data))
+        print(f"[日志] {message}", flush=True)
+        for marker, name in _DIAGNOSTIC_MARKERS.items():
+            if marker in message:
+                diagnostics[name] = True
+                print(f"[诊断] {name}: {message}", flush=True)
+                break
 
     def on_account(event: Any) -> None:
         account = event.data
@@ -167,6 +212,7 @@ def install_handlers(event_engine: Any, main_engine: Any, settings: Settings) ->
         (EVENT_TICK, on_tick),
     ):
         event_engine.register(event_type, handler)
+    return diagnostics
 
 
 def connect(settings: Settings) -> int:
@@ -193,20 +239,30 @@ def connect(settings: Settings) -> int:
     event_engine = EventEngine()
     main_engine = MainEngine(event_engine)
     main_engine.add_gateway(CtpGateway)
-    install_handlers(event_engine, main_engine, settings)
+    diagnostics = install_handlers(event_engine, main_engine, settings)
 
     print(
-        f"[连接] broker={settings.broker_id} user={settings.user_id} "
+        f"[连接] environment={settings.environment} broker={settings.broker_id} user={settings.user_id} "
         f"trade={settings.trade_front} market={settings.market_front}",
         flush=True,
     )
     main_engine.connect(settings.gateway_setting(), GATEWAY_NAME)
     print("[连接] 已发起连接；等待认证、登录、合约、资金和持仓事件。", flush=True)
 
+    started_at = time.monotonic()
+    last_checkpoint = 0
     try:
         while True:
             time.sleep(1)
+            elapsed = int(time.monotonic() - started_at)
+            if elapsed >= 30 and elapsed // 30 > last_checkpoint:
+                last_checkpoint = elapsed // 30
+                print(
+                    f"[诊断] 等待 {last_checkpoint * 30}s: {_diagnostic_snapshot(diagnostics)}",
+                    flush=True,
+                )
     except KeyboardInterrupt:
+        print(f"[诊断] 退出前最终状态: {_diagnostic_snapshot(diagnostics)}", flush=True)
         print("\n[退出] 正在关闭 CTP 连接。", flush=True)
     finally:
         main_engine.close()
@@ -216,10 +272,11 @@ def connect(settings: Settings) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="SimNow/CTP read-only connection check")
     parser.add_argument("--check", action="store_true", help="只校验配置，不连接")
+    parser.add_argument("--env", choices=FRONT_ENV_BY_PROFILE, default="first", help="SimNow 连接环境")
     args = parser.parse_args()
 
     try:
-        settings = load_settings()
+        settings = load_settings(args.env)
     except ValueError as exc:
         print(f"配置错误: {exc}", file=sys.stderr)
         return 2
@@ -227,7 +284,7 @@ def main() -> int:
     if args.check:
         target = settings.vt_symbol or "未设置（只测试登录/账户/持仓）"
         print(
-            f"配置有效: broker={settings.broker_id} user={settings.user_id} "
+            f"配置有效: environment={settings.environment} broker={settings.broker_id} user={settings.user_id} "
             f"symbol={target}"
         )
         return 0

@@ -1,0 +1,218 @@
+{
+  "active_order_count": 0,
+  "active_orders": [],
+  "cancellation_terminal": true,
+  "closing_position_request_id": "position-4",
+  "closing_position_result": {
+    "error_id": 0,
+    "error_msg": "",
+    "net_position": 1,
+    "request_id": "position-4"
+  },
+  "failure_reason": "no_executable_quote",
+  "final_net_position": 1,
+  "first_fill": {
+    "client_id": "quote-13-buy",
+    "order_id": "1_962002515_25",
+    "price": 108110.0,
+    "side": "BUY",
+    "trade_id": "",
+    "volume": 1
+  },
+  "flatten_attempts": [
+    {
+      "at": 1818522.663030791,
+      "client_id": "flatten-6",
+      "offset": "CLOSETODAY",
+      "price": 108120.0,
+      "side": "SELL",
+      "volume": 1
+    },
+    {
+      "at": 1818634.049822416,
+      "client_id": "flatten-10",
+      "offset": "CLOSETODAY",
+      "price": 108130.0,
+      "side": "SELL",
+      "volume": 1
+    }
+  ],
+  "round_trips": 2,
+  "startup_position_result": "zero",
+  "state_transitions": [
+    {
+      "from": "",
+      "to": "WAITING_FOR_CONTRACT"
+    },
+    {
+      "from": "WAITING_FOR_CONTRACT",
+      "to": "WAITING_FOR_ZERO_POSITION"
+    },
+    {
+      "from": "WAITING_FOR_ZERO_POSITION",
+      "to": "WAITING_FOR_STABLE_QUOTE"
+    },
+    {
+      "from": "WAITING_FOR_STABLE_QUOTE",
+      "to": "QUOTING"
+    },
+    {
+      "from": "QUOTING",
+      "to": "REPLACING"
+    },
+    {
+      "from": "REPLACING",
+      "to": "WAITING_FOR_STABLE_QUOTE"
+    },
+    {
+      "from": "WAITING_FOR_STABLE_QUOTE",
+      "to": "QUOTING"
+    },
+    {
+      "from": "QUOTING",
+      "to": "REPLACING"
+    },
+    {
+      "from": "REPLACING",
+      "to": "WAITING_FOR_STABLE_QUOTE"
+    },
+    {
+      "from": "WAITING_FOR_STABLE_QUOTE",
+      "to": "QUOTING"
+    },
+    {
+      "from": "QUOTING",
+      "to": "REPLACING"
+    },
+    {
+      "from": "REPLACING",
+      "to": "WAITING_FOR_STABLE_QUOTE"
+    },
+    {
+      "from": "WAITING_FOR_STABLE_QUOTE",
+      "to": "QUOTING"
+    },
+    {
+      "from": "QUOTING",
+      "to": "REPLACING"
+    },
+    {
+      "from": "REPLACING",
+      "to": "WAITING_FOR_STABLE_QUOTE"
+    },
+    {
+      "from": "WAITING_FOR_STABLE_QUOTE",
+      "to": "QUOTING"
+    },
+    {
+      "from": "QUOTING",
+      "to": "CLOSING_CANCELS"
+    },
+    {
+      "from": "CLOSING_CANCELS",
+      "to": "CLOSING_RECONCILE"
+    },
+    {
+      "from": "CLOSING_RECONCILE",
+      "to": "FLATTENING"
+    },
+    {
+      "from": "FLATTENING",
+      "to": "WAITING_FOR_STABLE_QUOTE"
+    },
+    {
+      "from": "WAITING_FOR_STABLE_QUOTE",
+      "to": "QUOTING"
+    },
+    {
+      "from": "QUOTING",
+      "to": "REPLACING"
+    },
+    {
+      "from": "REPLACING",
+      "to": "WAITING_FOR_STABLE_QUOTE"
+    },
+    {
+      "from": "WAITING_FOR_STABLE_QUOTE",
+      "to": "QUOTING"
+    },
+    {
+      "from": "QUOTING",
+      "to": "REPLACING"
+    },
+    {
+      "from": "REPLACING",
+      "to": "WAITING_FOR_STABLE_QUOTE"
+    },
+    {
+      "from": "WAITING_FOR_STABLE_QUOTE",
+      "to": "QUOTING"
+    },
+    {
+      "from": "QUOTING",
+      "to": "CLOSING_CANCELS"
+    },
+    {
+      "from": "CLOSING_CANCELS",
+      "to": "CLOSING_RECONCILE"
+    },
+    {
+      "from": "CLOSING_RECONCILE",
+      "to": "FLATTENING"
+    },
+    {
+      "from": "FLATTENING",
+      "to": "WAITING_FOR_STABLE_QUOTE"
+    },
+    {
+      "from": "WAITING_FOR_STABLE_QUOTE",
+      "to": "QUOTING"
+    },
+    {
+      "from": "QUOTING",
+      "to": "REPLACING"
+    },
+    {
+      "from": "REPLACING",
+      "to": "WAITING_FOR_STABLE_QUOTE"
+    },
+    {
+      "from": "WAITING_FOR_STABLE_QUOTE",
+      "to": "QUOTING"
+    },
+    {
+      "from": "QUOTING",
+      "to": "REPLACING"
+    },
+    {
+      "from": "REPLACING",
+      "to": "WAITING_FOR_STABLE_QUOTE"
+    },
+    {
+      "from": "WAITING_FOR_STABLE_QUOTE",
+      "to": "QUOTING"
+    },
+    {
+      "from": "QUOTING",
+      "to": "REPLACING"
+    },
+    {
+      "from": "REPLACING",
+      "to": "CLOSING_CANCELS"
+    },
+    {
+      "from": "CLOSING_CANCELS",
+      "to": "CLOSING_RECONCILE"
+    },
+    {
+      "from": "CLOSING_RECONCILE",
+      "to": "FAILED"
+    }
+  ],
+  "stop_reason": null,
+  "strategy_hash": "d041cd39bd223a31e92d345c2bdeefaf449c47deaf27ec9eb8d5dd446b1db8b3",
+  "target_exchange": "SHFE",
+  "target_lots": 1,
+  "target_symbol": "cu2609",
+  "terminal_state": "FAILED"
+}

@@ -367,6 +367,26 @@ class LiveGridSessionTests(unittest.TestCase):
         self.assertEqual(session.state, SessionState.FINISHED)
         self.assertEqual(session.summary()["round_trips"], 1)
 
+    def test_order_fill_status_waits_for_trade_event_before_starting_window(self) -> None:
+        session = start_session(make_config(closing_wait_seconds=1, max_round_trips=1))
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
+        submitted = session.handle(ClockEvent(2))
+        buy = next(action for action in submitted if action.payload["side"] == "BUY")
+        sell = next(action for action in submitted if action.payload["side"] == "SELL")
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
+        session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
+
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "ALLTRADED", 1, traded=1))
+        self.assertEqual(session.state, SessionState.QUOTING)
+
+        session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1", at=10.0))
+        self.assertEqual(session.state, SessionState.CLOSING_WAIT)
+        self.assertEqual(session._window_started_at, 10.0)
+        self.assertEqual(session.handle(ClockEvent(10.999)), [])
+        self.assertEqual(session.state, SessionState.CLOSING_WAIT)
+        self.assertEqual(len(session.handle(ClockEvent(11.0))), 1)
+        self.assertEqual(session.state, SessionState.FLATTENING)
+
     def test_first_full_fill_flattens_then_cancels_opposite_and_reconciles(self) -> None:
         session = start_session()
         session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))

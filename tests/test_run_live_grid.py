@@ -241,6 +241,8 @@ class RunLiveGridTests(unittest.TestCase):
                 "run_live_grid.py",
                 "--config",
                 str(config_path),
+                "--env",
+                "7x24",
                 "--confirm-simnow",
                 "--audit-dir",
                 audit_root,
@@ -251,12 +253,13 @@ class RunLiveGridTests(unittest.TestCase):
                 side_effect=RuntimeError("missing credentials"),
             ) as load_settings:
                 self.assertEqual(run_live_grid.main(), 3)
-            load_settings.assert_called_once()
+            load_settings.assert_called_once_with("7x24")
 
             run_directories = list(Path(audit_root).iterdir())
             self.assertEqual(len(run_directories), 1)
             run_directory = run_directories[0]
             run_summary = json.loads((run_directory / "summary.json").read_text())
+            self.assertEqual(run_summary["environment"], "7x24")
             self.assertEqual(run_summary["failure_reason"], "missing credentials")
             self.assertEqual(run_summary["terminal_state"], "FAILED")
             self.assertEqual(
@@ -267,6 +270,7 @@ class RunLiveGridTests(unittest.TestCase):
 
             contract_directory = run_directory / "rb2601@SHFE"
             summary = json.loads((contract_directory / "summary.json").read_text())
+            self.assertEqual(summary["environment"], "7x24")
             self.assertEqual(summary["terminal_state"], "FAILED")
             self.assertEqual(summary["failure_reason"], "missing credentials")
             for key in (
@@ -292,6 +296,8 @@ class RunLiveGridTests(unittest.TestCase):
                 "run_live_grid.py",
                 "--config",
                 str(config_path),
+                "--env",
+                "7x24",
                 "--audit-dir",
                 audit_root,
             ]
@@ -305,6 +311,7 @@ class RunLiveGridTests(unittest.TestCase):
 
             run_directory = list(Path(audit_root).iterdir())[0]
             run_summary = json.loads((run_directory / "summary.json").read_text())
+            self.assertEqual(run_summary["environment"], "7x24")
             self.assertEqual(
                 run_summary["terminal_states"],
                 {"rb2601@SHFE": "PREVIEW", "AP610@CZCE": "PREVIEW"},
@@ -312,6 +319,7 @@ class RunLiveGridTests(unittest.TestCase):
             self.assertEqual(run_summary["failure_reason"], "confirmation_required")
             for name in ("rb2601@SHFE", "AP610@CZCE"):
                 summary = json.loads((run_directory / name / "summary.json").read_text())
+                self.assertEqual(summary["environment"], "7x24")
                 self.assertEqual(summary["terminal_state"], "PREVIEW")
                 self.assertEqual(summary["failure_reason"], "confirmation_required")
 
@@ -376,6 +384,7 @@ class RunLiveGridTests(unittest.TestCase):
 
             run_directory = list(Path(audit_root).iterdir())[0]
             run_summary = json.loads((run_directory / "summary.json").read_text())
+            self.assertEqual(run_summary["environment"], "first")
             self.assertEqual(
                 run_summary["terminal_states"],
                 {"rb2601@SHFE": "FINISHED", "AP610@CZCE": "FINISHED"},

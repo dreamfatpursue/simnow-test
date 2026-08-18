@@ -1,0 +1,26 @@
+{
+  "effective": {
+    "action_limit_per_minute": 60,
+    "book_protection_multiple": 2,
+    "cancel_timeout_seconds": 10,
+    "closing_wait_seconds": 1,
+    "contracts": [
+      {
+        "exchange": "SHFE",
+        "symbol": "cu2610",
+        "target_lots": 1
+      }
+    ],
+    "d_ticks": 2,
+    "flatten_adverse_ticks": 10,
+    "flatten_timeout_seconds": 3,
+    "max_round_trips": 5,
+    "reanchor_confirmation_seconds": 1,
+    "s_ticks": 10,
+    "session_end_time": "",
+    "stable_market_seconds": 2,
+    "version": 2,
+    "w_ticks": 2
+  },
+  "sha256": "1a3318609202905d6a7569ccf1ec6ce968869c32203f3cb1da7a0ff0e02bab4b"
+}

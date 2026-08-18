@@ -30,7 +30,7 @@
 | --- | --- | --- |
 | [`run.py`](../run.py) | 只读 CTP 连接命令 | 环境变量读取、登录、合约订阅、只读边界 |
 | [`run_live_grid.py`](../run_live_grid.py) | 报撤测试入口 | 预览/确认、审计目录、启动异常、Ctrl+C 收口 |
-| [`report.py`](../report.py) | 离线交易日成交明细报告 | 审计目录扫描、交易日归组、轮次重建、资金汇总 |
+| [`report.py`](../report.py) | 离线交易日成交明细与手动单 run 委托成交报告 | 审计目录扫描、因果轨迹校验/渲染、交易日归组、轮次重建、资金汇总 |
 | [`live_grid/config.py`](../live_grid/config.py) | 策略配置校验与哈希 | 凭证拒绝、默认值、规范化 JSON、SimNow 确认和策略身份 |
 | [`live_grid/session.py`](../live_grid/session.py) | 与 CTP 无关的确定性状态机 | 状态迁移、报价、撤换、收口、FAK、最终摘要 |
 | [`live_grid/ctp_adapter.py`](../live_grid/ctp_adapter.py) | vn.py/CTP 与状态机之间的薄适配层 | 回报转换、请求号关联、委托/撤单/查仓动作转换 |
@@ -544,6 +544,18 @@ late_flatten_fill_after_finish
 run 根目录的资金快照流水，每行是网关一次资金回报的 `at`（单调时间，与逐事件审计同时钟域）、`balance`、`available`。资金账号等凭证字段在审计边界被拒绝，永远不会出现在该文件。离线报告用它取"首个委托前最后一个快照"与"最后平仓终态后第一个快照"的资金差作为真实净盈亏，缺失边界时取最近快照并在报告标注。
 
 资金差只在账户仅运行本策略时才等于策略净盈亏：账户内其他合约仓位的浮动盈亏会随每份快照混入该数字（2026-08-17 实盘验证时，账户遗留的一手 MA609 多单就以 ±几十元的浮动盈亏污染了当日资金差）。报告页对此有显式声明。
+
+### 13.5 手动生成单 run 委托成交报告
+
+运行结束后，如需复盘某一次完整 run，再手动执行：
+
+```bash
+python report.py --run-dir audit/<run-id> --out-dir reports
+```
+
+命令只读取该 run 已落盘的 `effective_strategy.json`、各合约 `events.jsonl`、`summary.json` 和可选的 `account.jsonl`，不会重放状态机，也不会连接 SimNow。报告生成到 `reports/run-<run-id>.html`，不会写回审计目录；需要直接打开时追加 `--open`。
+
+单 run 模式只接受带 `audit_schema_version: 2`、结构化审计因果轨迹和完整终态摘要的 run。旧格式、活动中或缺少摘要的目录会以非零状态拒绝，不生成降级页面。页面按合约展示审计品种身份、运行参数、运行因果时间线、完整逻辑委托、默认收起的详情、成交/收口链路、轮次毛盈亏和可证明的资金结果。
 
 ## 14. 推荐交接/验收顺序
 

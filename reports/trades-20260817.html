@@ -1,0 +1,27 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>交易日成交明细 2026-08-17</title><style>body{font-family:-apple-system,'PingFang SC',sans-serif;margin:24px;color:#222}h1{font-size:20px}h2{font-size:16px;margin-top:28px}table{border-collapse:collapse;margin-top:8px}th,td{border:1px solid #ccc;padding:4px 10px;text-align:right;font-variant-numeric:tabular-nums}th{background:#f5f5f5}td:nth-child(2){text-align:center}.note{color:#666;font-size:13px;margin-top:6px}</style></head><body><h1>交易日成交明细 · 2026-08-17</h1><p class="note">毛盈亏未含手续费，按成交价与合约乘数计算。时刻列为交易所秒级时间戳（SimNow 可能带 ±1 秒抖动）；两个间隔列按审计单调钟毫秒精度计算。</p><h2>当日 run 总览</h2>
+<table><tr><th>run</th><th>合约</th><th>终态</th><th>轮数</th><th>失败原因</th><th>停止原因</th></tr>
+<tr><td>20260817T011151.478345Z-dae0d2e887</td><td>AP610@CZCE</td><td>FINISHED</td><td>0</td><td>—</td><td>interrupted</td></tr>
+<tr><td>20260817T014930.273133Z-69e1c2757c</td><td>AP610@CZCE</td><td>FINISHED</td><td>2</td><td>—</td><td>max_round_trips</td></tr>
+<tr><td>20260817T020416.576500Z-12d738eaad</td><td>—</td><td>CRASHED</td><td>—</td><td>summary.json 缺失（进程未正常收尾）</td><td>—</td></tr>
+<tr><td>20260817T061457.032478Z-148fbf1f9f</td><td>AP610@CZCE</td><td>FINISHED</td><td>5</td><td>—</td><td>max_round_trips</td></tr>
+</table>
+<h2>资金汇总</h2>
+<table><tr><th>run</th><th>起始资金</th><th>结束资金</th><th>真实净盈亏</th><th>备注</th></tr>
+<tr><td>20260817T014930.273133Z-69e1c2757c</td><td>21,999,647.59</td><td>21,999,667.59</td><td>20.00</td><td>边界快照缺失，取最近快照</td></tr>
+<tr><td>20260817T020416.576500Z-12d738eaad</td><td>21,999,657.59</td><td>21,999,647.59</td><td>-10.00</td><td></td></tr>
+<tr><td>20260817T061457.032478Z-148fbf1f9f</td><td>21,999,731.59</td><td>21,999,631.59</td><td>-100.00</td><td></td></tr>
+<tr><td>日合计</td><td>21,999,647.59</td><td>21,999,631.59</td><td>-90.00</td><td>推算手续费 0.00</td></tr>
+</table>
+<p class="note">真实净盈亏已含手续费（账户资金差）；手续费为推算值（Σ毛盈亏 − 资金差）。资金差只在账户仅运行本策略时才等于策略净盈亏——账户内其他仓位的浮动盈亏会直接混入该数字。</p>
+<h2>AP610@CZCE</h2>
+<table><tr><th>#</th><th>方向</th><th>挂单时刻</th><th>挂单价</th><th>挂单量</th><th>成交时刻</th><th>成交价</th><th>成交量</th><th>平仓时刻</th><th>平仓价</th><th>平仓量</th><th>挂单→成交</th><th>成交→平仓</th><th>结束方式</th><th>价差</th><th>tick 数</th><th>毛盈亏</th></tr>
+<tr><td>1</td><td>BUY</td><td>09:52:01</td><td>7856</td><td>1</td><td>09:52:30</td><td>7856</td><td>1</td><td>09:52:32</td><td>7856</td><td>1</td><td>30.1s</td><td>0.8s</td><td>FAK 平仓</td><td>+0</td><td>+0</td><td>+0</td></tr>
+<tr><td>2</td><td>BUY</td><td>09:55:32</td><td>7852</td><td>1</td><td>09:55:32</td><td>7852</td><td>1</td><td>09:55:32</td><td>7851</td><td>1</td><td>0.1s</td><td>0.7s</td><td>FAK 平仓</td><td>-1</td><td>-1</td><td>-10</td></tr>
+<tr><td>3</td><td>BUY</td><td>10:10:13</td><td>7843</td><td>1</td><td>10:10:13</td><td>7843</td><td>1</td><td>10:10:13</td><td>7842</td><td>1</td><td>0.5s</td><td>0.5s</td><td>FAK 平仓</td><td>-1</td><td>-1</td><td>-10</td></tr>
+<tr><td>4</td><td>BUY</td><td>10:11:52</td><td>7848</td><td>1</td><td>10:11:52</td><td>7847</td><td>1</td><td>10:11:54</td><td>7845</td><td>1</td><td>1.1s</td><td>0.4s</td><td>FAK 平仓</td><td>-2</td><td>-2</td><td>-20</td></tr>
+<tr><td>5</td><td>SELL</td><td>14:19:22</td><td>7888</td><td>1</td><td>14:20:00</td><td>7888</td><td>1</td><td>14:20:02</td><td>7889</td><td>1</td><td>38.5s</td><td>1.8s</td><td>FAK 平仓</td><td>-1</td><td>-1</td><td>-10</td></tr>
+<tr><td>6</td><td>BUY</td><td>14:20:54</td><td>7893</td><td>1</td><td>14:20:54</td><td>7893</td><td>1</td><td>14:20:55</td><td>7892</td><td>1</td><td>0.2s</td><td>1.0s</td><td>FAK 平仓</td><td>-1</td><td>-1</td><td>-10</td></tr>
+<tr><td>7</td><td>SELL</td><td>14:21:30</td><td>7897</td><td>1</td><td>14:21:33</td><td>7897</td><td>1</td><td>14:21:34</td><td>7897</td><td>1</td><td>2.9s</td><td>1.2s</td><td>FAK 平仓</td><td>-0</td><td>-0</td><td>-0</td></tr>
+<tr><td>8</td><td>BUY</td><td>14:22:41</td><td>7890</td><td>1</td><td>14:22:41</td><td>7890</td><td>1</td><td>14:22:43</td><td>7889</td><td>1</td><td>0.3s</td><td>1.8s</td><td>FAK 平仓</td><td>-1</td><td>-1</td><td>-10</td></tr>
+<tr><td>9</td><td>BUY</td><td>14:24:39</td><td>7894</td><td>1</td><td>14:24:39</td><td>7893</td><td>1</td><td>14:24:41</td><td>7891</td><td>1</td><td>0.4s</td><td>1.6s</td><td>FAK 平仓</td><td>-2</td><td>-2</td><td>-20</td></tr>
+</table></body></html>
