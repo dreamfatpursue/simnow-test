@@ -4,14 +4,18 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import webbrowser
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from html import escape
+from math import isfinite
 from pathlib import Path
 from typing import Any
+
+from live_grid.audit import AUDIT_SCHEMA_VERSION, AuditError, AuditWriter
 
 
 @dataclass(frozen=True)
@@ -135,6 +139,113 @@ class DayModel:
     account_snapshots: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
 
+@dataclass
+class RunOrder:
+    client_id: str
+    submit_at: float | None = None
+    payload: dict[str, Any] = field(default_factory=dict)
+    order_id: str | None = None
+    statuses: list[str] = field(default_factory=list)
+    final_status: str | None = None
+    traded: int = 0
+    trade_volume: int = 0
+    actions: list[dict[str, Any]] = field(default_factory=list)
+    status_events: list[dict[str, Any]] = field(default_factory=list)
+    traces: list[dict[str, Any]] = field(default_factory=list)
+    trades: list[dict[str, Any]] = field(default_factory=list)
+    trade_ids: set[str] = field(default_factory=set, repr=False)
+    successor_client_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RunContractReport:
+    contract: str
+    symbol: str
+    exchange: str
+    product_code: str | None
+    pricetick: float | None
+    size: float | None
+    orders: list[RunOrder] = field(default_factory=list)
+    timeline: list[dict[str, Any]] = field(default_factory=list)
+    rounds: list[RoundRecord] = field(default_factory=list)
+
+
+@dataclass
+class RunReport:
+    directory: str
+    effective: dict[str, Any]
+    strategy_hash: str | None
+    summary: dict[str, Any]
+    contracts: list[RunContractReport]
+    funds: RunFunds | None = None
+    account_snapshot_count: int = 0
+    gross_pnl: float | None = None
+
+
+class RunReportError(ValueError):
+    """Raised when a run cannot be rendered as a causal report."""
+
+
+_COMMON_EFFECTIVE_KEYS = {
+    "version",
+    "w_ticks",
+    "d_ticks",
+    "s_ticks",
+    "book_protection_multiple",
+    "reanchor_confirmation_seconds",
+    "stable_market_seconds",
+    "action_limit_per_minute",
+    "cancel_timeout_seconds",
+    "flatten_timeout_seconds",
+    "flatten_adverse_ticks",
+    "max_round_trips",
+    "session_end_time",
+    "closing_wait_seconds",
+}
+
+
+def _validate_effective_payload(effective: Any, path: Path, *, run_level: bool) -> dict[str, Any]:
+    if not isinstance(effective, dict) or not effective:
+        raise RunReportError(f"生效策略缺少有效参数: {path}")
+    required = set(_COMMON_EFFECTIVE_KEYS) | {"symbol", "exchange", "target_lots"}
+    if run_level and "contracts" in effective:
+        required -= {"symbol", "exchange", "target_lots"}
+        contracts = effective.get("contracts")
+        if not isinstance(contracts, list) or not contracts:
+            raise RunReportError(f"run 生效策略缺少完整合约列表: {path}")
+        for entry in contracts:
+            if (
+                not isinstance(entry, dict)
+                or not isinstance(entry.get("symbol"), str)
+                or not entry.get("symbol")
+                or not isinstance(entry.get("exchange"), str)
+                or not entry.get("exchange")
+                or "target_lots" not in entry
+            ):
+                raise RunReportError(f"run 生效策略包含不完整合约项: {path}")
+    missing = sorted(required - effective.keys())
+    if missing:
+        raise RunReportError(f"生效策略缺少字段 {', '.join(missing)}: {path}")
+    return effective
+
+
+def _validate_strategy_hash(effective: dict[str, Any], sha256: Any, path: Path) -> str:
+    if not isinstance(sha256, str) or not sha256:
+        raise RunReportError(f"生效策略缺少策略哈希: {path}")
+    canonical = json.dumps(effective, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    expected = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    if sha256 != expected:
+        raise RunReportError(f"策略哈希与生效参数不一致: {path}")
+    return sha256
+
+
+def _assert_report_safe(value: Any, path: Path) -> None:
+    try:
+        AuditWriter._assert_safe(value)
+    except AuditError as exc:
+        raise RunReportError(f"审计内容包含禁止字段: {path}") from exc
+
+
 def _weighted_price(fills: list[Fill]) -> float:
     total = sum(fill.volume for fill in fills)
     if total == 0:
@@ -210,16 +321,17 @@ def _build_rounds(events: list[dict[str, Any]]) -> tuple[list[RoundRecord], floa
     submissions: dict[str, dict[str, Any]] = {}
     submit_ats: dict[str, float] = {}
     fills: list[Fill] = []
+    seen_trade_ids: set[str] = set()
     pricetick: float | None = None
     size: float | None = None
     for record in events:
-        at = record["at"]
+        at = float(record["at"])
         event_type = record["event"]["type"]
         data = record["event"]["data"]
         for action in record["actions"]:
             if _action_kind(action) != "submit_order":
                 continue
-            payload = (action.get("data") or {}).get("payload") or action.get("payload") or {}
+            payload = _action_payload(action)
             action_client = payload.get("client_id")
             if action_client:
                 previous = submit_ats.get(action_client)
@@ -246,6 +358,11 @@ def _build_rounds(events: list[dict[str, Any]]) -> tuple[list[RoundRecord], floa
             client_id = data.get("client_id")
             if not client_id:
                 continue
+            trade_id = str(data.get("trade_id") or "")
+            if trade_id and trade_id in seen_trade_ids:
+                continue
+            if trade_id:
+                seen_trade_ids.add(trade_id)
             fills.append(
                 Fill(
                     client_id=client_id,
@@ -338,19 +455,21 @@ def _build_funds(
     has_fill = False
     for events in run.contract_events.values():
         for record in events:
+            at = float(record["at"])
             data = record["event"]["data"]
             if record["event"]["type"] == "TradeEvent" and data.get("client_id"):
                 has_fill = True
             if any(_action_kind(action) == "submit_order" for action in record["actions"]):
-                at = record["at"]
                 if first_submit_at is None or at < first_submit_at:
                     first_submit_at = at
+            if any(trace.get("code") == "round_finished" for trace in record.get("trace", []) if isinstance(trace, dict)):
+                if last_flatten_terminal_at is None or at > last_flatten_terminal_at:
+                    last_flatten_terminal_at = at
             if (
                 record["event"]["type"] == "OrderEvent"
                 and (data.get("client_id") or "").startswith("flatten-")
                 and data["status"] in {"ALLTRADED", "CANCELLED", "REJECTED"}
             ):
-                at = record["at"]
                 if last_flatten_terminal_at is None or at > last_flatten_terminal_at:
                     last_flatten_terminal_at = at
     if not has_fill or first_submit_at is None or last_flatten_terminal_at is None:
@@ -599,13 +718,649 @@ def render_html(model: DayModel) -> str:
     )
 
 
+def _read_json(path: Path, label: str) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RunReportError(f"{label} 读取失败: {path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise RunReportError(f"{label} 必须是 JSON 对象: {path}")
+    return value
+
+
+def _check_audit_schema(effective: dict[str, Any], path: Path) -> None:
+    if effective.get("audit_schema_version") != AUDIT_SCHEMA_VERSION:
+        raise RunReportError(f"不支持的审计格式: {path}")
+
+
+def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
+    data = action.get("data")
+    if isinstance(data, dict):
+        payload = data.get("payload")
+        if isinstance(payload, dict):
+            return payload
+    payload = action.get("payload")
+    return payload if isinstance(payload, dict) else {}
+
+
+_ORDER_TERMINAL_STATUSES = {"ALLTRADED", "CANCELLED", "REJECTED"}
+
+
+def _trace_client_ids(trace: dict[str, Any]) -> list[str]:
+    client_ids = trace.get("client_ids")
+    if isinstance(client_ids, list):
+        return [str(client_id) for client_id in client_ids if client_id]
+    client_id = trace.get("client_id")
+    return [str(client_id)] if client_id else []
+
+
+def _run_contract_from_events(events_file: Path, events: list[dict[str, Any]]) -> RunContractReport:
+    contract_name = events_file.parent.name
+    symbol, _, exchange = contract_name.partition("@")
+    product_code: str | None = None
+    pricetick: float | None = None
+    size: float | None = None
+    orders: dict[str, RunOrder] = {}
+    timeline: list[dict[str, Any]] = []
+
+    def order_for(client_id: str) -> RunOrder:
+        return orders.setdefault(client_id, RunOrder(client_id=client_id))
+
+    for record in events:
+        try:
+            at = float(record["at"])
+            event = record["event"]
+            event_type = event["type"]
+            data = event.get("data") or {}
+            actions = record.get("actions") or []
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RunReportError(f"事件格式错误: {events_file}") from exc
+
+        if event_type == "ContractEvent":
+            symbol = str(data.get("symbol") or symbol)
+            exchange = str(data.get("exchange") or exchange)
+            product_code = data.get("product_code") or product_code
+            pricetick = data.get("pricetick")
+            size = data.get("size")
+
+        record_traces = record.get("trace") or []
+        for trace in record_traces:
+            if not isinstance(trace, dict):
+                raise RunReportError(f"因果轨迹格式错误: {events_file}")
+            client_ids = _trace_client_ids(trace)
+            if client_ids:
+                for client_id in client_ids:
+                    order_for(client_id).traces.append(trace)
+                replacement = trace.get("replacement")
+                if isinstance(replacement, dict):
+                    for previous_id in replacement.get("previous_client_ids", []):
+                        previous = order_for(str(previous_id))
+                        for successor_id in client_ids:
+                            if successor_id not in previous.successor_client_ids:
+                                previous.successor_client_ids.append(successor_id)
+            else:
+                timeline.append({"at": at, **trace})
+
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            kind = _action_kind(action)
+            payload = _action_payload(action)
+            client_id = payload.get("client_id")
+            if not client_id:
+                continue
+            order = order_for(str(client_id))
+            order.actions.append({"at": at, "kind": kind, "payload": payload})
+            if kind == "submit_order":
+                if order.submit_at is None or at < order.submit_at:
+                    order.submit_at = at
+                if not order.payload:
+                    order.payload = dict(payload)
+
+        if event_type == "OrderEvent":
+            client_id = data.get("client_id")
+            if client_id:
+                order = order_for(str(client_id))
+                order.order_id = data.get("order_id") or order.order_id
+                status = data.get("status")
+                if status and status not in order.statuses:
+                    order.statuses.append(str(status))
+                if status:
+                    if status in _ORDER_TERMINAL_STATUSES:
+                        if order.final_status not in _ORDER_TERMINAL_STATUSES:
+                            order.final_status = str(status)
+                    elif order.final_status not in _ORDER_TERMINAL_STATUSES:
+                        order.final_status = str(status)
+                order.traded = max(order.traded, int(data.get("traded") or 0))
+                if status:
+                    order.status_events.append(
+                        {
+                            "at": at,
+                            "status": str(status),
+                            "traded": int(data.get("traded") or 0),
+                            "order_id": data.get("order_id"),
+                            "exchange_time": data.get("exchange_time"),
+                        }
+                    )
+        elif event_type == "TradeEvent":
+            client_id = data.get("client_id")
+            if client_id:
+                trade_id = str(data.get("trade_id") or "")
+                if trade_id and trade_id in order_for(str(client_id)).trade_ids:
+                    continue
+                order = order_for(str(client_id))
+                if trade_id:
+                    order.trade_ids.add(trade_id)
+                order.trades.append(dict(data))
+                order.trade_volume += int(data.get("volume") or 0)
+                order.traded = max(order.traded, order.trade_volume)
+
+    rounds, round_pricetick, round_size = _build_rounds(events)
+    return RunContractReport(
+        contract=f"{symbol}@{exchange}",
+        symbol=symbol,
+        exchange=exchange,
+        product_code=product_code,
+        pricetick=pricetick if pricetick is not None else round_pricetick,
+        size=size if size is not None else round_size,
+        orders=sorted(orders.values(), key=lambda order: (order.submit_at is None, order.submit_at or 0, order.client_id)),
+        timeline=sorted(timeline, key=lambda item: item["at"]),
+        rounds=rounds,
+    )
+
+
+def build_run_report(run_dir: str | Path) -> RunReport:
+    directory = Path(run_dir)
+    if not directory.is_dir():
+        raise RunReportError(f"run 目录不存在: {directory}")
+    effective_doc = _read_json(directory / "effective_strategy.json", "run 生效策略")
+    _assert_report_safe(effective_doc, directory / "effective_strategy.json")
+    _check_audit_schema(effective_doc, directory / "effective_strategy.json")
+    run_effective = _validate_effective_payload(
+        effective_doc.get("effective"), directory / "effective_strategy.json", run_level=True
+    )
+    run_hash = _validate_strategy_hash(run_effective, effective_doc.get("sha256"), directory / "effective_strategy.json")
+    summary = _read_json(directory / "summary.json", "run 摘要")
+    _assert_report_safe(summary, directory / "summary.json")
+    summary_contracts = summary.get("contracts")
+    if not isinstance(summary_contracts, list) or not summary_contracts:
+        raise RunReportError(f"run 摘要缺少合约终态: {directory / 'summary.json'}")
+    summary_rows: dict[str, dict[str, Any]] = {}
+    for entry in summary_contracts:
+        if not isinstance(entry, dict):
+            raise RunReportError(f"run 摘要包含无效合约项: {directory / 'summary.json'}")
+        symbol = entry.get("target_symbol")
+        exchange = entry.get("target_exchange")
+        if not isinstance(symbol, str) or not symbol or not isinstance(exchange, str) or not exchange:
+            raise RunReportError(f"run 摘要包含缺少合约身份的项: {directory / 'summary.json'}")
+        key = f"{symbol}@{exchange}"
+        if key in summary_rows:
+            raise RunReportError(f"run 摘要包含重复合约: {key}")
+        summary_rows[key] = entry
+    if any(entry.get("terminal_state") not in {"FINISHED", "FAILED"} for entry in summary_rows.values()):
+        raise RunReportError("run 尚未进入完整终态，拒绝生成报告")
+
+    contracts: list[RunContractReport] = []
+    event_inputs: list[tuple[Path, list[dict[str, Any]]]] = []
+    event_files = sorted(directory.glob("*/events.jsonl"))
+    if not event_files:
+        raise RunReportError(f"run 缺少合约事件日志: {directory}")
+    for events_file in event_files:
+        contract_effective = _read_json(events_file.parent / "effective_strategy.json", "合约生效策略")
+        _assert_report_safe(contract_effective, events_file.parent / "effective_strategy.json")
+        _check_audit_schema(contract_effective, events_file.parent / "effective_strategy.json")
+        _validate_effective_payload(
+            contract_effective.get("effective"), events_file.parent / "effective_strategy.json", run_level=False
+        )
+        if contract_effective.get("sha256") != run_hash:
+            raise RunReportError(f"合约生效策略与 run 策略哈希不一致: {events_file.parent / 'effective_strategy.json'}")
+        contract_summary = _read_json(events_file.parent / "summary.json", "合约摘要")
+        _assert_report_safe(contract_summary, events_file.parent / "summary.json")
+        if contract_summary.get("terminal_state") not in {"FINISHED", "FAILED"}:
+            raise RunReportError(f"合约尚未进入完整终态: {events_file.parent / 'summary.json'}")
+        try:
+            events = [
+                json.loads(line)
+                for line in events_file.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RunReportError(f"事件日志读取失败: {events_file}: {exc}") from exc
+        if not events:
+            raise RunReportError(f"合约事件日志为空: {events_file}")
+        _assert_report_safe(events, events_file)
+        contract = _run_contract_from_events(events_file, events)
+        if (
+            not contract.symbol
+            or not contract.exchange
+            or not isinstance(contract.product_code, str)
+            or not contract.product_code.strip()
+            or not isinstance(contract.pricetick, (int, float))
+            or not isfinite(contract.pricetick)
+            or contract.pricetick <= 0
+            or not isinstance(contract.size, (int, float))
+            or not isfinite(contract.size)
+            or contract.size <= 0
+        ):
+            raise RunReportError(f"合约事件缺少必要审计身份或 pricetick: {events_file}")
+        if contract.contract not in summary_rows:
+            raise RunReportError(f"合约缺少 run 摘要终态: {contract.contract}")
+        contracts.append(contract)
+        event_inputs.append((events_file, events))
+
+    if not any(record.get("trace") for _, events in event_inputs for record in events):
+        raise RunReportError("run 缺少结构化因果轨迹，拒绝按当前代码推导历史原因")
+    event_contracts = {contract.contract for contract in contracts}
+    if event_contracts != set(summary_rows):
+        raise RunReportError("run 摘要与合约事件日志不一致，拒绝生成报告")
+
+    account_file = directory / "account.jsonl"
+    snapshots: list[dict[str, Any]] = []
+    if account_file.exists():
+        try:
+            snapshots = [
+                json.loads(line)
+                for line in account_file.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RunReportError(f"资金快照读取失败: {account_file}: {exc}") from exc
+        _assert_report_safe(snapshots, account_file)
+        for snapshot in snapshots:
+            if (
+                not isinstance(snapshot, dict)
+                or not isinstance(snapshot.get("at"), (int, float))
+                or not isinstance(snapshot.get("balance"), (int, float))
+                or not isfinite(float(snapshot["at"]))
+                or not isfinite(float(snapshot["balance"]))
+            ):
+                raise RunReportError(f"资金快照缺少有效 at/balance: {account_file}")
+    run_facts = RunFacts(directory.name, {path.parent.name: events for path, events in event_inputs}, summary)
+    funds = _build_funds(run_facts, snapshots)
+    gross_pnl: float | None = 0.0
+    gross_unknown = False
+    for contract in contracts:
+        contract_day = ContractDay(contract.contract, contract.pricetick, contract.size)
+        for round_record in contract.rounds:
+            cash = _gross_pnl(round_record, contract_day)[2]
+            if cash is None:
+                gross_unknown = True
+            else:
+                gross_pnl += cash
+    if gross_unknown:
+        gross_pnl = None
+    return RunReport(
+        directory=directory.name,
+        effective=effective_doc.get("effective") or {},
+        strategy_hash=run_hash,
+        summary=summary,
+        contracts=contracts,
+        funds=funds,
+        account_snapshot_count=len(snapshots),
+        gross_pnl=gross_pnl if contracts else None,
+    )
+
+
+def _trace_label(code: str | None) -> str:
+    return {
+        "contract_metadata": "合约元数据",
+        "startup_position_query": "启动查仓",
+        "startup_position_result": "启动查仓结果",
+        "startup_position_rejected": "启动零仓门槛失败",
+        "zero_position_confirmed": "确认零仓",
+        "stable_quote_qualified": "稳定行情达标",
+        "order_status": "委托状态变化",
+        "quote_submitted": "首次报价",
+        "market_pause": "盘口保护失败，暂停报价",
+        "reanchor": "价格越界，重定锚",
+        "replacement_ready": "旧报价已终态，重新获得报价资格",
+        "replacement_delayed": "等待旧报价终态",
+        "normal_action_limit": "报撤动作限制",
+        "first_fill": "首次成交，进入价差窗口",
+        "window_fill": "窗口内追加成交",
+        "opposite_fill": "对侧成交，结束价差窗口",
+        "spread_complete": "价差完成",
+        "closing_started": "进入收口",
+        "window_timeout": "价差窗口超时",
+        "flatten_submitted": "提交 FAK 平仓",
+        "flatten_fill": "FAK 平仓成交",
+        "flatten_rejected": "FAK 平仓拒单",
+        "flatten_terminal": "FAK 委托终态",
+        "remaining_cancel": "撤销剩余委托",
+        "closing_position_query": "收口查仓",
+        "closing_position_result": "收口查仓结果",
+        "round_finished": "本轮完成",
+        "round_failed": "本轮失败",
+        "failure": "安全失败",
+        "late_opening_fill": "迟到开仓成交",
+        "late_opening_fill_after_finish": "终态后迟到开仓成交",
+        "late_flatten_fill": "迟到平仓成交",
+        "cancel_timeout": "撤单超时",
+        "flatten_timeout": "平仓超时",
+        "interrupt": "操作员中断",
+        "session_end": "到达会话结束时间",
+    }.get(code or "", code or "因果记录")
+
+
+def _order_anchor(client_id: str) -> str:
+    return "order-" + "".join(char if char.isalnum() or char in "_-" else "_" for char in client_id)
+
+
+def _order_link(client_id: str) -> str:
+    label = escape(client_id)
+    return f'<a href="#{_order_anchor(client_id)}">{label}</a>'
+
+
+def _order_purpose(client_id: str, payload: dict[str, Any]) -> str:
+    if client_id.startswith("flatten-") or payload.get("order_type") == "FAK":
+        return "FAK 平仓"
+    if client_id.startswith("quote-"):
+        return "网格报价"
+    return "其他委托"
+
+
+def _render_run_trace(trace: dict[str, Any]) -> str:
+    label = _trace_label(trace.get("code"))
+    if trace.get("code") == "quote_submitted" and isinstance(trace.get("replacement"), dict):
+        label = "替代报价提交"
+    parts = [f"<strong>{escape(label)}</strong>"]
+    calculation = trace.get("calculation") or {}
+    code = trace.get("code")
+    if code == "quote_submitted" and calculation:
+        parts.append(
+            "<div>报价计算："
+            f"锚点 {escape(_price(calculation.get('anchor_price')))}，"
+            f"距离 {escape(_price(calculation.get('distance_ticks')))} tick；"
+            f"买价 {escape(_price(calculation.get('buy_price')))}，"
+            f"卖价 {escape(_price(calculation.get('sell_price')))}。</div>"
+        )
+    elif code == "market_pause" and calculation:
+        parts.append(
+            "<div>盘口保护："
+            f"{escape(_price(calculation.get('distance_ticks')))} &gt; "
+            f"{escape(_price(calculation.get('protection_multiple')))} × "
+            f"{escape(_price(calculation.get('spread_ticks')))}，结果不通过。</div>"
+        )
+    elif code == "reanchor" and calculation:
+        parts.append(
+            "<div>重定锚："
+            f"锚点 {escape(_price(calculation.get('old_anchor_ticks')))} → "
+            f"{escape(_price(calculation.get('new_anchor_ticks')))} tick，"
+            f"越界持续 {escape(_seconds(calculation.get('elapsed_seconds')))}。</div>"
+        )
+    elif code == "first_fill" and calculation:
+        parts.append(
+            "<div>成交 "
+            f"{escape(_price(calculation.get('price')))} × {calculation.get('volume', '—')}，"
+            f"进入 {escape(_seconds(calculation.get('window_seconds')))} 价差窗口，"
+            f"结束时刻 {escape(_seconds(calculation.get('window_ends_at')))}。</div>"
+        )
+    elif code in {"window_fill", "opposite_fill", "spread_complete"} and calculation:
+        parts.append(
+            "<div>窗口净仓变化："
+            f"成交 {escape(_price(calculation.get('price')))} × {calculation.get('volume', '—')}，"
+            f"净仓 {calculation.get('net_position', '—')}，"
+            f"原因 {escape(str(calculation.get('reason') or '—'))}。</div>"
+        )
+    elif code == "window_timeout" and calculation:
+        parts.append(
+            "<div>窗口超时："
+            f"{escape(_seconds(calculation.get('elapsed_seconds')))} / "
+            f"{escape(_seconds(calculation.get('window_seconds')))}，"
+            f"净仓 {calculation.get('net_position', '—')}，开始受限平仓。</div>"
+        )
+    elif code == "flatten_submitted" and calculation:
+        parts.append(
+            "<div>FAK："
+            f"盘口可执行价 {escape(_price(calculation.get('market_executable_price')))}，"
+            f"初始价 {escape(_price(calculation.get('initial_executable_price')))}，"
+            f"不利上限 {escape(_price(calculation.get('adverse_price_limit')))}，"
+            f"实际委托价 {escape(_price(calculation.get('actual_price')))}。</div>"
+        )
+    elif code == "flatten_fill" and calculation:
+        parts.append(
+            "<div>平仓成交："
+            f"{escape(_price(calculation.get('price')))} × {calculation.get('volume', '—')}，"
+            f"净仓 {calculation.get('net_position_before', '—')} → "
+            f"{calculation.get('net_position_after', '—')}。</div>"
+        )
+    elif code == "closing_position_result" and calculation:
+        parts.append(
+            "<div>查仓结果："
+            f"净仓 {calculation.get('net_position', '—')}，"
+            f"校验 {('通过' if calculation.get('passed') else '失败')}。</div>"
+        )
+    replacement = trace.get("replacement")
+    if isinstance(replacement, dict):
+        previous = replacement.get("previous_client_ids", [])
+        previous_links = ", ".join(_order_link(str(value)) for value in previous)
+        parts.append(
+            "<div>替代前驱："
+            f"{previous_links or '—'}；"
+            f"原因：{escape(str(replacement.get('reason') or '—'))}</div>"
+        )
+    for key in ("market", "calculation"):
+        value = trace.get(key)
+        if value is not None:
+            parts.append(
+                f"<div><span class=\"label\">{escape(key)}</span> "
+                f"<code>{escape(json.dumps(value, ensure_ascii=False, sort_keys=True))}</code></div>"
+            )
+    return "<li>" + "".join(parts) + "</li>"
+
+
+def _render_run_order_details(order: RunOrder) -> str:
+    details: list[str] = ["<details><summary>查看详情</summary>"]
+    accepted_time = order.status_events[0].get("exchange_time") if order.status_events else None
+    terminal_time = next(
+        (
+            item.get("exchange_time")
+            for item in reversed(order.status_events)
+            if item.get("status") in _ORDER_TERMINAL_STATUSES
+        ),
+        None,
+    )
+    details.append(
+        "<p>CTP 委托号："
+        f"{escape(str(order.order_id or '—'))}；"
+        f"接受时间：{escape(str(accepted_time or '—'))}；"
+        f"终态时间：{escape(str(terminal_time or '—'))}</p>"
+    )
+    if order.successor_client_ids:
+        details.append(
+            "<p>后继报价："
+            + ", ".join(_order_link(client_id) for client_id in order.successor_client_ids)
+            + "</p>"
+        )
+    if order.actions or order.status_events:
+        details.append("<h4>动作与状态</h4><ol class=\"trace\">")
+        lifecycle: list[tuple[float, int, str]] = []
+        for item in order.actions:
+            lifecycle.append(
+                (
+                    float(item.get("at") or 0),
+                    0,
+                    f"动作 {escape(str(item.get('kind') or '—'))}：<code>{escape(json.dumps(item.get('payload') or {}, ensure_ascii=False, sort_keys=True))}</code>",
+                )
+            )
+        for item in order.status_events:
+            lifecycle.append(
+                (
+                    float(item.get("at") or 0),
+                    1,
+                    f"状态 {escape(str(item.get('status') or '—'))}，累计成交 {item.get('traded', 0)}；"
+                    f"交易所时间 {escape(str(item.get('exchange_time') or '—'))}",
+                )
+            )
+        for at, _, description in sorted(lifecycle, key=lambda row: (row[0], row[1])):
+            details.append(f"<li><span class=\"label\">审计时钟 {escape(_seconds(at))}</span>{description}</li>")
+        details.append("</ol>")
+    if order.traces:
+        details.append("<ol class=\"trace\">" + "".join(_render_run_trace(trace) for trace in order.traces) + "</ol>")
+    if order.trades:
+        details.append("<h4>成交</h4><pre>")
+        details.append(escape(json.dumps(order.trades, ensure_ascii=False, indent=2, sort_keys=True)))
+        details.append("</pre>")
+    if not order.traces and not order.trades and not order.successor_client_ids:
+        details.append("<p class=\"note\">暂无结构化详情。</p>")
+    details.append("</details>")
+    return "".join(details)
+
+
+def _render_run_funds(model: RunReport) -> list[str]:
+    rows = ["<h2>资金结果</h2>"]
+    if model.funds is None:
+        if model.account_snapshot_count:
+            rows.append(
+                f'<p class="note">已记录 {model.account_snapshot_count} 条资金快照，但缺少首个委托前或最后平仓终态后的边界快照，'
+                "不伪造资金差净盈亏。</p>"
+            )
+        else:
+            rows.append('<p class="note">本 run 没有资金快照；保留委托与成交事实，不显示资金数字。</p>')
+    else:
+        implied_fees = model.gross_pnl - model.funds.net if model.gross_pnl is not None else None
+        note = "；边界快照缺失，取最近快照" if model.funds.boundary_note else ""
+        rows.append(
+            "<table><tr><th>起始资金</th><th>结束资金</th><th>资金差净盈亏</th>"
+            "<th>轮次毛盈亏</th><th>推算手续费</th></tr><tr>"
+            f"<td>{_money(model.funds.start_balance)}</td>"
+            f"<td>{_money(model.funds.end_balance)}</td>"
+            f"<td>{_money(model.funds.net)}</td>"
+            f"<td>{_money(model.gross_pnl)}</td>"
+            f"<td>{_money(implied_fees)}</td></tr></table>"
+            f'<p class="note">推算手续费 = Σ轮次毛盈亏 − 资金差；不是 CTP 逐笔费用{escape(note)}。</p>'
+        )
+    return rows
+
+
+def render_run_html(model: RunReport) -> str:
+    sections = [
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">",
+        f"<title>单 run 委托成交报告 {escape(model.directory)}</title>",
+        "<style>"
+        "body{font-family:-apple-system,'PingFang SC',sans-serif;margin:24px;color:#222}"
+        "h1{font-size:20px}h2{font-size:16px;margin-top:28px}h3{font-size:14px;margin-top:20px}"
+        "table{border-collapse:collapse;margin-top:8px;width:100%}"
+        "th,td{border:1px solid #ccc;padding:5px 8px;text-align:left;vertical-align:top;font-variant-numeric:tabular-nums}"
+        "th{background:#f5f5f5}.note{color:#666;font-size:13px}.label{color:#666;margin-right:6px}"
+        "code{white-space:pre-wrap}.trace{margin:8px 0;padding-left:24px}.trace li{margin:8px 0}"
+        "pre{background:#f7f7f7;padding:8px;overflow:auto}summary{cursor:pointer;color:#065}"
+        "</style></head><body>",
+        f"<h1>单 run 委托成交报告 · {escape(model.directory)}</h1>",
+        "<h2>运行参数</h2>",
+        f"<p>策略哈希：<code>{escape(str(model.strategy_hash or '—'))}</code></p>",
+        f"<pre>{escape(json.dumps(model.effective, ensure_ascii=False, indent=2, sort_keys=True))}</pre>",
+        *_render_run_funds(model),
+        "<h2>run 总览</h2>",
+        "<table><tr><th>合约</th><th>终态</th><th>轮数</th><th>停止原因</th><th>失败原因</th>"
+        "<th>最终净仓</th><th>活动委托</th></tr>",
+    ]
+    for entry in model.summary.get("contracts", []):
+        if not isinstance(entry, dict):
+            continue
+        contract = f"{entry.get('target_symbol')}@{entry.get('target_exchange')}"
+        sections.append(
+            "<tr>"
+            f"<td>{escape(contract)}</td>"
+            f"<td>{escape(str(entry.get('terminal_state') or '—'))}</td>"
+            f"<td>{entry.get('round_trips', '—')}</td>"
+            f"<td>{escape(str(entry.get('stop_reason') or '—'))}</td>"
+            f"<td>{escape(str(entry.get('failure_reason') or '—'))}</td>"
+            f"<td>{escape(str(entry.get('final_net_position') if entry.get('final_net_position') is not None else '—'))}</td>"
+            f"<td>{entry.get('active_order_count', '—')}</td>"
+            "</tr>"
+        )
+    sections.append("</table>")
+
+    for contract in model.contracts:
+        sections.append(f"<h2>{escape(contract.contract)}</h2>")
+        sections.append(
+            f"<p>品种代码：{escape(contract.product_code or '—')}；准确合约：{escape(contract.symbol)}；"
+            f"交易所：{escape(contract.exchange)}；"
+            f"最小变动价位：{_price(contract.pricetick)}；合约乘数：{_price(contract.size)}</p>"
+        )
+        if contract.timeline:
+            sections.append("<h3>运行因果时间线</h3><ol class=\"trace\">")
+            sections.extend(_render_run_trace(trace) for trace in contract.timeline)
+            sections.append("</ol>")
+        if contract.rounds:
+            sections.append(
+                "<h3>轮次结果（毛盈亏）</h3>"
+                "<p class=\"note\">毛盈亏按成交价、数量、合约乘数计算；资金差净盈亏不分摊到单笔委托。</p>"
+                "<table><tr><th>轮次</th><th>开仓</th><th>平仓</th><th>结束方式</th>"
+                "<th>价差 tick</th><th>毛盈亏</th></tr>"
+            )
+            contract_day = ContractDay(
+                contract=contract.contract,
+                pricetick=contract.pricetick,
+                size=contract.size,
+            )
+            for index, round_record in enumerate(contract.rounds, 1):
+                _, ticks, cash = _gross_pnl(round_record, contract_day)
+                sections.append(
+                    "<tr>"
+                    f"<td>{index}</td>"
+                    f"<td>{escape(_price(round_record.open_avg_price))} × {round_record.open_volume}</td>"
+                    f"<td>{escape(_price(round_record.close_avg_price))} × {round_record.close_volume}</td>"
+                    f"<td>{escape(round_record.ending)}</td>"
+                    f"<td>{escape(_price(ticks))}</td>"
+                    f"<td>{escape(_money(cash))}</td>"
+                    "</tr>"
+                )
+            sections.append("</table>")
+        sections.append("<h3>逻辑委托</h3>")
+        sections.append(
+            "<table><tr><th>client identity</th><th>用途</th><th>方向</th><th>开平</th><th>类型</th>"
+            "<th>价格</th><th>数量</th><th>提交审计时钟</th><th>状态路径</th><th>最终结果</th>"
+            "<th>成交量</th><th>详情</th></tr>"
+        )
+        for order in contract.orders:
+            payload = order.payload
+            sections.append(
+                f'<tr id="{_order_anchor(order.client_id)}">'
+                f"<td>{escape(order.client_id)}</td>"
+                f"<td>{escape(_order_purpose(order.client_id, payload))}</td>"
+                f"<td>{escape(str(payload.get('side') or '—'))}</td>"
+                f"<td>{escape(str(payload.get('offset') or '—'))}</td>"
+                f"<td>{escape(str(payload.get('order_type') or '—'))}</td>"
+                f"<td>{_price(payload.get('price'))}</td>"
+                f"<td>{payload.get('volume', '—')}</td>"
+                f"<td>{_seconds(order.submit_at)}</td>"
+                f"<td>{escape(' → '.join(order.statuses) if order.statuses else '—')}</td>"
+                f"<td>{escape(str(order.final_status or '—'))}</td>"
+                f"<td>{order.traded}</td>"
+                f"<td>{_render_run_order_details(order)}</td>"
+                "</tr>"
+            )
+        sections.append("</table>")
+
+    sections.append("</body></html>")
+    return "".join(sections)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="按交易日生成成交明细 HTML 报告")
     parser.add_argument("--audit-dir", default="audit", help="审计根目录")
     parser.add_argument("--out-dir", default="reports", help="报告输出目录")
     parser.add_argument("--date", help="只生成指定交易日（YYYYMMDD）")
+    parser.add_argument("--run-dir", help="只生成指定完整 run 的报告")
     parser.add_argument("--open", action="store_true", help="生成后用浏览器打开")
     args = parser.parse_args(argv)
+
+    if args.run_dir:
+        try:
+            model = build_run_report(args.run_dir)
+        except RunReportError as exc:
+            print(f"报告生成失败: {exc}", file=sys.stderr)
+            return 2
+        out_root = Path(args.out_dir)
+        out_root.mkdir(parents=True, exist_ok=True)
+        out_path = out_root / f"run-{Path(args.run_dir).name}.html"
+        out_path.write_text(render_run_html(model), encoding="utf-8")
+        print(f"run {model.directory} 报告已生成: {out_path}")
+        if args.open:
+            webbrowser.open(out_path.resolve().as_uri())
+        return 0
 
     days, skipped = build_days(args.audit_dir)
     if args.date:

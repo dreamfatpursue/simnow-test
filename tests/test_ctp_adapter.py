@@ -82,8 +82,8 @@ class RecordingAudit:
         self.events = []
         self.closed = False
 
-    def record(self, event, actions, state, at, state_before=None) -> None:
-        self.events.append((event, actions, state, at, state_before))
+    def record(self, event, actions, state, at, state_before=None, trace=None) -> None:
+        self.events.append((event, actions, state, at, state_before, trace))
 
     def close(self) -> None:
         self.closed = True

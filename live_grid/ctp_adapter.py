@@ -147,6 +147,8 @@ class CtpLiveGridAdapter:
                 contract.exchange.value,
                 contract.pricetick,
                 size=getattr(contract, "size", None),
+                product_code=getattr(contract, "product_code", None)
+                or contract.symbol.rstrip("0123456789").lower(),
             ),
             session,
         )
@@ -234,6 +236,7 @@ class CtpLiveGridAdapter:
                     trade_id=trade.tradeid,
                     client_id=client_id,
                     exchange_time=self._exchange_time(trade),
+                    at=time.monotonic(),
                 ),
                 session,
             )
@@ -331,6 +334,7 @@ class CtpLiveGridAdapter:
                 session.state.value,
                 time.monotonic(),
                 state_before=state_before,
+                trace=session.last_audit_trace,
             )
             for action in actions:
                 self._dispatch(action)

@@ -17,6 +17,9 @@ class AuditError(ValueError):
     """Raised when an audit artifact cannot be written safely."""
 
 
+AUDIT_SCHEMA_VERSION = 2
+
+
 _FORBIDDEN_KEYS = {
     "user_id",
     "username",
@@ -90,7 +93,11 @@ class AuditWriter:
         _write_json_file(
             self.directory,
             "effective_strategy.json",
-            {"effective": config.effective, "sha256": config.sha256},
+            {
+                "audit_schema_version": AUDIT_SCHEMA_VERSION,
+                "effective": config.effective,
+                "sha256": config.sha256,
+            },
         )
 
     def record(
@@ -100,17 +107,19 @@ class AuditWriter:
         state: str,
         at: float,
         state_before: str | None = None,
+        trace: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
     ) -> None:
         self._ensure_open()
-        self._write_line(
-            {
-                "at": at,
-                "event": self._serialize(event),
-                "actions": [self._serialize(action) for action in actions],
-                "state_before": state_before or state,
-                "state_after": state,
-            }
-        )
+        record = {
+            "at": at,
+            "event": self._serialize(event),
+            "actions": [self._serialize(action) for action in actions],
+            "state_before": state_before or state,
+            "state_after": state,
+        }
+        if trace:
+            record["trace"] = self._serialize(trace)
+        self._write_line(record)
 
     def finish(self, summary: dict[str, Any]) -> Path:
         self._ensure_open()
@@ -182,7 +191,11 @@ class MultiContractAuditWriter:
         _write_json_file(
             self.directory,
             "effective_strategy.json",
-            {"effective": config.effective, "sha256": config.sha256},
+            {
+                "audit_schema_version": AUDIT_SCHEMA_VERSION,
+                "effective": config.effective,
+                "sha256": config.sha256,
+            },
         )
 
     def record_account(self, *, balance: float, available: float, at: float) -> None:
