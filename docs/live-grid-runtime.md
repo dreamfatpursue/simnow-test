@@ -68,10 +68,14 @@ CTP_PASSWORD
 CTP_BROKER_ID
 CTP_TRADE_FRONT
 CTP_MARKET_FRONT
+CTP_7X24_TRADE_FRONT
+CTP_7X24_MARKET_FRONT
 CTP_APP_ID
 CTP_AUTH_CODE
 CTP_PRODUCT_INFO   # 可选
 ```
+
+第一套环境（默认 `--env first`）继续使用 `CTP_TRADE_FRONT`、`CTP_MARKET_FRONT`。7×24 API 测试环境使用 `CTP_7X24_TRADE_FRONT`、`CTP_7X24_MARKET_FRONT`；两套环境共用其余账号类凭证。环境选择是每次启动时的人工显式动作，不会因断线、收盘或行情缺失自动切换。7×24 不提供结算服务，不能根据第一套的持仓或结算状态推断 7×24 的结果。
 
 `CTP_SYMBOL`、`CTP_EXCHANGE` 只服务于普通只读连接的行情订阅；报撤测试的交易目标来自策略 JSON 的 `symbol` 和 `exchange`，不会从只读订阅设置继承。
 
@@ -81,15 +85,15 @@ CTP_PRODUCT_INFO   # 可选
 set -a
 source .env
 set +a
-python run.py --check
+python run.py --check --env first
 ```
 
-`run.py --check` 只校验必填环境变量，不连接 CTP。返回码为：`0` 配置有效，`2` 环境变量缺失或配置错误。
+`run.py --check` 只校验所选环境的必填环境变量，不连接 CTP。返回码为：`0` 配置有效，`2` 环境变量缺失或配置错误。7×24 检查命令为 `python run.py --check --env 7x24`。
 
 ### 3.3 只读连接
 
 ```bash
-python run.py
+python run.py --env first
 ```
 
 该入口建立 `EventEngine` 和 `MainEngine`，注册日志、资金、持仓、合约、Tick 处理器，随后连接 CTP。指定了 `CTP_SYMBOL` 时，目标合约回报到达后才发起行情订阅。
@@ -110,7 +114,8 @@ cp strategy.example.json strategy.json
 ```bash
 python run_live_grid.py \
   --config strategy.json \
-  --audit-dir audit
+  --audit-dir audit \
+  --env first
 ```
 
 预览会：
@@ -126,6 +131,7 @@ python run_live_grid.py \
 python run_live_grid.py \
   --config strategy.json \
   --audit-dir audit \
+  --env first \
   --confirm-simnow
 ```
 
@@ -134,6 +140,8 @@ python run_live_grid.py \
 ```text
 confirm-simnow = true
 ```
+
+7×24 环境需显式写出 `--env 7x24 --confirm-simnow`；它和第一套都保留零仓启动、收口和限流边界。运行级与合约级 `summary.json` 只记录 `environment=first|7x24`，不记录前置或凭证。
 
 策略 JSON 任何字段变化都会改变 effective 配置和哈希。哈希会随本次配置写入预览和审计，但不作为命令授权条件。
 
@@ -228,13 +236,13 @@ stateDiagram-v2
 | --- | --- | --- |
 | `ContractEvent` | `EVENT_CONTRACT` | 取得目标合约和真实 `pricetick`，触发启动查仓 |
 | `TickEvent` | `EVENT_TICK` | 检查盘口、稳定门槛、重定锚和 FAK 可执行价 |
-| `OrderEvent` | `EVENT_ORDER` | 更新订单状态和 CTP 已报告的累计成交量 |
-| `TradeEvent` | `EVENT_TRADE` | 记录真实成交，并触发首次成交收口 |
+| `OrderEvent` | `EVENT_ORDER` | 更新订单状态和 CTP 已报告的累计成交量；不单独触发开仓收口 |
+| `TradeEvent` | `EVENT_TRADE` | 记录真实成交，并触发首次成交收口及等待窗口 |
 | `PositionQueryCompleteEvent` | 项目扩展的 `ePositionQueryComplete` | 接收与本次请求号匹配的目标合约净仓 |
 | `ClockEvent` | `EVENT_TIMER` | 推进稳定时间、撤单超时、FAK 超时和滚动限流窗口 |
 | `InterruptEvent` | `Ctrl+C`/adapter interrupt | 进入人工结束收口路径 |
 
-其中 `ContractEvent.size`（合约乘数）、`OrderEvent.exchange_time`（交易所报单时间）、`TradeEvent.exchange_time`（交易所成交时间）是随事件落审计的交易所事实，供离线交易日成交明细报告使用；状态机逻辑不读取它们，时间来自网关回报而非本地时钟。
+其中 `ContractEvent.size`（合约乘数）、`OrderEvent.exchange_time`（交易所报单时间）、`TradeEvent.exchange_time`（交易所成交时间）是随事件落审计的交易所事实，供离线交易日成交明细报告使用；状态机逻辑不读取交易所时间字段，1 秒窗口使用适配器收到 `EVENT_TRADE` 时记录的本地单调时钟。
 
 所有事件先经过目标合约过滤。目标不是策略 JSON 指定的 `symbol + exchange` 时，状态机不处理。
 
@@ -328,7 +336,7 @@ LastPrice 超出当前 band 后，不会立即替换：
 
 价格穿过限价但没有 `TradeEvent`，不会触发这条路径。
 
-订单回报中的累计 `traded` 和成交回报中的 `TradeEvent.volume` 都会参与成交量更新；成交回报按 `trade_id` 去重，窗口记账按每个委托的已入账差额累计，同一成交的两个回报只计一次。晚到的开仓订单/成交回报会在窗口、平仓甚至终态后继续校正最终净仓，不能被忽略。
+订单回报中的累计 `traded` 只更新委托状态；首次开仓收口和等待窗口以 `TradeEvent` 为准。成交回报按 `trade_id` 去重，窗口记账按每个委托的已入账差额累计，同一成交的重复回报只计一次。晚到的开仓成交回报会在窗口、平仓甚至终态后继续校正最终净仓，不能被忽略。
 
 ### 9.2 窗口的两条出口
 
@@ -451,8 +459,12 @@ CTP 同一时刻只允许一个在途查询。目标合约回报经常在合约�
 audit/
 └── 20260814T120000.123456Z-a1b2c3d4e5/
     ├── effective_strategy.json
-    ├── events.jsonl
-    └── summary.json
+    ├── account.jsonl
+    ├── summary.json
+    └── cu2610@SHFE/            ← 每个目标合约一个子目录
+        ├── effective_strategy.json
+        ├── events.jsonl
+        └── summary.json
 ```
 
 ### 13.1 `effective_strategy.json`
@@ -461,12 +473,27 @@ audit/
 
 ### 13.2 `events.jsonl`
 
-每一行记录一次进入 adapter/session 的标准化事件，包括：
+每一行记录一次进入 adapter/session 的标准化事件，一行 = 一个事件。字段含义以一条真实记录为例：
 
-- 单调时间戳；
-- 事件类型和字段；
-- 本次新产生的 actions；
-- `state_before` 和 `state_after`。
+```json
+{
+  "event": {
+    "type": "ContractEvent",
+    "data": {"symbol": "cu2610", "pricetick": 10.0, "size": 5, "exchange": "SHFE"}
+  },
+  "actions": [
+    {"data": {"kind": "query_position", "payload": {"request_id": "position-1", "phase": "startup"}}}
+  ],
+  "at": 2074880.281948625,
+  "state_before": "WAITING_FOR_CONTRACT",
+  "state_after": "WAITING_FOR_ZERO_POSITION"
+}
+```
+
+- `event`：输入。`type` 是事件类型（`ClockEvent` / `TickEvent` / `OrderEvent` / `TradeEvent` / `ContractEvent` / `PositionQueryCompleteEvent` / `InterruptEvent`），`data` 是事件内容；委托与成交里的 `exchange_time` 是交易所墙上时间。
+- `actions`：输出。状态机因该事件产生的 CTP 动作（`submit_order` / `cancel_order` / `query_position`）及其参数；空数组表示该事件没有触发任何动作（多数时钟与行情事件为空）。
+- `at`：审计落笔的 `time.monotonic()` 秒数，不是墙上时间。相邻两行相减得到精确间隔，报告中的挂单等待与持仓时长由此计算。
+- `state_before` / `state_after`：会话状态机消费该事件前后的状态；两者不等即一次状态跳变，可据此定位触发跳变的具体事件行。
 
 事件和动作经过递归凭证字段检查。检测到密码、账号、前置地址、授权码等字段时，审计写入会抛出 `AuditError`。
 
