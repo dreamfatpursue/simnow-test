@@ -19,8 +19,16 @@ def multi_strategy_doc() -> dict:
         "stable_market_seconds": 0.05,
         "max_round_trips": 1,
         "contracts": [
-            {"symbol": "rb2601", "exchange": "SHFE", "target_lots": 1},
-            {"symbol": "AP610", "exchange": "CZCE", "target_lots": 1},
+            {
+                "symbol": "rb2601", "exchange": "SHFE", "target_lots": 1,
+                "max_tick_age_seconds": 60,
+                "quote_windows": [{"start": "00:00", "end": "23:59"}],
+            },
+            {
+                "symbol": "AP610", "exchange": "CZCE", "target_lots": 1,
+                "max_tick_age_seconds": 60,
+                "quote_windows": [{"start": "00:00", "end": "23:59"}],
+            },
         ],
     }
 

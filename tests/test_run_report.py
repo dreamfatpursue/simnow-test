@@ -15,7 +15,14 @@ def write_json(path: Path, value: object) -> None:
 
 def strategy_doc(symbol: str = "rb2601", exchange: str = "SHFE", target_lots: int = 1) -> dict:
     config = StrategyConfig.from_mapping(
-        {"version": 1, "symbol": symbol, "exchange": exchange, "target_lots": target_lots}
+        {
+            "version": 1,
+            "symbol": symbol,
+            "exchange": exchange,
+            "target_lots": target_lots,
+            "max_tick_age_seconds": 60,
+            "quote_windows": [{"start": "00:00", "end": "23:59"}],
+        }
     )
     return {"audit_schema_version": 2, "effective": config.effective, "sha256": config.sha256}
 
@@ -362,6 +369,8 @@ class RunReportTests(unittest.TestCase):
                     "symbol": "rb2601",
                     "exchange": "SHFE",
                     "target_lots": 1,
+                    "max_tick_age_seconds": 60,
+                    "quote_windows": [{"start": "00:00", "end": "23:59"}],
                 }
             )
             writer = AuditWriter(config, directory=contract_dir)
@@ -448,8 +457,16 @@ class RunReportTests(unittest.TestCase):
                 {
                     "version": 2,
                     "contracts": [
-                        {"symbol": "rb2601", "exchange": "SHFE", "target_lots": 1},
-                        {"symbol": "AP610", "exchange": "CZCE", "target_lots": 1},
+                        {
+                            "symbol": "rb2601", "exchange": "SHFE", "target_lots": 1,
+                            "max_tick_age_seconds": 60,
+                            "quote_windows": [{"start": "00:00", "end": "23:59"}],
+                        },
+                        {
+                            "symbol": "AP610", "exchange": "CZCE", "target_lots": 1,
+                            "max_tick_age_seconds": 60,
+                            "quote_windows": [{"start": "00:00", "end": "23:59"}],
+                        },
                     ],
                 }
             )

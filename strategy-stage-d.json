@@ -3,9 +3,15 @@
   "symbol": "AP610",
   "exchange": "CZCE",
   "target_lots": 1,
+  "max_tick_age_seconds": 10,
+  "quote_windows": [
+    {"start": "09:00", "end": "10:15"},
+    {"start": "10:30", "end": "11:30"},
+    {"start": "13:30", "end": "15:00"}
+  ],
   "w_ticks": 2,
   "d_ticks": 3,
-  "s_ticks": 10,
+  "s_ticks": 2,
   "book_protection_multiple": 2,
   "reanchor_confirmation_seconds": 1,
   "stable_market_seconds": 2,

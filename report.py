@@ -199,17 +199,23 @@ _COMMON_EFFECTIVE_KEYS = {
     "flatten_timeout_seconds",
     "flatten_adverse_ticks",
     "max_round_trips",
-    "session_end_time",
     "closing_wait_seconds",
 }
+_CONTRACT_EFFECTIVE_KEYS = {"max_tick_age_seconds", "quote_windows"}
 
 
 def _validate_effective_payload(effective: Any, path: Path, *, run_level: bool) -> dict[str, Any]:
     if not isinstance(effective, dict) or not effective:
         raise RunReportError(f"生效策略缺少有效参数: {path}")
-    required = set(_COMMON_EFFECTIVE_KEYS) | {"symbol", "exchange", "target_lots"}
+    # 运行入口严格拒绝旧字段；离线报告保留读取历史审计目录的能力。
+    legacy_schedule = "session_end_time" in effective and "quote_windows" not in effective
+    required = set(_COMMON_EFFECTIVE_KEYS) | (set() if legacy_schedule else _CONTRACT_EFFECTIVE_KEYS) | {
+        "symbol",
+        "exchange",
+        "target_lots",
+    }
     if run_level and "contracts" in effective:
-        required -= {"symbol", "exchange", "target_lots"}
+        required -= {"symbol", "exchange", "target_lots"} | _CONTRACT_EFFECTIVE_KEYS
         contracts = effective.get("contracts")
         if not isinstance(contracts, list) or not contracts:
             raise RunReportError(f"run 生效策略缺少完整合约列表: {path}")
@@ -221,6 +227,9 @@ def _validate_effective_payload(effective: Any, path: Path, *, run_level: bool) 
                 or not isinstance(entry.get("exchange"), str)
                 or not entry.get("exchange")
                 or "target_lots" not in entry
+                or (not legacy_schedule and (
+                    "max_tick_age_seconds" not in entry or "quote_windows" not in entry
+                ))
             ):
                 raise RunReportError(f"run 生效策略包含不完整合约项: {path}")
     missing = sorted(required - effective.keys())

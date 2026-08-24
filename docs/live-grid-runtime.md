@@ -16,13 +16,13 @@
 
 系统已从单合约扩展为多合约并发（[ADR 0002](adr/0002-multi-contract-per-session.md)）：
 
-- 策略配置升级为 `version: 2`：顶层公共网格/安全参数 + `contracts` 数组（每条 `symbol`/`exchange`/`target_lots`）；整份配置一个 SHA-256。旧单合约扁平格式被拒绝并提示迁移。
+- 策略配置升级为 `version: 2`：顶层公共网格/安全参数 + `contracts` 数组（每条 `symbol`/`exchange`/`target_lots`、`max_tick_age_seconds`、`quote_windows`）；整份配置一个 SHA-256。旧单合约扁平格式被拒绝并提示迁移。
 - 每个合约一个独立的 `LiveGridSession`（状态机本身未变）；适配层按 `(symbol, exchange)` 路由合约/行情/委托/成交事件，订阅全部目标合约。
 - 持仓查询仍是账户级一次查询，完成事件按合约扇出；任一待查合约非零仓则整个运行拒绝（非零会话失败、零仓会话中断，不发任何委托）。
 - 报撤限额、首次成交收口、失败与超时均按会话独立；操作员中断广播至全部会话；运行在全部会话终态后结束。
 - 审计目录每次运行一个 run 目录，内含每合约子目录（`symbol@exchange`，各自 `effective_strategy.json`/`events.jsonl`/`summary.json`），run 根目录另写整份生效配置、无凭证资金快照 `account.jsonl` 与全合约汇总 `summary.json`（`terminal_states`/`all_finished`/逐合约摘要）。
 
-自 ADR 0003 起收口语义升级为连续挂单：每轮成交平仓回零后清锚重挂，直至 `session_end_time` 收盘时刻、`max_round_trips` 轮数上限或操作员中断任一停止条件生效；摘要新增 `round_trips` 与 `stop_reason`。下文其余章节描述的单合约状态机与收口规则对每个会话逐合约、逐轮成立。
+自 ADR 0003 起收口语义升级为连续挂单：每轮成交平仓回零后清锚重挂，直至最后一个 `quote_windows` 窗口结束、`max_round_trips` 轮数上限或操作员中断任一停止条件生效；每个窗口结束前固定 5 秒撤掉活动开仓报价，窗口恢复时重新通过稳定行情门槛。摘要新增 `round_trips` 与 `stop_reason`。下文其余章节描述的单合约状态机与收口规则对每个会话逐合约、逐轮成立。
 
 ## 2. 代码地图
 
@@ -167,19 +167,22 @@ confirm-simnow = true
 | `target_lots` | 必填 | 每一侧开仓手数，正整数；当前没有额外绝对上限 |
 | `w_ticks` | `20` | 正整数，W 宽度，单位为最小变动价位 |
 | `d_ticks` | `20` | 正整数，D 距离，单位为最小变动价位 |
-| `s_ticks` | `10` | 正整数，重定锚步长，单位为最小变动价位 |
+| `s_ticks` | `10` | 正整数，重定锚步长，单位为最小变动价位；不得大于 `w_ticks` |
 | `book_protection_multiple` | `2` | 正数，盘口保护倍数 |
 | `reanchor_confirmation_seconds` | `1` | LastPrice 越出当前 band 后的持续确认时间 |
-| `stable_market_seconds` | `2` | 首次报价/恢复报价前的连续稳定行情时间 |
+| `stable_market_seconds` | `2` | 首次报价/恢复报价前的连续稳定行情窗口 |
+| `max_tick_age_seconds` | 每个合约必填 | 本合约的 Tick 静默阈值；报价期间超过此时长没有有效 Tick 就安全撤单，恢复时重新走稳定行情门槛 |
 | `action_limit_per_minute` | `60` | 普通报价提交和普通撤单的滚动一分钟上限 |
 | `cancel_timeout_seconds` | `10` | 收口撤单等待终态的上限 |
 | `flatten_timeout_seconds` | `3` | 一次受限 FAK 收口的时间上限 |
 | `flatten_adverse_ticks` | `10` | FAK 允许相对初始可执行价的不利方向最大偏移 |
 | `max_round_trips` | `10` | 单次运行完成的往返轮数上限 |
-| `session_end_time` | `""` | 收盘停止时刻（HH:MM，本地时钟，支持跨午夜） |
+| `quote_windows` | 每个合约必填 | 按顺序排列的 `[{"start":"HH:MM","end":"HH:MM"}]` 报价窗口；支持相邻窗口跨午夜，不允许重叠；每段结束前 5 秒撤单 |
 | `closing_wait_seconds` | `1` | 非负数，价差窗口时长；首次成交后对侧报价继续挂满该时长，0 表示不留窗口直接平仓 |
 
 配置还会拒绝：凭证字段、未知字段、空 symbol、非法交易所、非正数和非有限数。策略文件不应出现账号、密码、前置地址、AppID 或授权码。
+
+一份配置只运行一次，进程应在首个窗口开始前启动。窗口外不会提交新开仓单；最后一个窗口结束并完成必要的撤单/持仓收口后，会话进入 `FINISHED`。交易所调整交易时段时，直接修改对应合约的 `quote_windows`，不再依赖单一全局收盘时刻。
 
 ### 4.2 规范化和哈希
 
@@ -202,9 +205,13 @@ stateDiagram-v2
     PREVIEW --> WAITING_FOR_CONTRACT: SimNow 确认通过
     WAITING_FOR_CONTRACT --> WAITING_FOR_ZERO_POSITION: 目标合约且 pricetick > 0
     WAITING_FOR_ZERO_POSITION --> WAITING_FOR_STABLE_QUOTE: 关联查仓完成且净仓为 0
+    WAITING_FOR_STABLE_QUOTE --> PAUSED: 非最终窗口结束前 5 秒撤单完成
+    PAUSED --> WAITING_FOR_STABLE_QUOTE: 下一窗口开始
     WAITING_FOR_ZERO_POSITION --> FAILED: 查仓失败或目标合约已有仓位
-    WAITING_FOR_STABLE_QUOTE --> QUOTING: 有效盘口连续稳定 2 秒
-    QUOTING --> REPLACING: 盘口异常或越带确认完成
+    WAITING_FOR_STABLE_QUOTE --> QUOTING: 窗口满 2 秒且至少 2 条新鲜 Tick
+    QUOTING --> REPLACING: 盘口异常、越带确认完成或 Tick 断流
+    QUOTING --> CLOSING_CANCELS: 窗口结束前 5 秒
+    REPLACING --> CLOSING_CANCELS: 窗口结束前 5 秒
     REPLACING --> WAITING_FOR_STABLE_QUOTE: 旧订单全部收到终态回报
     QUOTING --> CLOSING_WAIT: 首次部分/全部成交
     REPLACING --> CLOSING_WAIT: 首次部分/全部成交
@@ -236,13 +243,13 @@ stateDiagram-v2
 | --- | --- | --- |
 | `ContractEvent` | `EVENT_CONTRACT` | 取得目标合约和真实 `pricetick`，触发启动查仓 |
 | `TickEvent` | `EVENT_TICK` | 检查盘口、稳定门槛、重定锚和 FAK 可执行价 |
-| `OrderEvent` | `EVENT_ORDER` | 更新订单状态和 CTP 已报告的累计成交量；不单独触发开仓收口 |
-| `TradeEvent` | `EVENT_TRADE` | 记录真实成交，并触发首次成交收口及等待窗口 |
+| `OrderEvent` | `EVENT_ORDER` | 更新订单状态和 CTP 已报告的累计成交量；`traded` 增加与 `TradeEvent` 同为开仓成交入口 |
+| `TradeEvent` | `EVENT_TRADE` | 记录真实成交，同样触发首次成交收口及等待窗口 |
 | `PositionQueryCompleteEvent` | 项目扩展的 `ePositionQueryComplete` | 接收与本次请求号匹配的目标合约净仓 |
-| `ClockEvent` | `EVENT_TIMER` | 推进稳定时间、撤单超时、FAK 超时和滚动限流窗口 |
+| `ClockEvent` | `EVENT_TIMER` | 携带单调时钟与本地墙钟时间，推进交易窗口、稳定时间、撤单超时、FAK 超时和滚动限流窗口 |
 | `InterruptEvent` | `Ctrl+C`/adapter interrupt | 进入人工结束收口路径 |
 
-其中 `ContractEvent.size`（合约乘数）、`OrderEvent.exchange_time`（交易所报单时间）、`TradeEvent.exchange_time`（交易所成交时间）是随事件落审计的交易所事实，供离线交易日成交明细报告使用；状态机逻辑不读取交易所时间字段，1 秒窗口使用适配器收到 `EVENT_TRADE` 时记录的本地单调时钟。
+其中 `ContractEvent.size`（合约乘数）、`OrderEvent.exchange_time`（交易所报单时间）、`TradeEvent.exchange_time`（交易所成交时间）是随事件落审计的交易所事实，供离线交易日成交明细报告使用；状态机逻辑不读取交易所时间字段，1 秒窗口从最先到达的委托或成交回报时刻起算。
 
 所有事件先经过目标合约过滤。目标不是策略 JSON 指定的 `symbol + exchange` 时，状态机不处理。
 
@@ -276,7 +283,13 @@ adapter 的动作转换只做协议映射，不决定策略逻辑。提交成功
    W + D > book_protection_multiple × spread_ticks
    ```
 
-5. **连续稳定时间**：有效且通过盘口保护的 Tick 连续保持 `stable_market_seconds`，默认 2 秒。中间任何无效或过宽行情都会清空稳定计时。
+5. **连续稳定窗口**：有效且通过盘口保护的 Tick 必须同时满足：
+   - 窗口内至少 2 条有效 Tick；
+   - 相邻两条 Tick 的间隔不超过该合约的 `max_tick_age_seconds`（等于则通过）；
+   - 准备下单那一刻，最新 Tick 的年龄不超过 `max_tick_age_seconds`；
+   - 窗口已持续 `stable_market_seconds`（默认 2 秒）。
+
+   任一条件不满足都视为行情不稳定：清空稳定计时，从下一条有效 Tick 重新开始下一个 2 秒窗口。中间任何无效或过宽行情同样清空稳定计时。
 
 只有第五步完成，才会发送一对双向被动开仓限价单。
 
@@ -306,15 +319,17 @@ SELL = (anchor_ticks + distance_ticks) × pricetick
 
 在 `QUOTING` 状态收到无效或过宽盘口时，进入 `REPLACING`，以安全撤单方式撤掉现有报价，并等待所有旧订单终态。旧订单未收到 CTP 终态回报时，绝不提交替换报价。
 
+同一状态下，时钟发现最近有效 Tick 的年龄超过该合约的 `max_tick_age_seconds`，也会进入安全撤单；这条规则独立于交易窗口，且窗口结束前 5 秒的收市撤单优先执行。行情恢复后必须重新收到至少两条新鲜有效 Tick，不能沿用断流前的报价。
+
 ### 8.3 越带重定锚
 
 LastPrice 超出当前 band 后，不会立即替换：
 
 1. 记录首次越带时间；
 2. 持续越带达到 `reanchor_confirmation_seconds`，默认 1 秒；
-3. 按 `s_ticks` 步长移动 anchor，直到新的 band 覆盖当前价格；
+3. 按 `s_ticks` 步长移动 anchor，直到新的 band 覆盖当前价格（配置校验强制 `s_ticks` ≤ `w_ticks`，保证步进后新带必然覆盖当前价，不会陷入反复撤挂）；
 4. 先撤旧单，等待每一个旧单收到终态回报；
-5. 重新进入稳定行情门槛，连续稳定 2 秒后才挂新的双向报价。
+5. 重新进入稳定行情门槛：至少 2 条新鲜 Tick，相邻间隔与最新 Tick 年龄均不超过 `max_tick_age_seconds`，窗口满 `stable_market_seconds` 后才挂新的双向报价。
 
 因此，替换链路的顺序固定为：
 
@@ -334,9 +349,9 @@ LastPrice 超出当前 band 后，不会立即替换：
 - 停止新增开仓报价，记录 `first_fill`；
 - 进入 `CLOSING_WAIT`，**不撤销对侧报价**，对侧继续挂满 `closing_wait_seconds`（默认 1 秒，0 表示不留窗口）。
 
-价格穿过限价但没有 `TradeEvent`，不会触发这条路径。
+价格穿过限价但没有委托或成交回报，不会触发这条路径。
 
-订单回报中的累计 `traded` 只更新委托状态；首次开仓收口和等待窗口以 `TradeEvent` 为准。成交回报按 `trade_id` 去重，窗口记账按每个委托的已入账差额累计，同一成交的重复回报只计一次。晚到的开仓成交回报会在窗口、平仓甚至终态后继续校正最终净仓，不能被忽略。
+`OrderEvent` 的累计 `traded` 与 `TradeEvent` 是同一条开仓成交入口：任一通道上 `traded` 增加都会触发首次收口或窗口记账。成交回报按 `trade_id` 去重，窗口记账按每个委托的已入账差额累计，同一成交先到委托回报、后到成交流水只计一次。晚到的开仓成交回报会在窗口、平仓甚至终态后继续校正最终净仓，不能被忽略。
 
 ### 9.2 窗口的两条出口
 
@@ -393,6 +408,7 @@ adapter 的 `interrupt()` 只向 session 注入 `InterruptEvent`，不会立即�
 
 - `WAITING_FOR_CONTRACT` / `WAITING_FOR_ZERO_POSITION`：尚未证明零仓，直接失败，原因 `interrupted_before_zero_position`；
 - `WAITING_FOR_STABLE_QUOTE`：还没有开仓，可安全结束；
+- `PAUSED`：当前不在任何报价窗口，已撤清开仓单；下一窗口时钟到达后重新等待稳定行情；
 - `CLOSING_WAIT`：窗口期间中断，立即结束窗口并撤全部委托，走查仓、必要时 FAK 的人工结束收口；
 - `QUOTING` / `REPLACING`：进入与首次成交相同的撤单、查仓、必要时 FAK 平仓路径；
 - 已在 closing/flattening：继续等待已有收口链路；
@@ -566,7 +582,7 @@ python report.py --run-dir audit/<run-id> --out-dir reports
 .venv/bin/python -m compileall -q live_grid run_live_grid.py report.py tests vendor/vnpy_ctp/vnpy_ctp
 ```
 
-当前测试 seam 不需要真实 CTP 凭证，覆盖配置确认、零仓门槛、稳定行情、盘口保护、重定锚、替换、普通/安全动作限流、部分/全部成交、晚到回报、关联查仓、FAK、拒单、超时和中断。
+当前测试 seam 不需要真实 CTP 凭证，覆盖配置确认、逐合约 Tick 阈值、交易窗口/跨午夜收市前撤单、零仓门槛、稳定行情、盘口保护、重定锚、替换、普通/安全动作限流、部分/全部成交、晚到回报、关联查仓、FAK、拒单、超时和中断。
 
 ### 阶段 B：只读 SimNow 联调
 
@@ -609,8 +625,9 @@ python report.py --run-dir audit/<run-id> --out-dir reports
 4. startup `query_position` 是否完成且 request id 匹配；被拒发送会按 12.4 每秒重试最多 60 次，等待期间不算失败；
 5. 目标合约净仓是否确实为零；
 6. Bid/Ask/Last 是否有效，且严格通过盘口保护；
-7. 稳定行情是否持续满 2 秒；
-8. 普通动作 60 次滚动限流是否已暂停报价。
+7. 当前合约的稳定行情窗口是否满 2 秒，是否至少 2 条有效 Tick，最新 Tick 是否仍在该合约配置的阈值内；
+8. 当前本地时间是否仍在该合约的 `quote_windows` 内，是否已进入窗口结束前 5 秒的撤单区间；
+9. 普通动作 60 次滚动限流是否已暂停报价。
 
 遇到“没有替换报价”时，先查旧订单是否收到 CTP 终态。实现故意不以本地一秒观察阈值代替真实回报；`replacement_waiting_for_terminal_order_callbacks` 只是一条审计警告。
 

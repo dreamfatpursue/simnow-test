@@ -19,6 +19,8 @@ def valid_config() -> dict:
         "book_protection_multiple": 2,
         "reanchor_confirmation_seconds": 1,
         "stable_market_seconds": 2,
+        "max_tick_age_seconds": 10,
+        "quote_windows": [{"start": "09:00", "end": "15:00"}],
         "action_limit_per_minute": 60,
         "cancel_timeout_seconds": 10,
         "flatten_timeout_seconds": 3,
@@ -30,8 +32,16 @@ def valid_multi_contract_config() -> dict:
     return {
         "version": 2,
         "contracts": [
-            {"symbol": "rb2601", "exchange": "shfe", "target_lots": 1},
-            {"symbol": "AP610", "exchange": "CZCE", "target_lots": 2},
+            {
+                "symbol": "rb2601", "exchange": "shfe", "target_lots": 1,
+                "max_tick_age_seconds": 10,
+                "quote_windows": [{"start": "09:00", "end": "15:00"}],
+            },
+            {
+                "symbol": "AP610", "exchange": "CZCE", "target_lots": 2,
+                "max_tick_age_seconds": 30,
+                "quote_windows": [{"start": "09:00", "end": "15:00"}],
+            },
         ],
         "w_ticks": 25,
     }
@@ -60,6 +70,25 @@ class StrategyConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(StrategyConfigError, "flatten_timeout_seconds"):
             StrategyConfig.from_mapping(valid_config() | {"flatten_timeout_seconds": math.inf})
 
+    def test_max_tick_age_seconds_is_required_and_must_be_positive(self) -> None:
+        config = StrategyConfig.from_mapping(valid_config())
+        self.assertEqual(config.effective["max_tick_age_seconds"], 10)
+        self.assertIn("max_tick_age_seconds", config.canonical_json)
+
+        explicit = StrategyConfig.from_mapping(valid_config() | {"max_tick_age_seconds": 0.8})
+        self.assertEqual(explicit.effective["max_tick_age_seconds"], 0.8)
+        self.assertNotEqual(explicit.sha256, config.sha256)
+
+        with self.assertRaisesRegex(StrategyConfigError, "max_tick_age_seconds"):
+            StrategyConfig.from_mapping(valid_config() | {"max_tick_age_seconds": 0})
+        with self.assertRaisesRegex(StrategyConfigError, "max_tick_age_seconds"):
+            StrategyConfig.from_mapping(valid_config() | {"max_tick_age_seconds": -1})
+        with self.assertRaisesRegex(StrategyConfigError, "max_tick_age_seconds"):
+            StrategyConfig.from_mapping(valid_config() | {"max_tick_age_seconds": True})
+
+        with self.assertRaisesRegex(StrategyConfigError, "quote_windows 必须是非空数组"):
+            StrategyConfig.from_mapping(valid_config() | {"quote_windows": None})
+
     def test_closing_wait_seconds_defaults_to_one_and_allows_zero(self) -> None:
         config = StrategyConfig.from_mapping(valid_config())
         self.assertEqual(config.effective["closing_wait_seconds"], 1)
@@ -78,6 +107,44 @@ class StrategyConfigTests(unittest.TestCase):
             StrategyConfig.from_mapping(valid_config() | {"closing_wait_seconds": True})
         with self.assertRaisesRegex(StrategyConfigError, "closing_wait_seconds"):
             StrategyConfig.from_mapping(valid_config() | {"closing_wait_seconds": math.inf})
+
+    def test_config_rejects_reanchor_step_wider_than_band(self) -> None:
+        with self.assertRaisesRegex(StrategyConfigError, "s_ticks 不得大于 w_ticks"):
+            StrategyConfig.from_mapping(valid_config() | {"w_ticks": 2, "s_ticks": 10})
+
+        boundary = StrategyConfig.from_mapping(valid_config() | {"w_ticks": 2, "s_ticks": 2})
+        self.assertEqual(boundary.effective["s_ticks"], 2)
+
+        with self.assertRaisesRegex(StrategyConfigError, r"contracts\[0\]: s_ticks 不得大于 w_ticks"):
+            MultiContractConfig.from_mapping(valid_multi_contract_config() | {"w_ticks": 2, "s_ticks": 10})
+
+    def test_quote_windows_validate_overlap_and_allow_cross_midnight_order(self) -> None:
+        overnight = StrategyConfig.from_mapping(
+            valid_config()
+            | {
+                "quote_windows": [
+                    {"start": "21:00", "end": "23:00"},
+                    {"start": "23:30", "end": "02:30"},
+                ]
+            }
+        )
+        self.assertEqual(overnight.effective["quote_windows"][1]["end"], "02:30")
+
+        with self.assertRaisesRegex(StrategyConfigError, "重叠或顺序无效"):
+            StrategyConfig.from_mapping(
+                valid_config()
+                | {
+                    "quote_windows": [
+                        {"start": "09:00", "end": "11:00"},
+                        {"start": "10:30", "end": "12:00"},
+                    ]
+                }
+            )
+
+        with self.assertRaisesRegex(StrategyConfigError, "不能相同"):
+            StrategyConfig.from_mapping(
+                valid_config() | {"quote_windows": [{"start": "09:00", "end": "09:00"}]}
+            )
 
     def test_config_loads_from_json_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -130,8 +197,16 @@ class MultiContractConfigTests(unittest.TestCase):
                 valid_multi_contract_config()
                 | {
                     "contracts": [
-                        {"symbol": "rb2601", "exchange": "SHFE", "target_lots": 1},
-                        {"symbol": "AP610", "target_lots": 2},
+                        {
+                            "symbol": "rb2601", "exchange": "SHFE", "target_lots": 1,
+                            "max_tick_age_seconds": 10,
+                            "quote_windows": [{"start": "09:00", "end": "15:00"}],
+                        },
+                        {
+                            "symbol": "AP610", "target_lots": 2,
+                            "max_tick_age_seconds": 10,
+                            "quote_windows": [{"start": "09:00", "end": "15:00"}],
+                        },
                     ]
                 }
             )
@@ -141,7 +216,12 @@ class MultiContractConfigTests(unittest.TestCase):
                 valid_multi_contract_config()
                 | {
                     "contracts": [
-                        {"symbol": "rb2601", "exchange": "SHFE", "target_lots": 1, "hedge": True}
+                        {
+                            "symbol": "rb2601", "exchange": "SHFE", "target_lots": 1,
+                            "max_tick_age_seconds": 10,
+                            "quote_windows": [{"start": "09:00", "end": "15:00"}],
+                            "hedge": True,
+                        }
                     ]
                 }
             )
@@ -150,23 +230,43 @@ class MultiContractConfigTests(unittest.TestCase):
             MultiContractConfig.from_mapping(
                 valid_multi_contract_config()
                 | {"contracts": [
-                    {"symbol": "rb2601", "exchange": "SHFE", "target_lots": 1},
-                    {"symbol": "AP610", "exchange": "CZCE", "target_lots": 0},
+                    {
+                        "symbol": "rb2601", "exchange": "SHFE", "target_lots": 1,
+                        "max_tick_age_seconds": 10,
+                        "quote_windows": [{"start": "09:00", "end": "15:00"}],
+                    },
+                    {
+                        "symbol": "AP610", "exchange": "CZCE", "target_lots": 0,
+                        "max_tick_age_seconds": 10,
+                        "quote_windows": [{"start": "09:00", "end": "15:00"}],
+                    },
                 ]}
             )
 
         with self.assertRaisesRegex(StrategyConfigError, r"contracts\[0\]: exchange 不是有效交易所"):
             MultiContractConfig.from_mapping(
                 valid_multi_contract_config()
-                | {"contracts": [{"symbol": "rb2601", "exchange": "UNKNOWN", "target_lots": 1}]}
+                | {"contracts": [{
+                    "symbol": "rb2601", "exchange": "UNKNOWN", "target_lots": 1,
+                    "max_tick_age_seconds": 10,
+                    "quote_windows": [{"start": "09:00", "end": "15:00"}],
+                }]}
             )
 
         with self.assertRaisesRegex(StrategyConfigError, r"contracts\[1\]: 重复合约: rb2601@SHFE"):
             MultiContractConfig.from_mapping(
                 valid_multi_contract_config()
                 | {"contracts": [
-                    {"symbol": "rb2601", "exchange": "SHFE", "target_lots": 1},
-                    {"symbol": " rb2601 ", "exchange": "shfe", "target_lots": 2},
+                    {
+                        "symbol": "rb2601", "exchange": "SHFE", "target_lots": 1,
+                        "max_tick_age_seconds": 10,
+                        "quote_windows": [{"start": "09:00", "end": "15:00"}],
+                    },
+                    {
+                        "symbol": " rb2601 ", "exchange": "shfe", "target_lots": 2,
+                        "max_tick_age_seconds": 10,
+                        "quote_windows": [{"start": "09:00", "end": "15:00"}],
+                    },
                 ]}
             )
 
@@ -199,21 +299,22 @@ class MultiContractConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(StrategyConfigError, "根节点必须是 JSON 对象"):
                 MultiContractConfig.from_json_file(path)
 
-    def test_multi_contract_config_accepts_session_controls_with_defaults(self) -> None:
+    def test_multi_contract_config_keeps_schedule_per_contract_and_rejects_global_schedule(self) -> None:
         doc = valid_multi_contract_config()
         config = MultiContractConfig.from_mapping(doc)
-        self.assertEqual(config.effective["session_end_time"], "")
         self.assertEqual(config.effective["max_round_trips"], 10)
+        self.assertEqual(config.contracts[0].effective["max_tick_age_seconds"], 10)
+        self.assertEqual(config.contracts[1].effective["max_tick_age_seconds"], 30)
 
-        config = MultiContractConfig.from_mapping(doc | {"session_end_time": "23:00", "max_round_trips": 3})
-        self.assertEqual(config.effective["session_end_time"], "23:00")
+        config = MultiContractConfig.from_mapping(doc | {"max_round_trips": 3})
         self.assertEqual(config.effective["max_round_trips"], 3)
-        self.assertEqual(config.contracts[0].effective["session_end_time"], "23:00")
 
         with self.assertRaisesRegex(StrategyConfigError, "session_end_time"):
-            MultiContractConfig.from_mapping(doc | {"session_end_time": "9点"})
-        with self.assertRaisesRegex(StrategyConfigError, "session_end_time"):
-            MultiContractConfig.from_mapping(doc | {"session_end_time": "24:30"})
+            MultiContractConfig.from_mapping(doc | {"session_end_time": "23:00"})
+        with self.assertRaisesRegex(StrategyConfigError, "max_tick_age_seconds"):
+            MultiContractConfig.from_mapping(
+                doc | {"contracts": [{"symbol": "rb2601", "exchange": "SHFE", "target_lots": 1}]}
+            )
         with self.assertRaisesRegex(StrategyConfigError, "max_round_trips 必须是正整数"):
             MultiContractConfig.from_mapping(doc | {"max_round_trips": 0})
 

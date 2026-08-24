@@ -4,12 +4,16 @@
     {
       "symbol": "填写当前有效合约",
       "exchange": "SHFE",
-      "target_lots": 1
+      "target_lots": 1,
+      "max_tick_age_seconds": 10,
+      "quote_windows": [{"start": "09:00", "end": "15:00"}]
     },
     {
       "symbol": "第二个合约条目可选，删除本条目即回到单合约",
       "exchange": "CZCE",
-      "target_lots": 1
+      "target_lots": 1,
+      "max_tick_age_seconds": 10,
+      "quote_windows": [{"start": "09:00", "end": "15:00"}]
     }
   ],
   "w_ticks": 20,
@@ -22,6 +26,5 @@
   "cancel_timeout_seconds": 10,
   "flatten_timeout_seconds": 3,
   "flatten_adverse_ticks": 10,
-  "max_round_trips": 10,
-  "session_end_time": "23:00"
+  "max_round_trips": 10
 }

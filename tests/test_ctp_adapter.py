@@ -13,6 +13,7 @@ from live_grid.session import (
     LiveGridSession,
     OrderEvent,
     PositionQueryCompleteEvent,
+    TickEvent,
     TradeEvent,
 )
 from vnpy.trader.constant import Exchange
@@ -22,7 +23,14 @@ from vnpy_ctp.gateway.position_query import EVENT_POSITION_QUERY_COMPLETE, Posit
 
 
 def config(symbol: str = "rb2601", exchange: str = "SHFE", **overrides) -> StrategyConfig:
-    doc: dict = {"version": 1, "symbol": symbol, "exchange": exchange, "target_lots": 1}
+    doc: dict = {
+        "version": 1,
+        "symbol": symbol,
+        "exchange": exchange,
+        "target_lots": 1,
+        "max_tick_age_seconds": 60,
+        "quote_windows": [{"start": "00:00", "end": "23:59"}],
+    }
     doc.update(overrides)
     return StrategyConfig.from_mapping(doc)
 
@@ -158,9 +166,11 @@ class CtpAdapterTests(unittest.TestCase):
         self.assertEqual(audits[0].events[-1][0].last_price, 100)
         self.assertEqual(audits[1].events[-1][0].symbol, "AP610")
 
-        now = time.monotonic()
-        for session in sessions:
-            for action in session.handle(ClockEvent(now + 2.1)):
+        t0 = time.monotonic()
+        for session, symbol, exchange in zip(sessions, ("rb2601", "AP610"), ("SHFE", "CZCE"), strict=True):
+            session.handle(TickEvent(symbol, exchange, 100, 99, 101, t0))
+            session.handle(TickEvent(symbol, exchange, 100, 99, 101, t0 + 0.5))
+            for action in session.handle(ClockEvent(t0 + 2.0)):
                 adapter._dispatch(action)
         self.assertEqual(len(engine.sent), 4)
         self.assertEqual(
@@ -304,7 +314,8 @@ class CtpAdapterTests(unittest.TestCase):
         now = time.monotonic()
         adapter._on_tick(tick_event("rb2601", "SHFE"))
         self.assertEqual(audit.events[-1][0].last_price, 100)
-
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, now))
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, now + 0.5))
         actions = session.handle(ClockEvent(now + 2.1))
         self.assertEqual([action.kind for action in actions], ["submit_order", "submit_order"])
         for action in actions:
@@ -364,6 +375,8 @@ class CtpAdapterTests(unittest.TestCase):
         adapter._on_position_query_complete(position_result(41))
         now = time.monotonic()
         adapter._on_tick(tick_event("rb2601", "SHFE"))
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, now))
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, now + 0.5))
         for action in session.handle(ClockEvent(now + 2.1)):
             adapter._dispatch(action)
 

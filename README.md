@@ -78,7 +78,7 @@ python run.py --env first
 
 ```bash
 cp strategy.example.json strategy.json
-# 把 contracts 条目改成当前 SimNow 合约查询返回的有效合约（v2 多合约格式）
+# 把 contracts 条目改成当前 SimNow 有效合约，并为每条填写断流阈值与 quote_windows（v2 多合约格式）
 python run_live_grid.py --config strategy.json --env first
 ```
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from collections import deque
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timedelta
@@ -18,6 +17,7 @@ class SessionState(str, Enum):
     WAITING_FOR_CONTRACT = "WAITING_FOR_CONTRACT"
     WAITING_FOR_ZERO_POSITION = "WAITING_FOR_ZERO_POSITION"
     WAITING_FOR_STABLE_QUOTE = "WAITING_FOR_STABLE_QUOTE"
+    PAUSED = "PAUSED"
     QUOTING = "QUOTING"
     REPLACING = "REPLACING"
     CLOSING_WAIT = "CLOSING_WAIT"
@@ -101,6 +101,8 @@ class PositionQueryCompleteEvent:
 @dataclass(frozen=True)
 class ClockEvent:
     at: float
+    # 适配层提供本地墙钟时间；测试 seam 可以省略，使用逻辑时钟。
+    wall_time: str | None = None
 
 
 @dataclass(frozen=True)
@@ -168,6 +170,7 @@ class LiveGridSession:
     _contract: ContractEvent | None = field(default=None, init=False)
     _latest_tick: TickEvent | None = field(default=None, init=False)
     _stable_since: float | None = field(default=None, init=False)
+    _stable_tick_count: int = field(default=0, init=False)
     _outside_since: float | None = field(default=None, init=False)
     _anchor_ticks: int | None = field(default=None, init=False)
     _orders: dict[str, _Order] = field(default_factory=dict, init=False)
@@ -192,7 +195,13 @@ class LiveGridSession:
     _round_has_fill: bool = field(default=False, init=False)
     _round_open_net: int = field(default=0, init=False)
     _window_started_at: float | None = field(default=None, init=False)
-    _end_at: float | None = field(default=None, init=False)
+    _schedule_windows: tuple[tuple[datetime, datetime], ...] = field(default=(), init=False)
+    _schedule_initialized: bool = field(default=False, init=False)
+    _last_wall_time: datetime | None = field(default=None, init=False)
+    _window_close_kind: str | None = field(default=None, init=False)
+    _created_wall_time: datetime = field(default_factory=datetime.now, init=False)
+
+    _PRE_CLOSE_SECONDS = 5
 
     def __post_init__(self) -> None:
         self.state = (
@@ -203,19 +212,6 @@ class LiveGridSession:
             else SessionState.PREVIEW
         )
         self.state_transitions.append({"from": "", "to": self.state.value})
-        # 唯一的墙钟读取点：把 session_end_time 折算为单调时钟期限，此后保持事件驱动确定性。
-        # 取未来 24 小时内最近的该时刻，跨午夜收盘时刻（如夜盘 01:00）自然支持。
-        end_time = self.config.effective["session_end_time"]
-        if end_time:
-            hour, minute = (int(part) for part in end_time.split(":"))
-            now = datetime.now()
-            deadline = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            if deadline <= now:
-                deadline += timedelta(days=1)
-            self._end_at = time.monotonic() + (deadline - now).total_seconds()
-
-    def _past_end(self) -> bool:
-        return self._end_at is not None and self._now >= self._end_at
 
     @property
     def target_symbol(self) -> str:
@@ -323,18 +319,32 @@ class LiveGridSession:
             },
         )
 
+    def _reset_stable_quote_gate(self) -> None:
+        self._stable_since = None
+        self._stable_tick_count = 0
+
+    def _begin_stable_quote_gate(self, at: float) -> None:
+        self._stable_since = at
+        self._stable_tick_count = 1
+
     def _on_tick(self, event: TickEvent) -> None:
         if not self._is_target(event.symbol, event.exchange):
             return
         self._now = max(self._now, event.at)
+        previous = self._latest_tick
         self._latest_tick = event
 
         if self.state == SessionState.WAITING_FOR_STABLE_QUOTE:
-            if self._protected_valid(event):
-                if self._stable_since is None:
-                    self._stable_since = event.at
+            if not self._protected_valid(event):
+                self._reset_stable_quote_gate()
+                return
+            max_age = self.config.effective["max_tick_age_seconds"]
+            if self._stable_since is None:
+                self._begin_stable_quote_gate(event.at)
+            elif previous is None or event.at - previous.at > max_age:
+                self._begin_stable_quote_gate(event.at)
             else:
-                self._stable_since = None
+                self._stable_tick_count += 1
             return
 
         if self.state == SessionState.QUOTING:
@@ -484,15 +494,13 @@ class LiveGridSession:
                         self._cancel_all(safety=True)
                 elif self._flatten_client_id is None:
                     self._try_flatten()
-        elif traded_delta > 0 and self.state == SessionState.CLOSING_WAIT:
-            self._apply_window_fill(order)
-        elif traded_delta > 0 and self.state in {
-            SessionState.CLOSING_RECONCILE,
-            SessionState.FLATTENING,
-            SessionState.FINISHED,
-            SessionState.FAILED,
-        }:
-            self._record_late_opening_fill(order)
+        elif traded_delta > 0:
+            self._handle_opening_fill(
+                order,
+                traded_delta,
+                price=event.price,
+                exchange_time=event.exchange_time,
+            )
 
         if self.state == SessionState.REPLACING:
             self._maybe_finish_replacement()
@@ -569,33 +577,13 @@ class LiveGridSession:
             elif current_flatten_terminal:
                 self._try_flatten()
             return
-        if self.state in {SessionState.QUOTING, SessionState.REPLACING}:
-            self._enter_closing(
-                "first_fill",
-                order=order,
-                volume=event.volume,
-                price=event.price,
-                trade_id=event.trade_id,
-                exchange_time=event.exchange_time,
-            )
-        elif self.state == SessionState.WAITING_FOR_STABLE_QUOTE:
-            self._enter_closing(
-                "late_fill",
-                order=order,
-                volume=event.volume,
-                price=event.price,
-                trade_id=event.trade_id,
-                exchange_time=event.exchange_time,
-            )
-        elif self.state == SessionState.CLOSING_WAIT:
-            self._apply_window_fill(order, price=event.price, trade_id=event.trade_id, exchange_time=event.exchange_time)
-        elif self.state in {
-            SessionState.CLOSING_RECONCILE,
-            SessionState.FLATTENING,
-            SessionState.FINISHED,
-            SessionState.FAILED,
-        }:
-            self._record_late_opening_fill(order)
+        self._handle_opening_fill(
+            order,
+            event.volume,
+            price=event.price,
+            trade_id=event.trade_id,
+            exchange_time=event.exchange_time,
+        )
 
     def _on_position_query_complete(self, event: PositionQueryCompleteEvent) -> None:
         if not self._is_target(event.symbol, event.exchange):
@@ -636,7 +624,7 @@ class LiveGridSession:
                 self.startup_position_result = "zero"
                 self.final_net_position = 0
                 self.state = SessionState.WAITING_FOR_STABLE_QUOTE
-                self._stable_since = None
+                self._reset_stable_quote_gate()
                 self._record_trace(
                     "zero_position_confirmed",
                     calculation={"request_id": event.request_id, "net_position": 0, "next_state": self.state.value},
@@ -694,47 +682,240 @@ class LiveGridSession:
         self._flatten_started_at = self._now
         self._try_flatten()
 
+    def _parse_wall_time(self, value: str | None) -> datetime | None:
+        if value is None:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value)
+        except (TypeError, ValueError) as exc:
+            self._fail(f"invalid_clock_wall_time:{value}")
+            self._record_trace("invalid_clock_wall_time", calculation={"value": value, "error": str(exc)})
+            return None
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone().replace(tzinfo=None)
+        return parsed
+
+    def _initialize_schedule(self, wall_time: datetime) -> None:
+        if self._schedule_initialized:
+            return
+        self._schedule_initialized = True
+        previous_start: int | None = None
+        day_offset = 0
+        schedule: list[tuple[datetime, datetime]] = []
+        base_date = self._created_wall_time.date()
+        first_start = self.config.effective["quote_windows"][0]["start"]
+        first_hour, first_minute = (int(part) for part in first_start.split(":"))
+        first_start_at = datetime.combine(base_date, datetime.min.time()).replace(
+            hour=first_hour,
+            minute=first_minute,
+        )
+        if first_start != "00:00" and self._created_wall_time >= first_start_at:
+            # 一次运行必须在首窗口前启动；即使首个时钟回调落在窗口内，也不允许追挂。
+            self._fail("started_after_first_quote_window")
+            self._record_trace(
+                "schedule_rejected",
+                calculation={
+                    "created_at": self._created_wall_time.isoformat(),
+                    "first_window_start": first_start_at.isoformat(),
+                },
+            )
+            return
+        for window in self.config.effective["quote_windows"]:
+            start_text = window["start"]
+            end_text = window["end"]
+            start = sum(int(part) * factor for part, factor in zip(start_text.split(":"), (60, 1)))
+            end = sum(int(part) * factor for part, factor in zip(end_text.split(":"), (60, 1)))
+            if previous_start is not None and start < previous_start:
+                day_offset += 1
+            start_at = datetime.combine(base_date + timedelta(days=day_offset), datetime.min.time()).replace(
+                hour=start // 60,
+                minute=start % 60,
+            )
+            end_day_offset = day_offset + (1 if end <= start else 0)
+            end_at = datetime.combine(
+                base_date + timedelta(days=end_day_offset), datetime.min.time()
+            ).replace(hour=end // 60, minute=end % 60)
+            schedule.append((start_at, end_at))
+            previous_start = start
+        self._schedule_windows = tuple(schedule)
+
+    def _window_phase(self, wall_time: datetime | None) -> str:
+        """Return open/preclose/pause/final for the configured run.
+
+        ClockEvent without wall_time is the deterministic unit-test seam and keeps
+        the schedule open; the live adapter always supplies the local wall clock.
+        """
+        if wall_time is None:
+            return "open"
+        self._initialize_schedule(wall_time)
+        if self.state == SessionState.FAILED:
+            return "invalid"
+        for index, (start_at, end_at) in enumerate(self._schedule_windows):
+            if wall_time < start_at:
+                return "before" if index == 0 else "pause"
+            if wall_time < end_at:
+                remaining = (end_at - wall_time).total_seconds()
+                if remaining <= self._PRE_CLOSE_SECONDS:
+                    return "final_preclose" if index == len(self._schedule_windows) - 1 else "preclose"
+                return "open"
+        return "final_closed"
+
+    def _missed_window_close(self, previous: datetime | None, current: datetime | None) -> str | None:
+        if current is None or not self._schedule_windows:
+            return None
+        crossed: list[int] = []
+        for index, (_, end_at) in enumerate(self._schedule_windows):
+            if current < end_at:
+                continue
+            if previous is None or previous < end_at <= current:
+                crossed.append(index)
+        if not crossed:
+            return None
+        return "final" if crossed[-1] == len(self._schedule_windows) - 1 else "pause"
+
+    def _begin_window_close(self, *, final: bool) -> None:
+        close_kind = "final" if final else "pause"
+        if self.state in {SessionState.QUOTING, SessionState.REPLACING}:
+            self._window_close_kind = close_kind
+            self._enter_closing("quote_window_end")
+        elif self.state == SessionState.CLOSING_WAIT:
+            self._window_close_kind = close_kind
+            self._cancel_remaining_and_reconcile(reason="quote_window_end")
+        elif self.state == SessionState.WAITING_FOR_STABLE_QUOTE:
+            if final:
+                self.stop_reason = "quote_window_end"
+                self.state = SessionState.FINISHED
+            else:
+                self._reset_for_next_window()
+                self.state = SessionState.PAUSED
+        elif self.state in {
+            SessionState.PREVIEW,
+            SessionState.WAITING_FOR_CONTRACT,
+            SessionState.WAITING_FOR_ZERO_POSITION,
+            SessionState.PAUSED,
+        }:
+            if final:
+                self.stop_reason = "quote_window_end"
+                self.state = SessionState.FINISHED
+
+    def _reset_for_next_window(self) -> None:
+        self._anchor_ticks = None
+        self._outside_since = None
+        self._reset_stable_quote_gate()
+        self.state = SessionState.WAITING_FOR_STABLE_QUOTE
+
+    def _quote_is_stale(self) -> bool:
+        if self._latest_tick is None:
+            return True
+        age = self._now - self._latest_tick.at
+        return age > float(self.config.effective["max_tick_age_seconds"])
+
     def _on_clock(self, event: ClockEvent) -> None:
         self._now = max(self._now, event.at)
         self._prune_actions()
 
-        if self._past_end():
+        wall_time = self._parse_wall_time(event.wall_time)
+        phase = self._window_phase(wall_time)
+        previous_wall_time = self._last_wall_time
+        self._last_wall_time = wall_time
+        if self.state == SessionState.FAILED:
+            return
+        if phase == "invalid":
+            return
+
+        missed_close = self._missed_window_close(previous_wall_time, wall_time)
+        if phase in {"final_preclose", "final_closed"}:
+            missed_close = "final"
+        closing_states = {
+            SessionState.CLOSING_CANCELS,
+            SessionState.CLOSING_RECONCILE,
+            SessionState.FLATTENING,
+        }
+        if missed_close is not None and self.state in closing_states:
+            self._window_close_kind = "final" if missed_close == "final" else "pause"
+        if missed_close is not None and self.state in {
+            SessionState.QUOTING,
+            SessionState.REPLACING,
+            SessionState.CLOSING_WAIT,
+            SessionState.WAITING_FOR_STABLE_QUOTE,
+        }:
+            self._begin_window_close(final=missed_close == "final")
+            return
+
+        final_phase = phase in {"final_preclose", "final_closed"}
+        outside_phase = phase in {"before", "pause", "preclose", "final_preclose", "final_closed"}
+        if outside_phase:
+            if self.state in {SessionState.QUOTING, SessionState.REPLACING}:
+                self._begin_window_close(final=final_phase)
+                return
+            if self.state == SessionState.CLOSING_WAIT:
+                self._begin_window_close(final=final_phase)
+                return
+            if self.state in {
+                SessionState.CLOSING_CANCELS,
+                SessionState.CLOSING_RECONCILE,
+                SessionState.FLATTENING,
+            }:
+                self._window_close_kind = "final" if final_phase else "pause"
             if self.state in {
                 SessionState.PREVIEW,
                 SessionState.WAITING_FOR_CONTRACT,
                 SessionState.WAITING_FOR_ZERO_POSITION,
                 SessionState.WAITING_FOR_STABLE_QUOTE,
+                SessionState.PAUSED,
             }:
-                self.stop_reason = self.stop_reason or "session_end"
-                self._record_trace("session_end", calculation={"at": self._now, "reason": "session_end"})
-                self.state = SessionState.FINISHED
+                self._begin_window_close(final=final_phase)
                 return
-            if self.state in {SessionState.QUOTING, SessionState.REPLACING}:
-                self.stop_reason = "session_end"
-                self._enter_closing("session_end")
-                return
+        elif self.state == SessionState.PAUSED:
+            self._reset_for_next_window()
+
+        if self.state == SessionState.QUOTING and phase == "open" and self._quote_is_stale():
+            max_age = float(self.config.effective["max_tick_age_seconds"])
+            last_tick_at = self._latest_tick.at if self._latest_tick is not None else None
+            self._record_trace(
+                "quote_stale",
+                client_ids=[order.client_id for order in self._active_orders()] + list(self._pending_clients),
+                calculation={
+                    "last_tick_at": last_tick_at,
+                    "age_seconds": self._now - last_tick_at if last_tick_at is not None else None,
+                    "max_tick_age_seconds": max_age,
+                    "reason": "quote_stale",
+                },
+            )
+            self._begin_replacement("quote_stale", safety=True)
+            return
 
         if self.state == SessionState.WAITING_FOR_STABLE_QUOTE:
-            if (
-                self._stable_since is not None
-                and self._latest_tick is not None
-                and self._protected_valid(self._latest_tick)
-                and self._now - self._stable_since >= self.config.effective["stable_market_seconds"]
-            ):
-                self._record_trace(
-                    "stable_quote_qualified",
-                    market={
-                        "last_price": self._latest_tick.last_price,
-                        "bid_price": self._latest_tick.bid_price,
-                        "ask_price": self._latest_tick.ask_price,
-                    },
-                    calculation={
-                        "stable_since": self._stable_since,
-                        "elapsed_seconds": self._now - self._stable_since,
-                        "required_seconds": self.config.effective["stable_market_seconds"],
-                    },
-                )
-                self._submit_quotes()
+            if self._stable_since is None or self._latest_tick is None:
+                return
+            max_age = self.config.effective["max_tick_age_seconds"]
+            last_age = self._now - self._latest_tick.at
+            if not self._protected_valid(self._latest_tick) or last_age > max_age:
+                self._reset_stable_quote_gate()
+                return
+            elapsed = self._now - self._stable_since
+            if elapsed < self.config.effective["stable_market_seconds"]:
+                return
+            if self._stable_tick_count < 2:
+                self._reset_stable_quote_gate()
+                return
+            self._record_trace(
+                "stable_quote_qualified",
+                market={
+                    "last_price": self._latest_tick.last_price,
+                    "bid_price": self._latest_tick.bid_price,
+                    "ask_price": self._latest_tick.ask_price,
+                },
+                calculation={
+                    "stable_since": self._stable_since,
+                    "elapsed_seconds": elapsed,
+                    "required_seconds": self.config.effective["stable_market_seconds"],
+                    "tick_count": self._stable_tick_count,
+                    "last_tick_age": last_age,
+                    "max_tick_age_seconds": max_age,
+                },
+            )
+            self._submit_quotes()
             return
 
         if self.state == SessionState.CLOSING_WAIT:
@@ -816,8 +997,6 @@ class LiveGridSession:
             self._enter_closing("interrupt")
 
     def _submit_quotes(self) -> bool:
-        if self._past_end():
-            return False
         tick = self._latest_tick
         if not self._protected_valid(tick) or self._contract is None:
             return False
@@ -961,15 +1140,48 @@ class LiveGridSession:
         self._replacement_reason = None
         self._replacement_safety = False
         self._replacement_client_ids = []
-        if reason == "market_pause":
-            self.state = SessionState.WAITING_FOR_STABLE_QUOTE
-            self._stable_since = None
-        elif reason == "reanchor":
-            self.state = SessionState.WAITING_FOR_STABLE_QUOTE
-            self._stable_since = None
-        else:
-            self.state = SessionState.WAITING_FOR_STABLE_QUOTE
-            self._stable_since = None
+        self.state = SessionState.WAITING_FOR_STABLE_QUOTE
+        self._reset_stable_quote_gate()
+
+    def _handle_opening_fill(
+        self,
+        order: _Order,
+        volume: int,
+        *,
+        price: float = 0,
+        trade_id: str = "",
+        exchange_time: str | None = None,
+    ) -> None:
+        """开仓成交：委托回报与成交流水共用同一套收口入口，避免 CTP 乱序漏触发。"""
+        if volume <= 0:
+            return
+        if self.state in {SessionState.QUOTING, SessionState.REPLACING}:
+            self._enter_closing(
+                "first_fill",
+                order=order,
+                volume=volume,
+                price=price,
+                trade_id=trade_id,
+                exchange_time=exchange_time,
+            )
+        elif self.state in {SessionState.WAITING_FOR_STABLE_QUOTE, SessionState.PAUSED}:
+            self._enter_closing(
+                "late_fill",
+                order=order,
+                volume=volume,
+                price=price,
+                trade_id=trade_id,
+                exchange_time=exchange_time,
+            )
+        elif self.state == SessionState.CLOSING_WAIT:
+            self._apply_window_fill(order, price=price, trade_id=trade_id, exchange_time=exchange_time)
+        elif self.state in {
+            SessionState.CLOSING_RECONCILE,
+            SessionState.FLATTENING,
+            SessionState.FINISHED,
+            SessionState.FAILED,
+        }:
+            self._record_late_opening_fill(order)
 
     def _enter_closing(
         self,
@@ -1323,21 +1535,42 @@ class LiveGridSession:
             )
             self.state = SessionState.FAILED
             return
-        if not self._round_has_fill:
+        window_close_kind = self._window_close_kind
+        self._window_close_kind = None
+        if self._round_has_fill:
+            self._round_trips += 1
+            self._round_has_fill = False
+        if window_close_kind is not None:
+            if window_close_kind == "final":
+                self.stop_reason = self.stop_reason or "quote_window_end"
+                self.state = SessionState.FINISHED
+            elif self._round_trips >= self.config.effective["max_round_trips"]:
+                self.stop_reason = self.stop_reason or "max_round_trips"
+                self.state = SessionState.FINISHED
+            else:
+                self._reset_for_next_window()
+                self.state = SessionState.PAUSED
+            self._record_trace(
+                "quote_window_closed",
+                calculation={
+                    "window_close_kind": window_close_kind,
+                    "round_trips": self._round_trips,
+                    "stop_reason": self.stop_reason,
+                    "next_state": self.state.value,
+                },
+            )
+            return
+        if self._round_trips == 0 and not self._round_has_fill:
             self.state = SessionState.FINISHED
             return
-        self._round_trips += 1
-        self._round_has_fill = False
         if self.stop_reason is None and self._round_trips >= self.config.effective["max_round_trips"]:
             self.stop_reason = "max_round_trips"
-        if self.stop_reason is None and self._past_end():
-            self.stop_reason = "session_end"
         if self.stop_reason is not None:
             self.state = SessionState.FINISHED
         else:
             # 一轮完成且未到停止条件：清锚重新进入稳定行情门槛，继续下一轮挂单。
             self._anchor_ticks = None
-            self._stable_since = None
+            self._reset_stable_quote_gate()
             self._outside_since = None
             self.state = SessionState.WAITING_FOR_STABLE_QUOTE
         self._record_trace(

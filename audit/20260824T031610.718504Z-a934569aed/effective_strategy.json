@@ -1,0 +1,27 @@
+{
+  "audit_schema_version": 2,
+  "effective": {
+    "action_limit_per_minute": 60,
+    "book_protection_multiple": 2,
+    "cancel_timeout_seconds": 10,
+    "closing_wait_seconds": 1,
+    "contracts": [
+      {
+        "exchange": "CZCE",
+        "symbol": "AP610",
+        "target_lots": 1
+      }
+    ],
+    "d_ticks": 1,
+    "flatten_adverse_ticks": 10,
+    "flatten_timeout_seconds": 3,
+    "max_round_trips": 5,
+    "reanchor_confirmation_seconds": 1,
+    "s_ticks": 2,
+    "session_end_time": "",
+    "stable_market_seconds": 2,
+    "version": 2,
+    "w_ticks": 2
+  },
+  "sha256": "1f56012046cdddecd94c9b456b3a4814f5697888e5a530050900245f7f327bd6"
+}

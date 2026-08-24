@@ -25,8 +25,10 @@ def config() -> StrategyConfig:
             "target_lots": 1,
             "w_ticks": 2,
             "d_ticks": 3,
-            "s_ticks": 4,
+            "s_ticks": 2,
             "stable_market_seconds": 2,
+            "max_tick_age_seconds": 60,
+            "quote_windows": [{"start": "00:00", "end": "23:59"}],
         }
     )
 
@@ -40,9 +42,11 @@ def replacement_config() -> StrategyConfig:
             "target_lots": 1,
             "w_ticks": 2,
             "d_ticks": 2,
-            "s_ticks": 10,
+            "s_ticks": 2,
             "stable_market_seconds": 2,
             "reanchor_confirmation_seconds": 1,
+            "max_tick_age_seconds": 60,
+            "quote_windows": [{"start": "00:00", "end": "23:59"}],
         }
     )
 
@@ -53,6 +57,7 @@ def start_quoting_session(strategy: StrategyConfig | None = None) -> tuple[LiveG
     session.handle(ContractEvent("rb2601", "SHFE", 1.0, size=5.0))
     session.handle(PositionQueryCompleteEvent("position-1", "rb2601", "SHFE", 0))
     session.handle(TickEvent("rb2601", "SHFE", 100.0, 99.0, 100.0, 0.0))
+    session.handle(TickEvent("rb2601", "SHFE", 100.0, 99.0, 100.0, 0.5))
     actions = session.handle(ClockEvent(2.0))
     for action in actions:
         session.handle(
@@ -77,6 +82,7 @@ class CausalAuditTests(unittest.TestCase):
         session.handle(ContractEvent("rb2601", "SHFE", 10.0, size=5.0))
         session.handle(PositionQueryCompleteEvent("position-1", "rb2601", "SHFE", 0))
         session.handle(TickEvent("rb2601", "SHFE", 100.0, 99.0, 101.0, 0.0))
+        session.handle(TickEvent("rb2601", "SHFE", 100.0, 99.0, 101.0, 0.5))
         actions = session.handle(ClockEvent(2.0))
 
         self.assertEqual([action.kind for action in actions], ["submit_order", "submit_order"])
@@ -191,6 +197,7 @@ class CausalAuditTests(unittest.TestCase):
                 )
             )
         session.handle(TickEvent("rb2601", "SHFE", 121.0, 120.0, 121.0, 5.0))
+        session.handle(TickEvent("rb2601", "SHFE", 121.0, 120.0, 121.0, 5.5))
         replacement = session.handle(ClockEvent(7.0))
 
         self.assertEqual([action.kind for action in replacement], ["submit_order", "submit_order"])

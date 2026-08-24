@@ -36,9 +36,9 @@ _Avoid_: 受限完整链路、最终策略运行
 The closing sequence after the first fill in a round: the opposite quote rests for the configured window (`closing_wait_seconds`, default 1; 0 means no window). If it fills within the window, the round ends with the spread collected and no flatten; otherwise the net position is flattened with the bounded FAK close and the opposite quote is cancelled after the flatten reaches terminal state. Both branches end only after every order is terminal and the reconciled net position is zero; a closing failure fails the session and never resumes quoting with an open position.
 _Avoid_: 立即撤单收口、平仓前撤对侧、跳过对账查仓、带遗留委托或仓位结束一轮
 
-**收盘停止**:
-The configured local-clock time (`session_end_time`, HH:MM) at which each contract's session runs the same closing sequence as an operator interrupt and ends normally. The deadline is the next occurrence of that time within 24 hours, so cross-midnight night-session ends (e.g. 01:00) are supported.
-_Avoid_: 无限挂单、依赖交易所日历、按当日零点截断
+**交易时段窗口**:
+Each contract must provide an ordered `quote_windows` list of local `start`/`end` times. Five seconds before every window end, the session safely cancels all active opening quotes; between windows it stays paused, and after the final window's closing sequence it ends normally. A descending clock time denotes a cross-midnight next-day window.
+_Avoid_: 午休或夜盘切换遗留挂单、只配置单一全局收盘时刻、按行情恢复后才撤旧单
 
 **往返轮数上限**:
 The maximum completed fill-and-flatten rounds per session (`max_round_trips`, default 10). Reaching it ends the session normally after the current round completes; it does not interrupt an in-flight closing.
@@ -153,8 +153,8 @@ The SHA-256 identity of the effective strategy configuration, used for preview, 
 _Avoid_: 把哈希当作下单门禁、只记录终端输出不保留策略身份
 
 **稳定行情启动**:
-After the SimNow launch confirmation, the test submits its first quote only after the target's bid, ask, and last price remain valid and pass book protection for two consecutive seconds.
-_Avoid_: 启动即挂单、单个瞬时行情触发
+After the SimNow launch confirmation, the test submits its first or resumed quote only after at least two valid, book-protected ticks, consecutive ticks no more than that contract's required `max_tick_age_seconds` apart, the latest tick still within that age at submit time, and the window lasting `stable_market_seconds` (default 2). Any miss restarts the next two-second wait. While quoting, exceeding the same threshold cancels the active opening quotes and requires this gate again.
+_Avoid_: 启动即挂单、单条瞬时行情触发、用过期 Tick 下单
 
 **持仓查询完成事件**:
 The gateway's general event containing the completed query's summarized positions, including an empty result. It is the authoritative zero-position signal required before the test can submit its first quote.

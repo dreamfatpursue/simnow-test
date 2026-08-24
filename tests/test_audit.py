@@ -15,6 +15,8 @@ def config() -> StrategyConfig:
             "symbol": "rb2601",
             "exchange": "SHFE",
             "target_lots": 1,
+            "max_tick_age_seconds": 60,
+            "quote_windows": [{"start": "00:00", "end": "23:59"}],
         }
     )
 
@@ -24,8 +26,16 @@ def multi_config() -> MultiContractConfig:
         {
             "version": 2,
             "contracts": [
-                {"symbol": "rb2601", "exchange": "SHFE", "target_lots": 1},
-                {"symbol": "AP610", "exchange": "CZCE", "target_lots": 2},
+                {
+                    "symbol": "rb2601", "exchange": "SHFE", "target_lots": 1,
+                    "max_tick_age_seconds": 60,
+                    "quote_windows": [{"start": "00:00", "end": "23:59"}],
+                },
+                {
+                    "symbol": "AP610", "exchange": "CZCE", "target_lots": 2,
+                    "max_tick_age_seconds": 60,
+                    "quote_windows": [{"start": "00:00", "end": "23:59"}],
+                },
             ],
         }
     )

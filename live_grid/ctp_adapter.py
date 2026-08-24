@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -321,7 +322,10 @@ class CtpLiveGridAdapter:
             for session in self.sessions:
                 if gate_closed and session.state == SessionState.WAITING_FOR_STABLE_QUOTE:
                     continue
-                self._consume(ClockEvent(time.monotonic()), session)
+                self._consume(
+                    ClockEvent(time.monotonic(), wall_time=datetime.now().isoformat(timespec="seconds")),
+                    session,
+                )
 
     def _consume(self, event: object, session: LiveGridSession) -> None:
         with self._lock:
