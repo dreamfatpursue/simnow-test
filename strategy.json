@@ -7,8 +7,8 @@
       "target_lots": 1
     }
   ],
-  "w_ticks": 3,
-  "d_ticks": 2,
+  "w_ticks": 2,
+  "d_ticks": 1,
   "s_ticks": 10,
   "book_protection_multiple": 2,
   "reanchor_confirmation_seconds": 1,

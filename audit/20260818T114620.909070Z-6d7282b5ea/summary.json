@@ -1,0 +1,405 @@
+{
+  "all_finished": true,
+  "contracts": [
+    {
+      "active_order_count": 0,
+      "active_orders": [],
+      "cancellation_terminal": true,
+      "closing_position_request_id": "position-6",
+      "closing_position_result": {
+        "error_id": 0,
+        "error_msg": "",
+        "net_position": 0,
+        "request_id": "position-6"
+      },
+      "failure_reason": null,
+      "final_net_position": 0,
+      "first_fill": {
+        "client_id": "quote-13-buy",
+        "exchange_time": "2026-08-16T19:58:24+08:00",
+        "order_id": "1_1175206176_22",
+        "price": 7878.0,
+        "side": "BUY",
+        "trade_id": "2026081700005597",
+        "volume": 1
+      },
+      "flatten_attempts": [
+        {
+          "at": 2149543.559950583,
+          "client_id": "flatten-4",
+          "offset": "CLOSE",
+          "price": 7898.0,
+          "side": "BUY",
+          "volume": 1
+        },
+        {
+          "at": 2149572.672269083,
+          "client_id": "flatten-8",
+          "offset": "CLOSE",
+          "price": 7893.0,
+          "side": "SELL",
+          "volume": 1
+        },
+        {
+          "at": 2149618.831970291,
+          "client_id": "flatten-11",
+          "offset": "CLOSE",
+          "price": 7888.0,
+          "side": "SELL",
+          "volume": 1
+        },
+        {
+          "at": 2149643.929601791,
+          "client_id": "flatten-14",
+          "offset": "CLOSE",
+          "price": 7878.0,
+          "side": "SELL",
+          "volume": 1
+        }
+      ],
+      "round_trips": 4,
+      "startup_position_result": "zero",
+      "state_transitions": [
+        {
+          "from": "",
+          "to": "WAITING_FOR_CONTRACT"
+        },
+        {
+          "from": "WAITING_FOR_CONTRACT",
+          "to": "WAITING_FOR_ZERO_POSITION"
+        },
+        {
+          "from": "WAITING_FOR_ZERO_POSITION",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "CLOSING_WAIT"
+        },
+        {
+          "from": "CLOSING_WAIT",
+          "to": "FLATTENING"
+        },
+        {
+          "from": "FLATTENING",
+          "to": "CLOSING_CANCELS"
+        },
+        {
+          "from": "CLOSING_CANCELS",
+          "to": "CLOSING_RECONCILE"
+        },
+        {
+          "from": "CLOSING_RECONCILE",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "CLOSING_WAIT"
+        },
+        {
+          "from": "CLOSING_WAIT",
+          "to": "FLATTENING"
+        },
+        {
+          "from": "FLATTENING",
+          "to": "CLOSING_CANCELS"
+        },
+        {
+          "from": "CLOSING_CANCELS",
+          "to": "CLOSING_RECONCILE"
+        },
+        {
+          "from": "CLOSING_RECONCILE",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "CLOSING_WAIT"
+        },
+        {
+          "from": "CLOSING_WAIT",
+          "to": "FLATTENING"
+        },
+        {
+          "from": "FLATTENING",
+          "to": "CLOSING_CANCELS"
+        },
+        {
+          "from": "CLOSING_CANCELS",
+          "to": "CLOSING_RECONCILE"
+        },
+        {
+          "from": "CLOSING_RECONCILE",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "CLOSING_WAIT"
+        },
+        {
+          "from": "CLOSING_WAIT",
+          "to": "FLATTENING"
+        },
+        {
+          "from": "FLATTENING",
+          "to": "CLOSING_CANCELS"
+        },
+        {
+          "from": "CLOSING_CANCELS",
+          "to": "CLOSING_RECONCILE"
+        },
+        {
+          "from": "CLOSING_RECONCILE",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "CLOSING_CANCELS"
+        },
+        {
+          "from": "CLOSING_CANCELS",
+          "to": "CLOSING_RECONCILE"
+        },
+        {
+          "from": "CLOSING_RECONCILE",
+          "to": "FINISHED"
+        }
+      ],
+      "stop_reason": "interrupted",
+      "strategy_hash": "825066d5c6d002c6ae659973ec478a5209fdef6b283546427c81310caee15f42",
+      "target_exchange": "CZCE",
+      "target_lots": 1,
+      "target_symbol": "AP610",
+      "terminal_state": "FINISHED"
+    }
+  ],
+  "environment": "7x24",
+  "strategy_hash": "825066d5c6d002c6ae659973ec478a5209fdef6b283546427c81310caee15f42",
+  "terminal_states": {
+    "AP610@CZCE": "FINISHED"
+  }
+}

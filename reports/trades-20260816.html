@@ -1,0 +1,24 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>交易日成交明细 2026-08-16</title><style>body{font-family:-apple-system,'PingFang SC',sans-serif;margin:24px;color:#222}h1{font-size:20px}h2{font-size:16px;margin-top:28px}table{border-collapse:collapse;margin-top:8px}th,td{border:1px solid #ccc;padding:4px 10px;text-align:right;font-variant-numeric:tabular-nums}th{background:#f5f5f5}td:nth-child(2){text-align:center}.note{color:#666;font-size:13px;margin-top:6px}</style></head><body><h1>交易日成交明细 · 2026-08-16</h1><p class="note">毛盈亏未含手续费，按成交价与合约乘数计算。时刻列为交易所秒级时间戳（SimNow 可能带 ±1 秒抖动）；两个间隔列按审计单调钟毫秒精度计算。</p><h2>当日 run 总览</h2>
+<table><tr><th>run</th><th>合约</th><th>终态</th><th>轮数</th><th>失败原因</th><th>停止原因</th></tr>
+<tr><td>20260818T114620.909070Z-6d7282b5ea</td><td>AP610@CZCE</td><td>FINISHED</td><td>4</td><td>—</td><td>interrupted</td></tr>
+<tr><td>20260818T115938.150105Z-501d124fef</td><td>AP610@CZCE</td><td>FINISHED</td><td>5</td><td>—</td><td>max_round_trips</td></tr>
+</table>
+<h2>资金汇总</h2>
+<table><tr><th>run</th><th>起始资金</th><th>结束资金</th><th>真实净盈亏</th><th>备注</th></tr>
+<tr><td>20260818T114620.909070Z-6d7282b5ea</td><td>22,000,000.00</td><td>21,999,910.00</td><td>-90.00</td><td></td></tr>
+<tr><td>20260818T115938.150105Z-501d124fef</td><td>21,999,910.00</td><td>21,999,800.00</td><td>-110.00</td><td></td></tr>
+<tr><td>日合计</td><td>22,000,000.00</td><td>21,999,800.00</td><td>-200.00</td><td>推算手续费 90.00</td></tr>
+</table>
+<p class="note">真实净盈亏已含手续费（账户资金差）；手续费为推算值（Σ毛盈亏 − 资金差）。资金差只在账户仅运行本策略时才等于策略净盈亏——账户内其他仓位的浮动盈亏会直接混入该数字。</p>
+<h2>AP610@CZCE</h2>
+<table><tr><th>#</th><th>方向</th><th>挂单时刻</th><th>挂单价</th><th>挂单量</th><th>成交时刻</th><th>成交价</th><th>成交量</th><th>平仓时刻</th><th>平仓价</th><th>平仓量</th><th>挂单→成交</th><th>成交→平仓</th><th>结束方式</th><th>价差</th><th>tick 数</th><th>毛盈亏</th></tr>
+<tr><td>1</td><td>SELL</td><td>19:54:35</td><td>7896</td><td>1</td><td>19:56:44</td><td>7896</td><td>1</td><td>19:56:45</td><td>7898</td><td>1</td><td>129.3s</td><td>1.4s</td><td>FAK 平仓</td><td>-2</td><td>-2</td><td>-20</td></tr>
+<tr><td>2</td><td>BUY</td><td>19:57:12</td><td>7895</td><td>1</td><td>19:57:12</td><td>7894</td><td>1</td><td>19:57:14</td><td>7893</td><td>1</td><td>0.5s</td><td>1.7s</td><td>FAK 平仓</td><td>-1</td><td>-1</td><td>-10</td></tr>
+<tr><td>3</td><td>BUY</td><td>19:57:38</td><td>7890</td><td>1</td><td>19:57:59</td><td>7890</td><td>1</td><td>19:58:00</td><td>7888</td><td>1</td><td>20.4s</td><td>1.7s</td><td>FAK 平仓</td><td>-2</td><td>-2</td><td>-20</td></tr>
+<tr><td>4</td><td>BUY</td><td>19:58:08</td><td>7878</td><td>1</td><td>19:58:24</td><td>7878</td><td>1</td><td>19:58:25</td><td>7878</td><td>1</td><td>15.4s</td><td>1.8s</td><td>FAK 平仓</td><td>+0</td><td>+0</td><td>+0</td></tr>
+<tr><td>5</td><td>BUY</td><td>20:08:45</td><td>7883</td><td>1</td><td>20:08:45</td><td>7877</td><td>1</td><td>20:08:47</td><td>7876</td><td>1</td><td>0.6s</td><td>1.6s</td><td>FAK 平仓</td><td>-1</td><td>-1</td><td>-10</td></tr>
+<tr><td>6</td><td>SELL</td><td>20:09:50</td><td>7881</td><td>1</td><td>20:09:54</td><td>7881</td><td>1</td><td>20:09:55</td><td>7882</td><td>1</td><td>3.9s</td><td>1.2s</td><td>FAK 平仓</td><td>-1</td><td>-1</td><td>-10</td></tr>
+<tr><td>7</td><td>BUY</td><td>20:10:44</td><td>7879</td><td>1</td><td>20:11:02</td><td>7879</td><td>1</td><td>20:11:03</td><td>7878</td><td>1</td><td>17.8s</td><td>1.5s</td><td>FAK 平仓</td><td>-1</td><td>-1</td><td>-10</td></tr>
+<tr><td>8</td><td>BUY</td><td>20:14:15</td><td>7876</td><td>1</td><td>20:14:15</td><td>7876</td><td>1</td><td>20:14:17</td><td>7875</td><td>1</td><td>0.2s</td><td>2.0s</td><td>FAK 平仓</td><td>-1</td><td>-1</td><td>-10</td></tr>
+<tr><td>9</td><td>BUY</td><td>20:15:26</td><td>7882</td><td>1</td><td>20:15:26</td><td>7879</td><td>1</td><td>20:15:28</td><td>7877</td><td>1</td><td>0.2s</td><td>1.9s</td><td>FAK 平仓</td><td>-2</td><td>-2</td><td>-20</td></tr>
+</table></body></html>
