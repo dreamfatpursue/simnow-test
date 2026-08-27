@@ -1,0 +1,540 @@
+{
+  "all_finished": true,
+  "contracts": [
+    {
+      "active_order_count": 0,
+      "active_orders": [],
+      "cancellation_terminal": true,
+      "closing_position_request_id": "position-4",
+      "closing_position_result": {
+        "error_id": 0,
+        "error_msg": "",
+        "net_position": 0,
+        "request_id": "position-4"
+      },
+      "failure_reason": null,
+      "final_net_position": 0,
+      "first_fill": {
+        "client_id": "quote-18-buy",
+        "exchange_time": "2026-08-27T14:56:14+08:00",
+        "order_id": "1_-620235140_33",
+        "price": 108750.0,
+        "side": "BUY",
+        "trade_id": "",
+        "volume": 1
+      },
+      "flatten_attempts": [
+        {
+          "at": 2908995.132462375,
+          "client_id": "flatten-7",
+          "offset": "CLOSETODAY",
+          "price": 108790.0,
+          "side": "BUY",
+          "volume": 1
+        },
+        {
+          "at": 2909399.749594791,
+          "client_id": "flatten-16",
+          "offset": "CLOSETODAY",
+          "price": 108770.0,
+          "side": "BUY",
+          "volume": 1
+        },
+        {
+          "at": 2909610.324998208,
+          "client_id": "flatten-19",
+          "offset": "CLOSETODAY",
+          "price": 108740.0,
+          "side": "SELL",
+          "volume": 1
+        }
+      ],
+      "market_data_mode": "normal",
+      "risk_hold": false,
+      "round_trips": 3,
+      "startup_position_result": "zero",
+      "state_transitions": [
+        {
+          "from": "",
+          "to": "WAITING_FOR_CONTRACT"
+        },
+        {
+          "from": "WAITING_FOR_CONTRACT",
+          "to": "WAITING_FOR_ZERO_POSITION"
+        },
+        {
+          "from": "WAITING_FOR_ZERO_POSITION",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "CLOSING_WAIT"
+        },
+        {
+          "from": "CLOSING_WAIT",
+          "to": "FLATTENING"
+        },
+        {
+          "from": "FLATTENING",
+          "to": "CLOSING_CANCELS"
+        },
+        {
+          "from": "CLOSING_CANCELS",
+          "to": "CLOSING_RECONCILE"
+        },
+        {
+          "from": "CLOSING_RECONCILE",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "CLOSING_WAIT"
+        },
+        {
+          "from": "CLOSING_WAIT",
+          "to": "FLATTENING"
+        },
+        {
+          "from": "FLATTENING",
+          "to": "CLOSING_CANCELS"
+        },
+        {
+          "from": "CLOSING_CANCELS",
+          "to": "CLOSING_RECONCILE"
+        },
+        {
+          "from": "CLOSING_RECONCILE",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "CLOSING_WAIT"
+        },
+        {
+          "from": "CLOSING_WAIT",
+          "to": "FLATTENING"
+        },
+        {
+          "from": "FLATTENING",
+          "to": "CLOSING_CANCELS"
+        },
+        {
+          "from": "CLOSING_CANCELS",
+          "to": "CLOSING_RECONCILE"
+        },
+        {
+          "from": "CLOSING_RECONCILE",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "QUOTE_PENDING"
+        },
+        {
+          "from": "QUOTE_PENDING",
+          "to": "QUOTING"
+        },
+        {
+          "from": "QUOTING",
+          "to": "REPLACING"
+        },
+        {
+          "from": "REPLACING",
+          "to": "WAITING_FOR_STABLE_QUOTE"
+        },
+        {
+          "from": "WAITING_FOR_STABLE_QUOTE",
+          "to": "FINISHED"
+        }
+      ],
+      "stop_reason": "quote_window_end",
+      "strategy_hash": "d29430f83862e7a6d353be90984204ea9b0a2b71726004c66c91cc600c45276a",
+      "target_exchange": "SHFE",
+      "target_lots": 1,
+      "target_symbol": "cu2609",
+      "terminal_state": "FINISHED"
+    }
+  ],
+  "environment": "first",
+  "market_data_mode": "normal",
+  "strategy_hash": "d29430f83862e7a6d353be90984204ea9b0a2b71726004c66c91cc600c45276a",
+  "terminal_states": {
+    "cu2609@SHFE": "FINISHED"
+  }
+}

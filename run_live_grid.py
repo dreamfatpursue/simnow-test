@@ -18,10 +18,15 @@ from run import FRONT_ENV_BY_PROFILE, load_settings
 _TERMINAL_STATES = {SessionState.FINISHED, SessionState.FAILED}
 
 
-def print_preview(config: MultiContractConfig, environment: str) -> None:
+def print_preview(config: MultiContractConfig, environment: str, market_data_mode: str = "normal") -> None:
     print(
         json.dumps(
-            {"environment": environment, "effective": config.effective, "sha256": config.sha256},
+            {
+                "environment": environment,
+                "market_data_mode": market_data_mode,
+                "effective": config.effective,
+                "sha256": config.sha256,
+            },
             ensure_ascii=False,
             indent=2,
         )
@@ -40,14 +45,16 @@ def _run_summary(
     failure_reason: str | None = None,
     run_failed: bool = False,
     terminal_override: str | None = None,
+    market_data_mode: str = "normal",
 ) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "environment": environment,
         "strategy_hash": config.sha256,
+        "market_data_mode": market_data_mode,
         "terminal_states": {
             _contract_key(session): (
                 session.state.value
-                if session.state in _TERMINAL_STATES or terminal_override is None
+                if session.state in _TERMINAL_STATES or terminal_override is None or session.state == SessionState.RISK_HOLD
                 else terminal_override
             )
             for session in sessions
@@ -58,7 +65,7 @@ def _run_summary(
     if failure_reason is not None:
         summary["failure_reason"] = failure_reason
     if run_failed:
-        summary["terminal_state"] = "FAILED"
+        summary["terminal_state"] = "RISK_HOLD" if any(session.state == SessionState.RISK_HOLD for session in sessions) else "FAILED"
     return summary
 
 
@@ -69,13 +76,15 @@ def _finish_contract_summaries(
     *,
     failure_reason: str | None = None,
     terminal_override: str | None = None,
+    market_data_mode: str = "normal",
 ) -> None:
     for session, audit in zip(sessions, audits):
         summary = session.summary()
         summary["environment"] = environment
+        summary["market_data_mode"] = market_data_mode
         if failure_reason is not None and summary.get("failure_reason") is None:
             summary["failure_reason"] = failure_reason
-        if terminal_override is not None and session.state not in _TERMINAL_STATES:
+        if terminal_override is not None and session.state not in _TERMINAL_STATES | {SessionState.RISK_HOLD}:
             summary["terminal_state"] = terminal_override
         audit.finish(summary)
 
@@ -87,6 +96,10 @@ def _wait_terminal(sessions: list[LiveGridSession]) -> None:
 
 def _interrupt_and_wait(adapter: CtpLiveGridAdapter) -> None:
     adapter.interrupt()
+    if adapter.main_engine is None:
+        # Startup failed before an engine/connection existed; there is nothing
+        # this process can reconcile, so persist RISK_HOLD and return.
+        return
     # 收口等待中再次 Ctrl-C 不得弃单而逃：继续等待 CTP 撤单/平仓终态。
     while any(session.state not in _TERMINAL_STATES for session in adapter.sessions):
         try:
@@ -100,8 +113,18 @@ def main() -> int:
     parser.add_argument("--config", required=True, help="无凭证多合约策略 JSON 配置")
     parser.add_argument("--env", choices=FRONT_ENV_BY_PROFILE, default="first", help="SimNow 连接环境")
     parser.add_argument("--confirm-simnow", action="store_true", help="确认当前连接是 SimNow")
+    parser.add_argument(
+        "--allow-replay-market-data",
+        action="store_true",
+        help="仅限 7x24 + --confirm-simnow：允许历史交易所时间行情用于报撤联调",
+    )
     parser.add_argument("--audit-dir", default="audit", help="测试审计根目录")
     args = parser.parse_args()
+
+    if args.allow_replay_market_data and (args.env != "7x24" or not args.confirm_simnow):
+        print("--allow-replay-market-data 仅允许与 --env 7x24 --confirm-simnow 同时使用。", file=sys.stderr)
+        return 2
+    market_data_mode = "replay_override" if args.allow_replay_market_data else "normal"
 
     try:
         config = MultiContractConfig.from_json_file(args.config)
@@ -116,20 +139,25 @@ def main() -> int:
         try:
             run_audit = MultiContractAuditWriter(config, args.audit_dir)
             sessions = [
-                LiveGridSession(contract, simnow_confirmed=args.confirm_simnow)
+                LiveGridSession(
+                    contract,
+                    simnow_confirmed=args.confirm_simnow,
+                    replay_market_data=args.allow_replay_market_data,
+                )
                 for contract in config.contracts
             ]
             audits = run_audit.writers
-            print_preview(config, args.env)
+            print_preview(config, args.env, market_data_mode)
             if not args.confirm_simnow:
                 _finish_contract_summaries(
                     sessions,
                     audits,
                     args.env,
                     failure_reason="confirmation_required",
+                    market_data_mode=market_data_mode,
                 )
                 directory = run_audit.finish(
-                    _run_summary(config, sessions, args.env, failure_reason="confirmation_required")
+                    _run_summary(config, sessions, args.env, failure_reason="confirmation_required", market_data_mode=market_data_mode)
                 )
                 print(
                     f"当前为预览模式：environment={args.env}，缺少 SimNow 确认，未连接且不会下单。"
@@ -152,8 +180,11 @@ def main() -> int:
                     _interrupt_and_wait(adapter)
                 except Exception as cleanup_exc:
                     print(f"异常收口未完成: {cleanup_exc}", file=sys.stderr)
-                adapter.close()
-                adapter = None
+                if adapter.safe_to_close():
+                    adapter.close()
+                    adapter = None
+                else:
+                    print("风险状态未清零，保持 CTP 连接，不执行静默退出。", file=sys.stderr)
             if run_audit is not None:
                 audits = run_audit.writers
                 _finish_contract_summaries(
@@ -162,6 +193,7 @@ def main() -> int:
                     args.env,
                     failure_reason=str(exc),
                     terminal_override="FAILED",
+                    market_data_mode=market_data_mode,
                 )
                 run_audit.finish(
                     _run_summary(
@@ -171,6 +203,7 @@ def main() -> int:
                         failure_reason=str(exc),
                         run_failed=True,
                         terminal_override="FAILED",
+                        market_data_mode=market_data_mode,
                     )
                 )
             return 3
@@ -183,17 +216,19 @@ def main() -> int:
             time.sleep(5)
         # 先关引擎再写摘要：否则摘要落盘后引擎仍可能投递迟到事件给已关闭的审计写入器。
         if adapter is not None:
+            while not adapter.safe_to_close():
+                time.sleep(0.2)
             adapter.close()
             adapter = None
         audits = run_audit.writers
-        _finish_contract_summaries(sessions, audits, args.env)
-        directory = run_audit.finish(_run_summary(config, sessions, args.env))
+        _finish_contract_summaries(sessions, audits, args.env, market_data_mode=market_data_mode)
+        directory = run_audit.finish(_run_summary(config, sessions, args.env, market_data_mode=market_data_mode))
         all_finished = all(session.state == SessionState.FINISHED for session in sessions)
         terminal_states = json.dumps({_contract_key(s): s.state.value for s in sessions}, ensure_ascii=False)
         print(f"环境={args.env} 终态={terminal_states} 审计目录={directory}")
         return 0 if all_finished else 1
     finally:
-        if adapter is not None:
+        if adapter is not None and adapter.safe_to_close():
             adapter.close()
         if run_audit is not None:
             run_audit.close()

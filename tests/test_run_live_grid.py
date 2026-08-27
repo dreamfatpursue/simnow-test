@@ -4,6 +4,7 @@ import tempfile
 import threading
 import time
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -89,6 +90,12 @@ class ScriptedAdapter(CtpLiveGridAdapter):
                     last_price=100.0,
                     bid_price_1=99.0,
                     ask_price_1=101.0,
+                    datetime=datetime.now(timezone.utc),
+                    trading_day="20260824",
+                    action_day="20260824",
+                    update_millisec=0,
+                    limit_up=200.0,
+                    limit_down=0.1,
                 )
             )
         )
@@ -180,8 +187,8 @@ class ScriptedAdapter(CtpLiveGridAdapter):
         self._account(1_000_000.0, 900_000.0)
 
         assert self._pump_until(
-            lambda: rb.state.value == "QUOTING"
-            and ap.state.value == "QUOTING"
+            lambda: rb.state.value == "QUOTE_PENDING"
+            and ap.state.value == "QUOTE_PENDING"
             and len(engine.sent) >= 4
         )
         for index, request in enumerate(engine.sent, 1):
@@ -195,6 +202,7 @@ class ScriptedAdapter(CtpLiveGridAdapter):
                 0,
                 request.price,
             )
+        assert self._wait_for(lambda: rb.state.value == "QUOTING" and ap.state.value == "QUOTING")
 
         self._trade("1", "rb2601", "SHFE", "多", 1, 60.0, "trade-1")
         assert self._wait_for(lambda: rb.state.value == "CLOSING_WAIT")

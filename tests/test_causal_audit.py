@@ -91,7 +91,16 @@ class CausalAuditTests(unittest.TestCase):
         trace = record["trace"]
         quote_trace = next(item for item in trace if item["code"] == "quote_submitted")
         self.assertEqual(quote_trace["client_ids"], ["quote-1-buy", "quote-1-sell"])
-        self.assertEqual(quote_trace["market"], {"last_price": 100.0, "bid_price": 99.0, "ask_price": 101.0})
+        self.assertEqual(
+            quote_trace["market"],
+            {
+                "last_price": 100.0,
+                "bid_price": 99.0,
+                "ask_price": 101.0,
+                "limit_up": None,
+                "limit_down": None,
+            },
+        )
         self.assertEqual(
             quote_trace["calculation"],
             {

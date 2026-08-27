@@ -64,11 +64,15 @@ python run.py --env first
 - 资金和持仓事件；
 - 指定合约的买一、卖一和最新价 Tick。
 
+指定 `CTP_SYMBOL`/`CTP_EXCHANGE` 时，诊断快照会把 `target(contract=Y,tick=Y)` 与
+`contracts=Y` 分开显示：前者表示目标合约已到达并收到行情，后者表示全量合约列表已经结束；
+SimNow 的全量列表可能明显晚于目标合约。交易侧查询拒绝会打印 `交易接口报错`，不会再静默等待。
+
 按 `Ctrl+C` 退出。这个入口不会调用 `send_order` 或 `cancel_order`。
 
 ## 当前边界
 
-当前实现面向 SimNow 多合约（每合约独立会话与收口）、单进程、无凭证落盘的受控联调；不包含生产交易、广发实盘配置、回放撮合、数据库持久化或跨合约对冲。
+当前实现面向 SimNow 多合约（每合约独立会话与收口）、单进程、无凭证落盘的受控联调；不包含生产交易、广发实盘配置、数据库持久化、跨进程连续托管或跨合约对冲。启动和重连会先查询目标合约当日委托/成交/持仓：遗留开仓单自动撤销，遗留平仓单、非零仓或未知状态进入 `RISK_HOLD`，不会静默退出。
 
 完整的启动方式、状态机、CTP 回报/动作链路、报价与收口规则、审计字段、排查顺序和交接验收步骤见：[单合约报撤联调运行与代码逻辑说明](docs/live-grid-runtime.md)。
 
@@ -96,6 +100,12 @@ python run_live_grid.py \
 ```bash
 python run.py --check --env 7x24
 python run_live_grid.py --config strategy.json --env 7x24 --confirm-simnow
+```
+
+7×24 如果使用历史化行情做报撤联调，必须显式增加危险开关；普通模式会拒绝历史交易所时间行情：
+
+```bash
+python run_live_grid.py --config strategy.json --env 7x24 --confirm-simnow --allow-replay-market-data
 ```
 
 7×24 不提供结算服务。每次报撤启动仍会针对所选环境查询目标合约净仓，非零仓时拒绝开仓；不要根据第一套的仓位或结算状态推断 7×24 的结果。SHA-256 仍会用于预览展示、审计记录和复盘识别，但不参与下单授权。修改策略配置会产生新的哈希，不需要额外提供旧哈希或新哈希参数。

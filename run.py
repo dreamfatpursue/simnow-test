@@ -105,11 +105,16 @@ def _diagnostic_snapshot(diagnostics: dict[str, bool]) -> str:
     def mark(name: str) -> str:
         return "Y" if diagnostics[name] else "N"
 
+    def optional_mark(name: str) -> str:
+        return "Y" if diagnostics.get(name, False) else "N"
+
     return (
         f"TD(front={mark('td_front_connected')},auth={mark('td_authenticated')},"
         f"login={mark('td_logged_in')}) "
         f"MD(front={mark('md_front_connected')},login={mark('md_logged_in')}) "
-        f"contracts={mark('contracts_queried')}"
+        f"contracts={mark('contracts_queried')} "
+        f"target(contract={optional_mark('target_contract_seen')},"
+        f"tick={optional_mark('target_tick_seen')})"
     )
 
 
@@ -126,7 +131,11 @@ def install_handlers(event_engine: Any, main_engine: Any, settings: Settings) ->
 
     subscribed = False
     last_tick_printed = 0.0
-    diagnostics = {name: False for name in _DIAGNOSTIC_MARKERS.values()}
+    diagnostics = {
+        **{name: False for name in _DIAGNOSTIC_MARKERS.values()},
+        "target_contract_seen": False,
+        "target_tick_seen": False,
+    }
 
     def on_log(event: Any) -> None:
         message = str(getattr(event.data, "msg", event.data))
@@ -166,6 +175,8 @@ def install_handlers(event_engine: Any, main_engine: Any, settings: Settings) ->
         if contract.symbol != settings.symbol or exchange != settings.exchange:
             return
 
+        diagnostics["target_contract_seen"] = True
+        print(f"[诊断] target_contract_seen: {contract.vt_symbol}", flush=True)
         print(
             "[合约] "
             f"{contract.vt_symbol} name={contract.name} size={contract.size} "
@@ -191,6 +202,9 @@ def install_handlers(event_engine: Any, main_engine: Any, settings: Settings) ->
         tick = event.data
         if settings.vt_symbol and tick.vt_symbol != settings.vt_symbol:
             return
+        if settings.vt_symbol and not diagnostics["target_tick_seen"]:
+            diagnostics["target_tick_seen"] = True
+            print(f"[诊断] target_tick_seen: {tick.vt_symbol}", flush=True)
         now = time.monotonic()
         if now - last_tick_printed < 1:
             return

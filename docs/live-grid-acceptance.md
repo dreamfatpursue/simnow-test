@@ -5,9 +5,17 @@
 ## 阶段 A：本地无凭证验证 — 已执行（2026-08-14）
 
 ```text
-.venv/bin/python -m unittest discover -s tests -q   # 44 tests OK
+.venv/bin/python -m unittest discover -s tests -q   # 141 tests OK
 .venv/bin/python -m compileall -q live_grid run_live_grid.py tests vendor/vnpy_ctp/vnpy_ctp
 ```
+
+### 阶段 A-P0：实时风控回归 — 已执行（2026-08-24）
+
+```text
+.venv/bin/python -m unittest tests.test_live_grid_p0 -q   # 7 tests OK
+```
+
+覆盖被动价/涨跌停门槛、双边受理超时与拒单、交易所时间重复/过旧、撤单 1 秒节流重试，以及启动时遗留开仓单的“委托 → 成交 → 持仓”清理顺序。真实 SimNow 尚未在本轮新状态机上重跑；阶段 B～D 需按现行 `RISK_HOLD` 与 `market_data_mode` 判据重新留存独立审计目录。
 
 ## 阶段 B：只读 SimNow 联调 — 已执行（2026-08-14）
 

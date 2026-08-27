@@ -53,6 +53,7 @@ class StrategyConfigTests(unittest.TestCase):
 
         self.assertEqual(config.effective["exchange"], "SHFE")
         self.assertEqual(config.effective["target_lots"], 1)
+        self.assertEqual(config.effective["quote_ack_timeout_seconds"], 5)
         self.assertEqual(len(config.sha256), 64)
         self.assertFalse(config.can_submit(simnow_confirmed=False))
         self.assertTrue(config.can_submit(simnow_confirmed=True))

@@ -55,6 +55,7 @@ _DEFAULTS: dict[str, Any] = {
     "flatten_adverse_ticks": 10,
     "max_round_trips": 10,
     "closing_wait_seconds": 1,
+    "quote_ack_timeout_seconds": 5,
 }
 _REQUIRED = {
     "version",
@@ -73,6 +74,7 @@ _POSITIVE_FIELDS = {
     "cancel_timeout_seconds",
     "flatten_timeout_seconds",
     "flatten_adverse_ticks",
+    "quote_ack_timeout_seconds",
 }
 _NON_NEGATIVE_FIELDS = {"closing_wait_seconds"}
 _POSITIVE_INTEGER_FIELDS = {"target_lots", "w_ticks", "d_ticks", "s_ticks", "max_round_trips"}

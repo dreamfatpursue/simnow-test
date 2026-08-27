@@ -1,8 +1,10 @@
 import os
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
-from run import _diagnostic_snapshot, load_settings
+from run import Settings, _diagnostic_snapshot, install_handlers, load_settings
+from vnpy.trader.event import EVENT_CONTRACT, EVENT_TICK
 
 
 class LoadSettingsTests(unittest.TestCase):
@@ -49,8 +51,62 @@ class LoadSettingsTests(unittest.TestCase):
         }
         self.assertEqual(
             _diagnostic_snapshot(diagnostics),
-            "TD(front=Y,auth=N,login=N) MD(front=Y,login=N) contracts=N",
+            "TD(front=Y,auth=N,login=N) MD(front=Y,login=N) contracts=N target(contract=N,tick=N)",
         )
+
+    def test_read_only_diagnostics_distinguish_target_contract_and_tick(self) -> None:
+        class RecordingEventEngine:
+            def __init__(self) -> None:
+                self.handlers = {}
+
+            def register(self, event_type, handler) -> None:
+                self.handlers[event_type] = handler
+
+        class RecordingMainEngine:
+            def __init__(self) -> None:
+                self.subscriptions = []
+
+            def subscribe(self, request, gateway_name) -> None:
+                self.subscriptions.append((request, gateway_name))
+
+        settings = Settings(
+            environment="first",
+            user_id="user",
+            password="password",
+            broker_id="9999",
+            trade_front="tcp://trade",
+            market_front="tcp://market",
+            app_id="app",
+            auth_code="auth",
+            product_info="",
+            symbol="AP610",
+            exchange="CZCE",
+        )
+        event_engine = RecordingEventEngine()
+        main_engine = RecordingMainEngine()
+        diagnostics = install_handlers(event_engine, main_engine, settings)
+
+        event_engine.handlers[EVENT_CONTRACT](SimpleNamespace(data=SimpleNamespace(
+            symbol="AP610",
+            exchange=SimpleNamespace(value="CZCE"),
+            vt_symbol="AP610.CZCE",
+            name="苹果",
+            size=10,
+            pricetick=1.0,
+        )))
+        self.assertTrue(diagnostics["target_contract_seen"])
+        self.assertEqual(len(main_engine.subscriptions), 1)
+
+        event_engine.handlers[EVENT_TICK](SimpleNamespace(data=SimpleNamespace(
+            vt_symbol="AP610.CZCE",
+            last_price=7424,
+            bid_price_1=7424,
+            bid_volume_1=1,
+            ask_price_1=7425,
+            ask_volume_1=1,
+            datetime="2026-08-25T14:39:50+08:00",
+        )))
+        self.assertTrue(diagnostics["target_tick_seen"])
 
 
 if __name__ == "__main__":

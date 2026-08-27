@@ -1,0 +1,30 @@
+{
+  "audit_schema_version": 2,
+  "effective": {
+    "action_limit_per_minute": 60,
+    "book_protection_multiple": 0.5,
+    "cancel_timeout_seconds": 10,
+    "closing_wait_seconds": 1,
+    "d_ticks": 1,
+    "exchange": "SHFE",
+    "flatten_adverse_ticks": 10,
+    "flatten_timeout_seconds": 3,
+    "max_round_trips": 5,
+    "max_tick_age_seconds": 10,
+    "quote_ack_timeout_seconds": 5,
+    "quote_windows": [
+      {
+        "end": "23:59",
+        "start": "00:00"
+      }
+    ],
+    "reanchor_confirmation_seconds": 1,
+    "s_ticks": 1,
+    "stable_market_seconds": 2,
+    "symbol": "cu2609",
+    "target_lots": 1,
+    "version": 2,
+    "w_ticks": 1
+  },
+  "sha256": "da34460fe837357370c5b30aa91526487e30b4ebdd82d3a9e8a354df9c8da436"
+}

@@ -1,0 +1,42 @@
+{
+  "audit_schema_version": 2,
+  "effective": {
+    "action_limit_per_minute": 60,
+    "book_protection_multiple": 0.5,
+    "cancel_timeout_seconds": 10,
+    "closing_wait_seconds": 1,
+    "contracts": [
+      {
+        "exchange": "SHFE",
+        "max_tick_age_seconds": 10,
+        "quote_windows": [
+          {
+            "end": "10:15",
+            "start": "09:00"
+          },
+          {
+            "end": "11:30",
+            "start": "10:30"
+          },
+          {
+            "end": "15:00",
+            "start": "13:30"
+          }
+        ],
+        "symbol": "cu2609",
+        "target_lots": 1
+      }
+    ],
+    "d_ticks": 1,
+    "flatten_adverse_ticks": 10,
+    "flatten_timeout_seconds": 3,
+    "max_round_trips": 5,
+    "quote_ack_timeout_seconds": 5,
+    "reanchor_confirmation_seconds": 1,
+    "s_ticks": 1,
+    "stable_market_seconds": 2,
+    "version": 2,
+    "w_ticks": 1
+  },
+  "sha256": "d29430f83862e7a6d353be90984204ea9b0a2b71726004c66c91cc600c45276a"
+}
