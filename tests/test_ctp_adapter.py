@@ -68,6 +68,12 @@ def tick_event(symbol: str, exchange: str, last: float = 100.0, bid: float = 99.
             last_price=last,
             bid_price_1=bid,
             ask_price_1=ask,
+            datetime=datetime.now(timezone.utc),
+            trading_day="20260824",
+            action_day="20260824",
+            update_millisec=0,
+            limit_up=200.0,
+            limit_down=0.1,
         )
     )
 
@@ -226,11 +232,11 @@ class CtpAdapterTests(unittest.TestCase):
             position_result(41, (held_position("AP610", "CZCE", "多", 1),))
         )
 
-        self.assertEqual(rb.state.value, "FINISHED")
-        self.assertEqual(ap.state.value, "FAILED")
+        self.assertEqual(rb.state.value, "WAITING_FOR_STABLE_QUOTE")
+        self.assertEqual(ap.state.value, "RISK_HOLD")
         self.assertEqual(ap.failure_reason, "nonzero_startup_position")
-        self.assertEqual(hc.state.value, "FAILED")
-        self.assertEqual(hc.failure_reason, "interrupted_before_zero_position")
+        self.assertEqual(hc.state.value, "WAITING_FOR_CONTRACT")
+        self.assertIsNone(hc.failure_reason)
         self.assertEqual(engine.sent, [])
         self.assertEqual(engine.cancelled, [])
 
@@ -264,8 +270,8 @@ class CtpAdapterTests(unittest.TestCase):
             adapter._on_tick(tick_event("AP610", "CZCE"))
             adapter._on_timer(SimpleNamespace(data=None))
             time.sleep(0.01)
-        self.assertEqual(rb.state.value, "QUOTING")
-        self.assertEqual(ap.state.value, "QUOTING")
+        self.assertEqual(rb.state.value, "QUOTE_PENDING")
+        self.assertEqual(ap.state.value, "QUOTE_PENDING")
         self.assertEqual(len(engine.sent), 4)
 
     def test_two_startup_queries_merge_into_one_account_level_query(self) -> None:
@@ -281,8 +287,13 @@ class CtpAdapterTests(unittest.TestCase):
         engine = adapter.main_engine
         engine.gateway = OnceRefusingGateway()
         rb, ap = sessions
+        clock = [1000.0]
+        adapter._clock = lambda: clock[0]
 
         adapter._on_contract(contract_event("rb2601", "SHFE"))
+        # 第一次发送被拒后进入退避；跨过间隔再接第二个合约，
+        # 该合约的待查登记与 rb 合并进下一次账户级查询。
+        clock[0] += 1.01
         adapter._on_contract(contract_event("AP610", "CZCE"))
         self.assertEqual(engine.gateway.query_count, 2)
         self.assertEqual(rb.state.value, "WAITING_FOR_ZERO_POSITION")
@@ -365,6 +376,56 @@ class CtpAdapterTests(unittest.TestCase):
         self.assertEqual(session.state.value, "FLATTENING")
         self.assertEqual(len(engine.sent), 3)
         self.assertEqual(engine.sent[-1][0].type.value, "FAK")
+
+    def test_quote_ack_timeout_dispatches_qry_order_before_cancel(self) -> None:
+        class QueryGateway(FakeGateway):
+            def __init__(self) -> None:
+                super().__init__()
+                self.order_query_count = 0
+
+            def query_order(self) -> int:
+                self.order_query_count += 1
+                return 55
+
+        class QueryEngine(FakeMainEngine):
+            def __init__(self) -> None:
+                super().__init__()
+                self.gateway = QueryGateway()
+
+        adapter, sessions, _ = make_adapter(("rb2601", "SHFE"))
+        session = sessions[0]
+        adapter.main_engine = QueryEngine()
+        session.handle(ContractEvent("rb2601", "SHFE", 1.0))
+        session.handle(PositionQueryCompleteEvent("position-1", "rb2601", "SHFE", 0))
+
+        now = time.monotonic()
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, now))
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, now + 0.5))
+        submitted = session.handle(ClockEvent(now + 2.1))
+        for action in submitted:
+            adapter._dispatch(action)
+
+        timeout_actions = session.handle(ClockEvent(session._now + 5))
+        self.assertEqual([action.kind for action in timeout_actions], ["query_order"])
+        adapter._dispatch(timeout_actions[0])
+        self.assertEqual(adapter.main_engine.gateway.order_query_count, 1)
+        self.assertEqual(adapter.main_engine.cancelled, [])
+
+        adapter._on_order_query_complete(
+            SimpleNamespace(
+                data=SimpleNamespace(
+                    request_id=55,
+                    error_id=0,
+                    error_msg="",
+                    orders=(
+                        {"order_id": "1", "InstrumentID": "rb2601", "ExchangeID": "SHFE", "OrderStatus": "3", "Direction": "0", "CombOffsetFlag": "0", "VolumeTotalOriginal": 1, "VolumeTraded": 0, "LimitPrice": 80},
+                        {"order_id": "2", "InstrumentID": "rb2601", "ExchangeID": "SHFE", "OrderStatus": "3", "Direction": "1", "CombOffsetFlag": "0", "VolumeTotalOriginal": 1, "VolumeTraded": 0, "LimitPrice": 120},
+                    ),
+                )
+            )
+        )
+        self.assertEqual(session.state.value, "QUOTING")
+        self.assertEqual(adapter.main_engine.cancelled, [])
 
     def test_adapter_passes_exchange_time_and_contract_size_into_events(self) -> None:
         adapter, sessions, audits = make_adapter(("rb2601", "SHFE"))
@@ -461,7 +522,7 @@ class CtpAdapterTests(unittest.TestCase):
         )
         self.assertEqual(adapter.sessions[0].state.value, "WAITING_FOR_CONTRACT")
 
-    def test_position_query_send_refusal_retries_on_timer_until_sent(self) -> None:
+    def test_position_query_send_refusal_retries_with_backoff_until_sent(self) -> None:
         class FlowControlledGateway:
             def __init__(self) -> None:
                 self.query_count = 0
@@ -472,17 +533,34 @@ class CtpAdapterTests(unittest.TestCase):
 
         adapter, sessions, _ = make_adapter(("rb2601", "SHFE"))
         session = sessions[0]
+        clock = [1000.0]
+        adapter._clock = lambda: clock[0]
         adapter.main_engine.gateway = FlowControlledGateway()
 
         adapter._on_contract(contract_event("rb2601", "SHFE"))
         self.assertEqual(adapter.main_engine.gateway.query_count, 1)
         self.assertEqual(session.state.value, "WAITING_FOR_ZERO_POSITION")
 
-        for _ in range(28):
-            adapter._on_timer(SimpleNamespace(data=None))
-        self.assertEqual(adapter.main_engine.gateway.query_count, 29)
-        self.assertEqual(session.state.value, "WAITING_FOR_ZERO_POSITION")
+        # 首次被拒后：同刻与未满退避间隔的重发都被抑制（1s→2s→4s→固定5s）
+        adapter._on_timer(SimpleNamespace(data=None))
+        self.assertEqual(adapter.main_engine.gateway.query_count, 1)
+        clock[0] += 1.01
+        adapter._on_timer(SimpleNamespace(data=None))
+        self.assertEqual(adapter.main_engine.gateway.query_count, 2)
+        clock[0] += 1.5
+        adapter._on_timer(SimpleNamespace(data=None))
+        self.assertEqual(adapter.main_engine.gateway.query_count, 2)
+        clock[0] += 0.6
+        adapter._on_timer(SimpleNamespace(data=None))
+        self.assertEqual(adapter.main_engine.gateway.query_count, 3)
+        clock[0] += 4.01
+        adapter._on_timer(SimpleNamespace(data=None))
+        self.assertEqual(adapter.main_engine.gateway.query_count, 4)
 
+        while adapter.main_engine.gateway.query_count < 29:
+            clock[0] += 5.01
+            adapter._on_timer(SimpleNamespace(data=None))
+        clock[0] += 5.01
         adapter._on_timer(SimpleNamespace(data=None))
         self.assertEqual(adapter.main_engine.gateway.query_count, 30)
         adapter._on_position_query_complete(position_result(77))
@@ -494,23 +572,40 @@ class CtpAdapterTests(unittest.TestCase):
         class DeadGateway:
             def __init__(self) -> None:
                 self.query_count = 0
+                self.last_query_send_refusal = None
 
             def query_position(self) -> None:
                 self.query_count += 1
+                self.last_query_send_refusal = "ReqQryInvestorPosition 返回 -3"
                 return None
 
-        adapter, sessions, _ = make_adapter(("rb2601", "SHFE"))
+        adapter, sessions, audits = make_adapter(("rb2601", "SHFE"))
         session = sessions[0]
+        clock = [1000.0]
+        adapter._clock = lambda: clock[0]
         adapter.main_engine.gateway = DeadGateway()
 
         adapter._on_contract(contract_event("rb2601", "SHFE"))
         self.assertEqual(session.state.value, "WAITING_FOR_ZERO_POSITION")
         for _ in range(POSITION_QUERY_MAX_ATTEMPTS - 2):
+            clock[0] += 5.01
             adapter._on_timer(SimpleNamespace(data=None))
         self.assertEqual(session.state.value, "WAITING_FOR_ZERO_POSITION")
+        clock[0] += 5.01
         adapter._on_timer(SimpleNamespace(data=None))
-        self.assertEqual(session.state.value, "FAILED")
+        self.assertEqual(session.state.value, "RISK_HOLD")
         self.assertEqual(adapter.main_engine.gateway.query_count, POSITION_QUERY_MAX_ATTEMPTS)
+        refusals = [
+            event for event, _, _, _, _, _ in audits[0].events
+            if isinstance(event, PositionQueryCompleteEvent) and event.error_id == 1
+        ]
+        self.assertTrue(refusals)
+        self.assertIn("ReqQryInvestorPosition 返回 -3", refusals[-1].error_msg)
+
+    def test_send_refused_message_appends_detail_only_when_present(self) -> None:
+        self.assertEqual(CtpLiveGridAdapter._send_refused_message("CTP 持仓查询请求未发送", None), "CTP 持仓查询请求未发送")
+        detail = CtpLiveGridAdapter._send_refused_message("CTP 持仓查询请求未发送", "ReqQryInvestorPosition 返回 -3")
+        self.assertEqual(detail, "CTP 持仓查询请求未发送（ReqQryInvestorPosition 返回 -3）")
 
     def test_close_does_not_hold_lock_while_engine_closes(self) -> None:
         adapter, _, audits = make_adapter(("rb2601", "SHFE"))

@@ -8,8 +8,12 @@ from datetime import datetime, timedelta
 from enum import Enum
 from math import isfinite
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .config import StrategyConfig
+
+
+CHINA_TZ = ZoneInfo("Asia/Shanghai")
 
 
 class SessionState(str, Enum):
@@ -18,14 +22,22 @@ class SessionState(str, Enum):
     WAITING_FOR_ZERO_POSITION = "WAITING_FOR_ZERO_POSITION"
     WAITING_FOR_STABLE_QUOTE = "WAITING_FOR_STABLE_QUOTE"
     PAUSED = "PAUSED"
+    QUOTE_PENDING = "QUOTE_PENDING"
     QUOTING = "QUOTING"
     REPLACING = "REPLACING"
     CLOSING_WAIT = "CLOSING_WAIT"
     CLOSING_CANCELS = "CLOSING_CANCELS"
     CLOSING_RECONCILE = "CLOSING_RECONCILE"
     FLATTENING = "FLATTENING"
+    RISK_HOLD = "RISK_HOLD"
     FINISHED = "FINISHED"
     FAILED = "FAILED"
+
+
+# CTP OnErrRtnOrderAction 错误码：报单已全成交或已撤销，不能再撤。
+# 收到它说明该委托在交易所侧已是终态，不是需要风险托管的异常。
+_CTP_ORDER_ALREADY_TERMINAL_ERROR_ID = 26
+
 
 
 # 收口中与终态的合集：处于其中任何状态时不得开启新一轮收口或报价。
@@ -35,6 +47,7 @@ _CLOSING_OR_TERMINAL = frozenset(
         SessionState.CLOSING_CANCELS,
         SessionState.CLOSING_RECONCILE,
         SessionState.FLATTENING,
+        SessionState.RISK_HOLD,
         SessionState.FINISHED,
         SessionState.FAILED,
     }
@@ -58,6 +71,13 @@ class TickEvent:
     bid_price: float
     ask_price: float
     at: float
+    exchange_time: str | None = None
+    trading_day: str | None = None
+    action_day: str | None = None
+    update_millisec: int | None = None
+    limit_up: float | None = None
+    limit_down: float | None = None
+    receive_sequence: int | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +92,10 @@ class OrderEvent:
     price: float = 0
     client_id: str | None = None
     exchange_time: str | None = None
+    offset: str = "OPEN"
+    order_ref: str | None = None
+    order_sys_id: str | None = None
+    status_unknown: bool = False
 
 
 @dataclass(frozen=True)
@@ -94,6 +118,44 @@ class PositionQueryCompleteEvent:
     symbol: str
     exchange: str
     net_position: int
+    error_id: int = 0
+    error_msg: str = ""
+
+
+@dataclass(frozen=True)
+class ConnectionEvent:
+    kind: str
+    connected: bool
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class OrderActionErrorEvent:
+    order_id: str
+    symbol: str
+    exchange: str
+    client_id: str | None = None
+    error_id: int = 0
+    error_msg: str = ""
+    action: str = "cancel"
+
+
+@dataclass(frozen=True)
+class OrderQueryCompleteEvent:
+    request_id: str
+    symbol: str
+    exchange: str
+    orders: tuple[OrderEvent, ...] = ()
+    error_id: int = 0
+    error_msg: str = ""
+
+
+@dataclass(frozen=True)
+class TradeQueryCompleteEvent:
+    request_id: str
+    symbol: str
+    exchange: str
+    trades: tuple[Any, ...] = ()
     error_id: int = 0
     error_msg: str = ""
 
@@ -152,6 +214,7 @@ class LiveGridSession:
 
     config: StrategyConfig
     simnow_confirmed: bool
+    replay_market_data: bool = False
     state: SessionState = field(init=False)
     actions: list[Action] = field(default_factory=list, init=False)
     failure_reason: str | None = field(default=None, init=False)
@@ -169,6 +232,21 @@ class LiveGridSession:
     closing_position_result: dict[str, Any] | None = field(default=None, init=False)
     _contract: ContractEvent | None = field(default=None, init=False)
     _latest_tick: TickEvent | None = field(default=None, init=False)
+    _last_exchange_tick_time: datetime | None = field(default=None, init=False)
+    _last_exchange_tick_key: tuple[str, int] | None = field(default=None, init=False)
+    _quote_group_id: str | None = field(default=None, init=False)
+    _quote_acknowledged: set[str] = field(default_factory=set, init=False)
+    _quote_ack_deadline: float | None = field(default=None, init=False)
+    _quote_ack_query_request_id: str | None = field(default=None, init=False)
+    _quote_ack_query_started_at: float | None = field(default=None, init=False)
+    _quote_order_callbacks_seen: bool = field(default=False, init=False)
+    _cancel_attempt_at: dict[str, float] = field(default_factory=dict, init=False)
+    _cancel_error_ids: dict[str, str] = field(default_factory=dict, init=False)
+    _risk_recovery_pending: bool = field(default=False, init=False)
+    _risk_blocked_order: bool = field(default=False, init=False)
+    _startup_orders_checked: bool = field(default=False, init=False)
+    _resume_after_reconcile: bool = field(default=False, init=False)
+    _last_recovery_query_at: float | None = field(default=None, init=False)
     _stable_since: float | None = field(default=None, init=False)
     _stable_tick_count: int = field(default=0, init=False)
     _outside_since: float | None = field(default=None, init=False)
@@ -199,7 +277,10 @@ class LiveGridSession:
     _schedule_initialized: bool = field(default=False, init=False)
     _last_wall_time: datetime | None = field(default=None, init=False)
     _window_close_kind: str | None = field(default=None, init=False)
-    _created_wall_time: datetime = field(default_factory=datetime.now, init=False)
+    _created_wall_time: datetime = field(
+        default_factory=lambda: datetime.now(CHINA_TZ).replace(tzinfo=None),
+        init=False,
+    )
 
     _PRE_CLOSE_SECONDS = 5
 
@@ -253,6 +334,14 @@ class LiveGridSession:
             self._on_trade(event)
         elif isinstance(event, PositionQueryCompleteEvent):
             self._on_position_query_complete(event)
+        elif isinstance(event, ConnectionEvent):
+            self._on_connection(event)
+        elif isinstance(event, OrderActionErrorEvent):
+            self._on_order_action_error(event)
+        elif isinstance(event, OrderQueryCompleteEvent):
+            self._on_order_query_complete(event)
+        elif isinstance(event, TradeQueryCompleteEvent):
+            self._on_trade_query_complete(event)
         elif isinstance(event, ClockEvent):
             self._on_clock(event)
         elif isinstance(event, InterruptEvent):
@@ -323,16 +412,86 @@ class LiveGridSession:
         self._stable_since = None
         self._stable_tick_count = 0
 
+    def _tick_gap_seconds(self, previous: TickEvent | None, current: TickEvent | None) -> float:
+        if previous is None or current is None:
+            return float("inf")
+        previous_exchange = self._exchange_datetime(previous.exchange_time)
+        current_exchange = self._exchange_datetime(current.exchange_time)
+        if previous_exchange is not None and current_exchange is not None:
+            return max(0.0, (current_exchange - previous_exchange).total_seconds())
+        return max(0.0, current.at - previous.at)
+
     def _begin_stable_quote_gate(self, at: float) -> None:
         self._stable_since = at
         self._stable_tick_count = 1
 
+    def _exchange_datetime(self, value: str | None) -> datetime | None:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value)
+        except (TypeError, ValueError):
+            parsed = None
+            for pattern in ("%Y%m%d %H:%M:%S.%f", "%Y%m%d %H:%M:%S"):
+                try:
+                    parsed = datetime.strptime(value, pattern)
+                    break
+                except (TypeError, ValueError):
+                    continue
+            if parsed is None:
+                return None
+        if parsed.tzinfo is None:
+            parsed = parsed.astimezone()
+        return parsed
+
+    def _tick_time_valid(self, event: TickEvent) -> tuple[bool, str]:
+        """Validate exchange ordering/age; ``at`` remains only a callback clock."""
+        exchange_time = self._exchange_datetime(event.exchange_time)
+        if event.exchange_time and exchange_time is None:
+            return False, "invalid_exchange_time"
+        if event.update_millisec is not None and (
+            isinstance(event.update_millisec, bool)
+            or not isinstance(event.update_millisec, int)
+            or not 0 <= event.update_millisec <= 999
+        ):
+            return False, "invalid_update_millisec"
+        if exchange_time is None:
+            # Unit-test seam and old gateways have no exchange timestamp. The live
+            # adapter always supplies one from CTP.
+            return True, "local_clock_seam"
+        if self._last_exchange_tick_time is not None and exchange_time <= self._last_exchange_tick_time:
+            return False, "exchange_time_not_increasing"
+        if not self.replay_market_data:
+            now = datetime.now().astimezone()
+            age = (now - exchange_time).total_seconds()
+            if age > float(self.config.effective["max_tick_age_seconds"]):
+                return False, "exchange_time_stale"
+            if age < -2:
+                return False, "exchange_time_future"
+        return True, "exchange_time_valid"
+
     def _on_tick(self, event: TickEvent) -> None:
         if not self._is_target(event.symbol, event.exchange):
+            return
+        valid_time, time_reason = self._tick_time_valid(event)
+        if not valid_time:
+            self._record_trace(
+                "tick_rejected",
+                market={"exchange_time": event.exchange_time, "receive_sequence": event.receive_sequence},
+                calculation={"reason": time_reason, "max_tick_age_seconds": self.config.effective["max_tick_age_seconds"]},
+            )
+            if self.state == SessionState.WAITING_FOR_STABLE_QUOTE:
+                self._reset_stable_quote_gate()
+            elif self.state in {SessionState.QUOTE_PENDING, SessionState.QUOTING}:
+                self._begin_replacement("invalid_market_time", safety=True)
             return
         self._now = max(self._now, event.at)
         previous = self._latest_tick
         self._latest_tick = event
+        exchange_time = self._exchange_datetime(event.exchange_time)
+        if exchange_time is not None:
+            self._last_exchange_tick_time = exchange_time
+            self._last_exchange_tick_key = (event.exchange_time or "", event.update_millisec or 0)
 
         if self.state == SessionState.WAITING_FOR_STABLE_QUOTE:
             if not self._protected_valid(event):
@@ -341,10 +500,17 @@ class LiveGridSession:
             max_age = self.config.effective["max_tick_age_seconds"]
             if self._stable_since is None:
                 self._begin_stable_quote_gate(event.at)
-            elif previous is None or event.at - previous.at > max_age:
+            elif previous is None or self._tick_gap_seconds(previous, event) > max_age:
                 self._begin_stable_quote_gate(event.at)
             else:
                 self._stable_tick_count += 1
+            return
+
+        if self.state == SessionState.QUOTE_PENDING:
+            if event.exchange_time is None and not self._quote_order_callbacks_seen:
+                # Compatibility seam for deterministic tests/old adapters. Live
+                # CTP ticks carry exchange_time and therefore require both acks.
+                self.state = SessionState.QUOTING
             return
 
         if self.state == SessionState.QUOTING:
@@ -357,6 +523,8 @@ class LiveGridSession:
                         "last_price": event.last_price,
                         "bid_price": event.bid_price,
                         "ask_price": event.ask_price,
+                        "limit_up": event.limit_up,
+                        "limit_down": event.limit_down,
                     },
                     calculation=protection,
                 )
@@ -413,8 +581,12 @@ class LiveGridSession:
         order = self._find_or_bind_order(event)
         if order is None:
             return
+        if self.state == SessionState.QUOTE_PENDING:
+            self._quote_order_callbacks_seen = True
         previous_traded = order.traded
         previous_status = order.status
+        if event.status_unknown or event.status not in {"SUBMITTING", "ACCEPTED", "NOTTRADED", "PARTTRADED", "ALLTRADED", "CANCELLED", "REJECTED"}:
+            self._risk_hold("order_status_unknown")
         if not order.terminal:
             order.status = event.status
         order.volume = event.volume or order.volume
@@ -480,11 +652,13 @@ class LiveGridSession:
                         "reason": self.failure_reason,
                     },
                 )
-                self.state = SessionState.FAILED
+                self._risk_hold("late_flatten_fill_after_finish")
             if self.state == SessionState.FLATTENING:
                 if event.status == "REJECTED":
                     self._fail("flatten_rejected")
                     self._cancel_all(safety=True)
+                    if self.state in {SessionState.FAILED, SessionState.RISK_HOLD}:
+                        return
                 elif order.terminal and order.client_id == self._flatten_client_id:
                     self._flatten_client_id = None
                 if self.final_net_position == 0:
@@ -494,13 +668,33 @@ class LiveGridSession:
                         self._cancel_all(safety=True)
                 elif self._flatten_client_id is None:
                     self._try_flatten()
-        elif traded_delta > 0:
-            self._handle_opening_fill(
-                order,
-                traded_delta,
-                price=event.price,
-                exchange_time=event.exchange_time,
-            )
+        else:
+            if traded_delta > 0:
+                self._handle_opening_fill(
+                    order,
+                    traded_delta,
+                    price=event.price,
+                    exchange_time=event.exchange_time,
+                )
+            if event.status == "REJECTED" and self.state in {SessionState.QUOTE_PENDING, SessionState.QUOTING}:
+                self._quote_pair_failed("opening_order_rejected", order)
+            elif (
+                self.state == SessionState.QUOTE_PENDING
+                and self._quote_ack_query_request_id is None
+                and event.status in {"ACCEPTED", "NOTTRADED", "PARTTRADED"}
+            ):
+                self._quote_acknowledged.add(order.client_id)
+                if self._quote_group_id and self._quote_acknowledged >= {
+                    f"quote-{self._quote_group_id}-buy",
+                    f"quote-{self._quote_group_id}-sell",
+                }:
+                    self._quote_ack_deadline = None
+                    self.state = SessionState.QUOTING
+                    self._record_trace(
+                        "quote_pair_accepted",
+                        client_ids=sorted(self._quote_acknowledged),
+                        calculation={"quote_group_id": self._quote_group_id},
+                    )
 
         if self.state == SessionState.REPLACING:
             self._maybe_finish_replacement()
@@ -566,7 +760,7 @@ class LiveGridSession:
                         "reason": self.failure_reason,
                     },
                 )
-                self.state = SessionState.FAILED
+                self._risk_hold("late_flatten_fill_after_finish")
             if order.client_id == self._flatten_client_id and order.terminal:
                 self._flatten_client_id = None
             if self.final_net_position == 0:
@@ -601,7 +795,7 @@ class LiveGridSession:
                         "passed": False,
                     },
                 )
-                self._fail("startup_position_query_failed")
+                self._risk_hold("startup_position_query_failed")
                 return
             self._record_trace(
                 "startup_position_result",
@@ -619,7 +813,7 @@ class LiveGridSession:
                     "startup_position_rejected",
                     calculation={"request_id": event.request_id, "net_position": event.net_position},
                 )
-                self._fail("nonzero_startup_position")
+                self._risk_hold("nonzero_startup_position")
             else:
                 self.startup_position_result = "zero"
                 self.final_net_position = 0
@@ -628,6 +822,39 @@ class LiveGridSession:
                 self._record_trace(
                     "zero_position_confirmed",
                     calculation={"request_id": event.request_id, "net_position": 0, "next_state": self.state.value},
+                )
+            return
+
+        if self.state == SessionState.RISK_HOLD:
+            if event.error_id:
+                self.final_net_position = None
+                return
+            self.final_net_position = event.net_position
+            if event.net_position == 0 and not self._risk_blocked_order and not self._active_orders() and not self._pending_clients:
+                previous_reason = self.failure_reason
+                self.failure_reason = None
+                self._risk_recovery_pending = False
+                # 托管期间已完成的开平成交也要在这里记账：终端回报链被中断跳过时，
+                # 漏记会让状态机为凑满 max_round_trips 多跑一整对报撤。
+                if self._round_has_fill:
+                    self._round_trips += 1
+                    self._round_has_fill = False
+                if self.stop_reason is None and self._round_trips >= self.config.effective["max_round_trips"]:
+                    self.stop_reason = "max_round_trips"
+                self._reset_stable_quote_gate()
+                self._anchor_ticks = None
+                if self.stop_reason == "max_round_trips":
+                    self.state = SessionState.FINISHED
+                else:
+                    self.state = SessionState.WAITING_FOR_STABLE_QUOTE
+                self._record_trace(
+                    "risk_hold_recovered",
+                    calculation={
+                        "previous_reason": previous_reason,
+                        "net_position": 0,
+                        "round_trips": self._round_trips,
+                        "next_state": self.state.value,
+                    },
                 )
             return
 
@@ -653,7 +880,7 @@ class LiveGridSession:
             }
             # 查仓失败即净仓未知：不得沿用窗口记账的旧值。
             self.final_net_position = None
-            self._fail("closing_position_query_failed")
+            self._risk_hold("closing_position_query_failed")
             return
         for order in self._orders.values():
             if not order.is_flatten:
@@ -675,12 +902,199 @@ class LiveGridSession:
             },
         )
         if event.net_position == 0:
+            if self._resume_after_reconcile:
+                self._resume_after_reconcile = False
+                self._anchor_ticks = None
+                self._reset_stable_quote_gate()
+                self.state = SessionState.WAITING_FOR_STABLE_QUOTE
+                return
             self._finish_or_fail()
             return
         self._round_has_fill = True
         self.state = SessionState.FLATTENING
         self._flatten_started_at = self._now
         self._try_flatten()
+
+    def _on_connection(self, event: ConnectionEvent) -> None:
+        if event.connected:
+            if self.state == SessionState.RISK_HOLD:
+                self._risk_recovery_pending = True
+                self._record_trace("connection_recovered", calculation={"kind": event.kind})
+            return
+        if self.state in {SessionState.FINISHED, SessionState.PREVIEW}:
+            return
+        self._risk_hold(f"{event.kind}_front_disconnected")
+
+    def _on_order_action_error(self, event: OrderActionErrorEvent) -> None:
+        if not self._is_target(event.symbol, event.exchange):
+            return
+        order = self._find_order(event.order_id, event.client_id)
+        if order is None:
+            self._risk_hold("order_action_unknown")
+            return
+        if event.action == "insert":
+            self._record_trace(
+                "order_insert_error",
+                client_ids=[order.client_id],
+                calculation={"order_id": order.order_id, "error_id": event.error_id, "error_msg": event.error_msg},
+            )
+            if self.state in {SessionState.QUOTE_PENDING, SessionState.QUOTING}:
+                self._quote_pair_failed("order_insert_failed", order)
+            return
+        if event.action != "cancel":
+            self._risk_hold("order_action_unknown")
+            return
+        order.cancel_requested = False
+        self._cancel_error_ids[order.client_id] = event.error_msg or str(event.error_id)
+        self._record_trace(
+            "cancel_error",
+            client_ids=[order.client_id],
+            calculation={"order_id": order.order_id, "error_id": event.error_id, "error_msg": event.error_msg},
+        )
+        if event.error_id == _CTP_ORDER_ALREADY_TERMINAL_ERROR_ID:
+            # CTP 错误26=报单已全成交或已撤销：这本身就是该委托已终态的证明。
+            # 终端回报可能在途，等它到达或走撤单超时对账即可；
+            # 升级 RISK_HOLD 只会触发整套恢复链并重复撤同一张已死订单。
+            return
+        if self.state not in {SessionState.FINISHED, SessionState.FAILED, SessionState.PREVIEW}:
+            self._risk_hold("cancel_failed")
+
+    def _on_order_query_complete(self, event: OrderQueryCompleteEvent) -> None:
+        if not self._is_target(event.symbol, event.exchange):
+            return
+        if self._quote_ack_query_request_id == event.request_id:
+            self._on_quote_ack_query_complete(event)
+            return
+        if event.error_id:
+            self._risk_hold("order_query_failed")
+            return
+        unknown = [
+            order for order in event.orders
+            if getattr(order, "status", "") not in {"SUBMITTING", "ACCEPTED", "NOTTRADED", "PARTTRADED", "ALLTRADED", "CANCELLED", "REJECTED"}
+        ]
+        if unknown:
+            self._risk_blocked_order = True
+            self._risk_hold("startup_unknown_order_status")
+            return
+        active_open = [
+            order for order in event.orders
+            if getattr(order, "offset", "OPEN") in {"OPEN", "开仓"}
+            and getattr(order, "status", "") not in {"ALLTRADED", "CANCELLED", "REJECTED"}
+        ]
+        active_close = [
+            order for order in event.orders
+            if getattr(order, "offset", "OPEN") not in {"OPEN", "开仓"}
+            and getattr(order, "status", "") not in {"ALLTRADED", "CANCELLED", "REJECTED"}
+        ]
+        if active_close:
+            self._risk_blocked_order = True
+            self._risk_hold("startup_active_close_order")
+            return
+        if active_open:
+            for order in active_open:
+                self._record_trace(
+                    "orphan_open_order",
+                    client_ids=[getattr(order, "client_id", None)],
+                    calculation={"order_id": getattr(order, "order_id", "")},
+                )
+                self._emit(
+                    "cancel_order",
+                    order_id=getattr(order, "order_id", ""),
+                    client_id=getattr(order, "client_id", None),
+                    symbol=self.target_symbol,
+                    exchange=self.target_exchange,
+                    safety=True,
+                )
+            self._startup_orders_checked = False
+            return
+        self._risk_blocked_order = False
+        self._startup_orders_checked = True
+
+    def _on_quote_ack_query_complete(self, event: OrderQueryCompleteEvent) -> None:
+        """Reconcile a timed-out quote pair before deciding whether it is safe to quote."""
+        self._quote_ack_query_request_id = None
+        self._quote_ack_query_started_at = None
+        if event.error_id:
+            self._risk_hold("quote_ack_order_query_failed")
+            return
+        if self.state != SessionState.QUOTE_PENDING:
+            return
+
+        expected_clients = {
+            f"quote-{self._quote_group_id}-buy",
+            f"quote-{self._quote_group_id}-sell",
+        }
+        observed: dict[str, str] = {}
+        for queried in event.orders:
+            order = self._find_order(queried.order_id, queried.client_id)
+            if order is not None and order.client_id in expected_clients:
+                observed[order.client_id] = queried.status
+            self._on_order(queried)
+            if self.state != SessionState.QUOTE_PENDING:
+                return
+
+        accepted = {"ACCEPTED", "NOTTRADED", "PARTTRADED"}
+        current_status = {
+            client_id: next(
+                (order.status for order in self._orders.values() if order.client_id == client_id),
+                "UNKNOWN",
+            )
+            for client_id in expected_clients
+        }
+        if (
+            set(observed) == expected_clients
+            and all(status in accepted for status in observed.values())
+            and current_status == observed
+        ):
+            self._quote_acknowledged.update(expected_clients)
+            self._quote_ack_deadline = None
+            self.state = SessionState.QUOTING
+            self._record_trace(
+                "quote_pair_accepted_via_query",
+                client_ids=sorted(expected_clients),
+                calculation={"quote_group_id": self._quote_group_id, "request_id": event.request_id},
+            )
+            return
+
+        self._quote_pair_failed("quote_ack_reconcile_failed")
+        if self._pending_clients:
+            self._risk_hold("quote_ack_query_unknown_order")
+
+    def _on_trade_query_complete(self, event: TradeQueryCompleteEvent) -> None:
+        if event.error_id:
+            self._risk_hold("trade_query_failed")
+
+    def _quote_pair_failed(self, reason: str, order: _Order | None = None) -> None:
+        self._record_trace(
+            "quote_pair_failed",
+            client_ids=[order.client_id] if order is not None else [],
+            calculation={"reason": reason, "quote_group_id": self._quote_group_id},
+        )
+        self._quote_ack_deadline = None
+        self._quote_ack_query_request_id = None
+        self._quote_ack_query_started_at = None
+        self._resume_after_reconcile = True
+        self.final_net_position = None
+        self.state = SessionState.CLOSING_CANCELS
+        self._closing_started_at = self._now
+        self.cancellation_terminal = None
+        self._cancel_all(safety=True)
+        self._maybe_reconcile()
+
+    def _risk_hold(self, reason: str) -> None:
+        self.failure_reason = self.failure_reason or reason
+        self.state = SessionState.RISK_HOLD
+        self._risk_recovery_pending = True
+        self._record_trace(
+            "risk_hold",
+            client_ids=[order.client_id for order in self._active_orders()] + list(self._pending_clients),
+            calculation={
+                "reason": self.failure_reason,
+                "active_order_count": len(self._active_orders()) + len(self._pending_clients),
+                "net_position": self.final_net_position,
+            },
+        )
+        self._cancel_all(safety=True)
 
     def _parse_wall_time(self, value: str | None) -> datetime | None:
         if value is None:
@@ -692,34 +1106,17 @@ class LiveGridSession:
             self._record_trace("invalid_clock_wall_time", calculation={"value": value, "error": str(exc)})
             return None
         if parsed.tzinfo is not None:
-            parsed = parsed.astimezone().replace(tzinfo=None)
+            parsed = parsed.astimezone(CHINA_TZ).replace(tzinfo=None)
         return parsed
 
-    def _initialize_schedule(self, wall_time: datetime) -> None:
-        if self._schedule_initialized:
-            return
-        self._schedule_initialized = True
+    @staticmethod
+    def _wall_clock_aware(value: datetime) -> datetime:
+        return value.replace(tzinfo=CHINA_TZ) if value.tzinfo is None else value.astimezone(CHINA_TZ)
+
+    def _build_schedule(self, base_date) -> tuple[tuple[datetime, datetime], ...]:
         previous_start: int | None = None
         day_offset = 0
         schedule: list[tuple[datetime, datetime]] = []
-        base_date = self._created_wall_time.date()
-        first_start = self.config.effective["quote_windows"][0]["start"]
-        first_hour, first_minute = (int(part) for part in first_start.split(":"))
-        first_start_at = datetime.combine(base_date, datetime.min.time()).replace(
-            hour=first_hour,
-            minute=first_minute,
-        )
-        if first_start != "00:00" and self._created_wall_time >= first_start_at:
-            # 一次运行必须在首窗口前启动；即使首个时钟回调落在窗口内，也不允许追挂。
-            self._fail("started_after_first_quote_window")
-            self._record_trace(
-                "schedule_rejected",
-                calculation={
-                    "created_at": self._created_wall_time.isoformat(),
-                    "first_window_start": first_start_at.isoformat(),
-                },
-            )
-            return
         for window in self.config.effective["quote_windows"]:
             start_text = window["start"]
             end_text = window["end"]
@@ -737,7 +1134,24 @@ class LiveGridSession:
             ).replace(hour=end // 60, minute=end % 60)
             schedule.append((start_at, end_at))
             previous_start = start
-        self._schedule_windows = tuple(schedule)
+        return tuple(schedule)
+
+    def _initialize_schedule(self, wall_time: datetime) -> None:
+        if self._schedule_initialized:
+            return
+        self._schedule_initialized = True
+
+        # 允许在当前窗口内启动；跨午夜时，优先选择仍覆盖当前时刻的上一自然日排程。
+        current_schedule = self._build_schedule(wall_time.date())
+        previous_schedule = self._build_schedule(wall_time.date() - timedelta(days=1))
+        self._schedule_windows = next(
+            (
+                candidate
+                for candidate in (current_schedule, previous_schedule)
+                if any(start_at <= wall_time < end_at for start_at, end_at in candidate)
+            ),
+            current_schedule,
+        )
 
     def _window_phase(self, wall_time: datetime | None) -> str:
         """Return open/preclose/pause/final for the configured run.
@@ -761,13 +1175,14 @@ class LiveGridSession:
         return "final_closed"
 
     def _missed_window_close(self, previous: datetime | None, current: datetime | None) -> str | None:
-        if current is None or not self._schedule_windows:
+        # 首个墙钟回调只定位启动时刻，不能把本次启动前结束的窗口算作跨窗。
+        if previous is None or current is None or not self._schedule_windows:
             return None
         crossed: list[int] = []
         for index, (_, end_at) in enumerate(self._schedule_windows):
             if current < end_at:
                 continue
-            if previous is None or previous < end_at <= current:
+            if previous < end_at <= current:
                 crossed.append(index)
         if not crossed:
             return None
@@ -775,7 +1190,7 @@ class LiveGridSession:
 
     def _begin_window_close(self, *, final: bool) -> None:
         close_kind = "final" if final else "pause"
-        if self.state in {SessionState.QUOTING, SessionState.REPLACING}:
+        if self.state in {SessionState.QUOTE_PENDING, SessionState.QUOTING, SessionState.REPLACING}:
             self._window_close_kind = close_kind
             self._enter_closing("quote_window_end")
         elif self.state == SessionState.CLOSING_WAIT:
@@ -788,12 +1203,10 @@ class LiveGridSession:
             else:
                 self._reset_for_next_window()
                 self.state = SessionState.PAUSED
-        elif self.state in {
-            SessionState.PREVIEW,
-            SessionState.WAITING_FOR_CONTRACT,
-            SessionState.WAITING_FOR_ZERO_POSITION,
-            SessionState.PAUSED,
-        }:
+        elif self.state in {SessionState.WAITING_FOR_CONTRACT, SessionState.WAITING_FOR_ZERO_POSITION}:
+            if final:
+                self._risk_hold("quote_window_end_before_startup_reconcile")
+        elif self.state in {SessionState.PREVIEW, SessionState.PAUSED}:
             if final:
                 self.stop_reason = "quote_window_end"
                 self.state = SessionState.FINISHED
@@ -807,7 +1220,11 @@ class LiveGridSession:
     def _quote_is_stale(self) -> bool:
         if self._latest_tick is None:
             return True
-        age = self._now - self._latest_tick.at
+        exchange_time = self._exchange_datetime(self._latest_tick.exchange_time)
+        if exchange_time is not None and self._last_wall_time is not None and not self.replay_market_data:
+            age = (self._wall_clock_aware(self._last_wall_time) - exchange_time.astimezone(CHINA_TZ)).total_seconds()
+        else:
+            age = self._now - self._latest_tick.at
         return age > float(self.config.effective["max_tick_age_seconds"])
 
     def _on_clock(self, event: ClockEvent) -> None:
@@ -819,6 +1236,20 @@ class LiveGridSession:
         previous_wall_time = self._last_wall_time
         self._last_wall_time = wall_time
         if self.state == SessionState.FAILED:
+            return
+        if self.state == SessionState.RISK_HOLD:
+            self._cancel_all(safety=True)
+            if self._last_recovery_query_at is None or self._now - self._last_recovery_query_at >= 2:
+                self._request_sequence += 1
+                request_id = f"recovery-{self._request_sequence}"
+                self._last_recovery_query_at = self._now
+                self._emit(
+                    "query_position",
+                    request_id=request_id,
+                    symbol=self.target_symbol,
+                    exchange=self.target_exchange,
+                    phase="recovery",
+                )
             return
         if phase == "invalid":
             return
@@ -869,15 +1300,48 @@ class LiveGridSession:
         elif self.state == SessionState.PAUSED:
             self._reset_for_next_window()
 
+        if self.state == SessionState.QUOTE_PENDING:
+            if self._quote_ack_query_request_id is None and self._quote_ack_deadline is not None and self._now >= self._quote_ack_deadline:
+                self._record_trace(
+                    "quote_ack_timeout",
+                    client_ids=list(self._pending_clients) + [order.client_id for order in self._active_orders()],
+                    calculation={"deadline": self._quote_ack_deadline, "quote_group_id": self._quote_group_id},
+                )
+                self._quote_ack_deadline = None
+                self._request_sequence += 1
+                self._quote_ack_query_request_id = f"quote-ack-{self._request_sequence}"
+                self._quote_ack_query_started_at = self._now
+                self._emit(
+                    "query_order",
+                    request_id=self._quote_ack_query_request_id,
+                    symbol=self.target_symbol,
+                    exchange=self.target_exchange,
+                    phase="quote_ack",
+                    quote_group_id=self._quote_group_id,
+                )
+                return
+            if (
+                self._quote_ack_query_request_id is not None
+                and self._quote_ack_query_started_at is not None
+                and self._now - self._quote_ack_query_started_at >= self.config.effective["cancel_timeout_seconds"]
+            ):
+                self._risk_hold("quote_ack_order_query_timeout")
+                return
+
         if self.state == SessionState.QUOTING and phase == "open" and self._quote_is_stale():
             max_age = float(self.config.effective["max_tick_age_seconds"])
-            last_tick_at = self._latest_tick.at if self._latest_tick is not None else None
+            last_tick_at = self._latest_tick.exchange_time if self._latest_tick is not None and self._latest_tick.exchange_time else (self._latest_tick.at if self._latest_tick is not None else None)
+            latest_exchange = self._exchange_datetime(self._latest_tick.exchange_time) if self._latest_tick is not None else None
+            if latest_exchange is not None and self._last_wall_time is not None and not self.replay_market_data:
+                age_seconds = (self._wall_clock_aware(self._last_wall_time) - latest_exchange.astimezone(CHINA_TZ)).total_seconds()
+            else:
+                age_seconds = self._now - self._latest_tick.at if self._latest_tick is not None else None
             self._record_trace(
                 "quote_stale",
                 client_ids=[order.client_id for order in self._active_orders()] + list(self._pending_clients),
                 calculation={
                     "last_tick_at": last_tick_at,
-                    "age_seconds": self._now - last_tick_at if last_tick_at is not None else None,
+                    "age_seconds": age_seconds,
                     "max_tick_age_seconds": max_age,
                     "reason": "quote_stale",
                 },
@@ -889,7 +1353,11 @@ class LiveGridSession:
             if self._stable_since is None or self._latest_tick is None:
                 return
             max_age = self.config.effective["max_tick_age_seconds"]
-            last_age = self._now - self._latest_tick.at
+            exchange_time = self._exchange_datetime(self._latest_tick.exchange_time)
+            if exchange_time is not None and wall_time is not None and not self.replay_market_data:
+                last_age = (self._wall_clock_aware(wall_time) - exchange_time.astimezone(CHINA_TZ)).total_seconds()
+            else:
+                last_age = self._now - self._latest_tick.at
             if not self._protected_valid(self._latest_tick) or last_age > max_age:
                 self._reset_stable_quote_gate()
                 return
@@ -926,6 +1394,13 @@ class LiveGridSession:
         if self.state == SessionState.REPLACING:
             self._retry_replacement_cancels()
             self._warn_if_replacement_delayed()
+            if (
+                self._pending_clients
+                and self._replacement_started_at is not None
+                and self._now - self._replacement_started_at >= self.config.effective["cancel_timeout_seconds"]
+            ):
+                self._risk_hold("replacement_pending_order_unknown")
+                return
             self._maybe_finish_replacement()
             return
 
@@ -945,7 +1420,10 @@ class LiveGridSession:
                     },
                 )
                 self.cancellation_terminal = False
-                self._begin_reconcile()
+                if self._active_orders() or self._pending_clients:
+                    self._risk_hold("cancel_timeout")
+                else:
+                    self._begin_reconcile()
             else:
                 self._maybe_reconcile()
             return
@@ -968,6 +1446,10 @@ class LiveGridSession:
                 self._try_flatten()
 
     def _on_interrupt(self) -> None:
+        if self.state == SessionState.RISK_HOLD:
+            self._record_trace("interrupt_risk_hold", calculation={"action": "keep_connection"})
+            self._emit("audit_warning", code="risk_hold_requires_reconciliation")
+            return
         if self.state in {SessionState.PREVIEW, SessionState.FINISHED, SessionState.FAILED}:
             if self.state == SessionState.PREVIEW:
                 self.state = SessionState.FINISHED
@@ -1025,9 +1507,26 @@ class LiveGridSession:
             (self._anchor_ticks - distance) * self._contract.pricetick,
             (self._anchor_ticks + distance) * self._contract.pricetick,
         )
-        if not all(isfinite(price) and price > 0 for price in prices):
+        if not self._quote_prices_valid(tick, prices):
+            self._reset_stable_quote_gate()
+            self._record_trace(
+                "quote_rejected",
+                market={
+                    "last_price": tick.last_price,
+                    "bid_price": tick.bid_price,
+                    "ask_price": tick.ask_price,
+                    "limit_up": tick.limit_up,
+                    "limit_down": tick.limit_down,
+                },
+                calculation={"buy_price": prices[0], "sell_price": prices[1], "reason": "book_or_limit_protection"},
+            )
             return False
         self._sequence += 1
+        self._quote_group_id = str(self._sequence)
+        self._quote_acknowledged.clear()
+        self._quote_ack_deadline = self._now + float(self.config.effective["quote_ack_timeout_seconds"])
+        self._quote_ack_query_request_id = None
+        self._quote_ack_query_started_at = None
         client_ids = [f"quote-{self._sequence}-buy", f"quote-{self._sequence}-sell"]
         trace = {
             "code": "quote_submitted",
@@ -1036,6 +1535,8 @@ class LiveGridSession:
                 "last_price": tick.last_price,
                 "bid_price": tick.bid_price,
                 "ask_price": tick.ask_price,
+                "limit_up": tick.limit_up,
+                "limit_down": tick.limit_down,
             },
             "calculation": {
                 "anchor_ticks": self._anchor_ticks,
@@ -1072,10 +1573,11 @@ class LiveGridSession:
                 order_type="LIMIT",
                 volume=order.volume,
                 price=order.price,
+                quote_group_id=self._quote_group_id,
             )
             self._record_normal_action()
         self._round_open_net = 0
-        self.state = SessionState.QUOTING
+        self.state = SessionState.QUOTE_PENDING
         return True
 
     def _begin_replacement(self, reason: str, *, safety: bool) -> None:
@@ -1092,7 +1594,10 @@ class LiveGridSession:
 
     def _retry_replacement_cancels(self) -> None:
         for order in self._orders.values():
-            if order.active and not order.cancel_requested:
+            if order.active and (
+                not order.cancel_requested
+                or self._now - self._cancel_attempt_at.get(order.client_id, float("-inf")) >= 1
+            ):
                 self._emit_cancel(order, safety=self._replacement_safety)
 
     def _warn_if_replacement_delayed(self) -> None:
@@ -1155,7 +1660,7 @@ class LiveGridSession:
         """开仓成交：委托回报与成交流水共用同一套收口入口，避免 CTP 乱序漏触发。"""
         if volume <= 0:
             return
-        if self.state in {SessionState.QUOTING, SessionState.REPLACING}:
+        if self.state in {SessionState.QUOTE_PENDING, SessionState.QUOTING, SessionState.REPLACING}:
             self._enter_closing(
                 "first_fill",
                 order=order,
@@ -1374,7 +1879,10 @@ class LiveGridSession:
 
     def _cancel_all(self, *, safety: bool) -> None:
         for order in self._orders.values():
-            if order.active and not order.cancel_requested:
+            if order.active and (
+                not order.cancel_requested
+                or self._now - self._cancel_attempt_at.get(order.client_id, float("-inf")) >= 1
+            ):
                 self._emit_cancel(order, safety=safety)
         for order in self._pending_clients.values():
             order.cancel_requested = True
@@ -1396,6 +1904,7 @@ class LiveGridSession:
             self._action_limit_paused = True
             return
         order.cancel_requested = True
+        self._cancel_attempt_at[order.client_id] = self._now
         self._emit(
             "cancel_order",
             order_id=order.order_id,
@@ -1584,7 +2093,10 @@ class LiveGridSession:
         )
 
     def _fail(self, reason: str) -> None:
-        if self.state in {SessionState.FINISHED, SessionState.FAILED}:
+        if self.state in {SessionState.FINISHED, SessionState.FAILED, SessionState.RISK_HOLD}:
+            return
+        if self._active_orders() or self._pending_clients or self.final_net_position is None or self.final_net_position != 0:
+            self._risk_hold(reason)
             return
         self.failure_reason = self.failure_reason or reason
         self._record_trace(
@@ -1640,11 +2152,31 @@ class LiveGridSession:
     def _executable_quote(self, tick: TickEvent | None) -> bool:
         if tick is None:
             return False
+        if self._quote_is_stale():
+            return False
         values = (tick.bid_price, tick.ask_price)
         return all(isfinite(value) and value > 0 for value in values)
 
     def _protected_valid(self, tick: TickEvent | None) -> bool:
         return self._book_protection_facts(tick)["passed"]
+
+    def _quote_prices_valid(self, tick: TickEvent, prices: tuple[float, float]) -> bool:
+        if not all(isfinite(price) and price > 0 for price in prices):
+            return False
+        buy_price, sell_price = prices
+        if not (buy_price < tick.ask_price and sell_price > tick.bid_price):
+            return False
+        limits = (tick.limit_down, tick.limit_up)
+        if limits == (None, None):
+            # Legacy deterministic tests have no CTP limit fields. The live CTP
+            # adapter always copies them and rejects zero/invalid limits below.
+            return True
+        if not all(isinstance(value, (int, float)) and isfinite(value) and value > 0 for value in limits):
+            return False
+        limit_down, limit_up = limits
+        if limit_down > limit_up:
+            return False
+        return all(limit_down <= value <= limit_up for value in (tick.last_price, tick.bid_price, tick.ask_price, buy_price, sell_price))
 
     def _book_protection_facts(self, tick: TickEvent | None) -> dict[str, Any]:
         w_ticks = self.config.effective["w_ticks"]
@@ -1680,6 +2212,16 @@ class LiveGridSession:
                 "spread_ticks": None,
                 "protection_multiple": multiple,
                 "comparison": "distance_ticks > protection_multiple * spread_ticks",
+                "passed": False,
+            }
+        if (tick.limit_up is not None or tick.limit_down is not None) and not self._quote_prices_valid(tick, (tick.bid_price, tick.ask_price)):
+            return {
+                "w_ticks": w_ticks,
+                "d_ticks": d_ticks,
+                "distance_ticks": distance_ticks,
+                "spread_ticks": None,
+                "protection_multiple": multiple,
+                "comparison": "limit_and_book_valid",
                 "passed": False,
             }
         spread_ticks = max(
@@ -1755,7 +2297,7 @@ class LiveGridSession:
                     "reason": self.failure_reason,
                 },
             )
-            self.state = SessionState.FAILED
+            self._risk_hold("late_opening_fill_after_finish")
         elif self.state == SessionState.FLATTENING and self._flatten_client_id is None:
             self._try_flatten()
 
@@ -1798,6 +2340,7 @@ class LiveGridSession:
             "target_exchange": self.target_exchange,
             "target_lots": self.config.effective["target_lots"],
             "strategy_hash": self.config.sha256,
+            "market_data_mode": "replay_override" if self.replay_market_data else "normal",
             "round_trips": self._round_trips,
             "stop_reason": self.stop_reason,
             "startup_position_result": self.startup_position_result,
@@ -1834,6 +2377,7 @@ class LiveGridSession:
             ],
             "state_transitions": list(self.state_transitions),
             "failure_reason": self.failure_reason,
+            "risk_hold": self.state == SessionState.RISK_HOLD,
         }
 
 
@@ -1843,6 +2387,10 @@ LiveGridEvent = (
     | OrderEvent
     | TradeEvent
     | PositionQueryCompleteEvent
+    | ConnectionEvent
+    | OrderActionErrorEvent
+    | OrderQueryCompleteEvent
+    | TradeQueryCompleteEvent
     | ClockEvent
     | InterruptEvent
 )

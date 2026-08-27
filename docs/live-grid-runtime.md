@@ -10,7 +10,7 @@
 2. [`run_live_grid.py`](../run_live_grid.py) 是独立的可下单入口。只有显式确认 SimNow，才会进入 CTP 连接和下单链路；策略 SHA-256 只用于展示、审计和复盘识别。
 3. 真实成交、撤单生效和持仓变化只接受 CTP 委托、成交和持仓查询完成回报。行情穿过限价，只能触发报价保护或重定锚，不能直接推断成交。
 
-功能明确不包含：跨合约对冲、生产柜台、实盘凭证变更、回放撮合、进程重启后的订单恢复、既有仓位接管、数据库持久化和 Web UI。多合约并发挂单已支持，见下节。
+功能明确不包含：跨合约对冲、生产柜台、实盘凭证变更、回放撮合、既有仓位接管、跨进程持久化托管、数据库和 Web UI。启动/重连会通过 CTP 查询目标合约当日委托、成交和持仓做一次安全清理，但不接管残仓或未知平仓单。多合约并发挂单已支持，见下节。
 
 ## 1bis. 多合约扩展（v2）
 
@@ -18,7 +18,7 @@
 
 - 策略配置升级为 `version: 2`：顶层公共网格/安全参数 + `contracts` 数组（每条 `symbol`/`exchange`/`target_lots`、`max_tick_age_seconds`、`quote_windows`）；整份配置一个 SHA-256。旧单合约扁平格式被拒绝并提示迁移。
 - 每个合约一个独立的 `LiveGridSession`（状态机本身未变）；适配层按 `(symbol, exchange)` 路由合约/行情/委托/成交事件，订阅全部目标合约。
-- 持仓查询仍是账户级一次查询，完成事件按合约扇出；任一待查合约非零仓则整个运行拒绝（非零会话失败、零仓会话中断，不发任何委托）。
+- 启动/重连先查询目标委托和成交，再撤销目标合约遗留开仓单，最后执行账户级持仓查询；遗留平仓单、非零仓、未知订单状态或查询异常进入 `RISK_HOLD`，不发任何新委托。
 - 报撤限额、首次成交收口、失败与超时均按会话独立；操作员中断广播至全部会话；运行在全部会话终态后结束。
 - 审计目录每次运行一个 run 目录，内含每合约子目录（`symbol@exchange`，各自 `effective_strategy.json`/`events.jsonl`/`summary.json`），run 根目录另写整份生效配置、无凭证资金快照 `account.jsonl` 与全合约汇总 `summary.json`（`terminal_states`/`all_finished`/逐合约摘要）。
 
@@ -96,7 +96,7 @@ python run.py --check --env first
 python run.py --env first
 ```
 
-该入口建立 `EventEngine` 和 `MainEngine`，注册日志、资金、持仓、合约、Tick 处理器，随后连接 CTP。指定了 `CTP_SYMBOL` 时，目标合约回报到达后才发起行情订阅。
+该入口建立 `EventEngine` 和 `MainEngine`，注册日志、资金、持仓、合约、Tick 处理器，随后连接 CTP。指定了 `CTP_SYMBOL` 时，目标合约回报到达后才发起行情订阅。诊断快照将目标合约/目标 Tick 与全量合约查询完成分开显示；后者可能因 SimNow 返回大量期权而延迟。交易 API 的通用请求错误会以 `交易接口报错` 写入日志，空错误回报不会被当成合约完成。
 
 按 `Ctrl+C` 退出，连接会在 `finally` 中关闭。这个入口没有订单管理状态机，也没有任何 `send_order`/`cancel_order` 路径。
 
@@ -141,7 +141,7 @@ python run_live_grid.py \
 confirm-simnow = true
 ```
 
-7×24 环境需显式写出 `--env 7x24 --confirm-simnow`；它和第一套都保留零仓启动、收口和限流边界。运行级与合约级 `summary.json` 只记录 `environment=first|7x24`，不记录前置或凭证。
+7×24 环境需显式写出 `--env 7x24 --confirm-simnow`；它和第一套都保留零仓启动、收口和限流边界。运行级与合约级 `summary.json` 记录 `environment=first|7x24` 与 `market_data_mode=normal|replay_override`，不记录前置或凭证。历史化行情只能额外使用 `--allow-replay-market-data`，且必须同时满足 `--env 7x24 --confirm-simnow`。
 
 策略 JSON 任何字段变化都会改变 effective 配置和哈希。哈希会随本次配置写入预览和审计，但不作为命令授权条件。
 
@@ -179,10 +179,11 @@ confirm-simnow = true
 | `max_round_trips` | `10` | 单次运行完成的往返轮数上限 |
 | `quote_windows` | 每个合约必填 | 按顺序排列的 `[{"start":"HH:MM","end":"HH:MM"}]` 报价窗口；支持相邻窗口跨午夜，不允许重叠；每段结束前 5 秒撤单 |
 | `closing_wait_seconds` | `1` | 非负数，价差窗口时长；首次成交后对侧报价继续挂满该时长，0 表示不留窗口直接平仓 |
+| `quote_ack_timeout_seconds` | `5` | 双边开仓单发送后等待两侧有效受理回报的上限；超时先用 `QryOrder` 对账，再决定是否撤单 |
 
 配置还会拒绝：凭证字段、未知字段、空 symbol、非法交易所、非正数和非有限数。策略文件不应出现账号、密码、前置地址、AppID 或授权码。
 
-一份配置只运行一次，进程应在首个窗口开始前启动。窗口外不会提交新开仓单；最后一个窗口结束并完成必要的撤单/持仓收口后，会话进入 `FINISHED`。交易所调整交易时段时，直接修改对应合约的 `quote_windows`，不再依赖单一全局收盘时刻。
+一份配置只运行一个排程周期；进程可以在任一当前报价窗口内启动，但仍必须完成合约、零仓和稳定行情校验，窗口外不会提交新开仓单。跨午夜窗口启动时按当前时刻选择覆盖它的上一自然日排程；最后一个窗口结束并完成必要的撤单/持仓收口后，会话进入 `FINISHED`。交易所调整交易时段时，直接修改对应合约的 `quote_windows`，不再依赖单一全局收盘时刻。
 
 ### 4.2 规范化和哈希
 
@@ -205,10 +206,13 @@ stateDiagram-v2
     PREVIEW --> WAITING_FOR_CONTRACT: SimNow 确认通过
     WAITING_FOR_CONTRACT --> WAITING_FOR_ZERO_POSITION: 目标合约且 pricetick > 0
     WAITING_FOR_ZERO_POSITION --> WAITING_FOR_STABLE_QUOTE: 关联查仓完成且净仓为 0
+    WAITING_FOR_ZERO_POSITION --> RISK_HOLD: 遗留平仓单、非零仓、未知订单或查询异常
     WAITING_FOR_STABLE_QUOTE --> PAUSED: 非最终窗口结束前 5 秒撤单完成
     PAUSED --> WAITING_FOR_STABLE_QUOTE: 下一窗口开始
-    WAITING_FOR_ZERO_POSITION --> FAILED: 查仓失败或目标合约已有仓位
-    WAITING_FOR_STABLE_QUOTE --> QUOTING: 窗口满 2 秒且至少 2 条新鲜 Tick
+    WAITING_FOR_STABLE_QUOTE --> QUOTE_PENDING: 窗口满 2 秒且至少 2 条新鲜 Tick
+    QUOTE_PENDING --> QUOTING: 双边开仓单均收到有效受理回报
+    QUOTE_PENDING --> QUOTE_PENDING: 受理超时，先 QryOrder 对账
+    QUOTE_PENDING --> RISK_HOLD: 对账失败、单腿拒单、发送失败或状态未知
     QUOTING --> REPLACING: 盘口异常、越带确认完成或 Tick 断流
     QUOTING --> CLOSING_CANCELS: 窗口结束前 5 秒
     REPLACING --> CLOSING_CANCELS: 窗口结束前 5 秒
@@ -219,16 +223,18 @@ stateDiagram-v2
     CLOSING_WAIT --> CLOSING_CANCELS: 窗口内对侧部分成交撤余量 / 操作者中断
     CLOSING_WAIT --> FLATTENING: 窗口超时按本轮净仓直接 FAK
     QUOTING --> CLOSING_CANCELS: 操作者中断
-    CLOSING_CANCELS --> CLOSING_RECONCILE: 撤单全部终态或 10 秒超时
+    CLOSING_CANCELS --> CLOSING_RECONCILE: 撤单全部终态
+    CLOSING_CANCELS --> RISK_HOLD: 撤单超时、撤单失败或状态未知
     CLOSING_RECONCILE --> FLATTENING: 关联查仓确认净仓非零
     CLOSING_RECONCILE --> FINISHED: 关联查仓确认净仓为零
     FLATTENING --> CLOSING_CANCELS: 净仓归零后撤剩余对侧委托
     FLATTENING --> CLOSING_RECONCILE: 平仓终态且无剩余委托
     FLATTENING --> FLATTENING: FAK 终态后仍有残仓
     FLATTENING --> FINISHED: 收尾对账确认净仓为零
-    CLOSING_CANCELS --> FAILED: 收口过程中不可恢复错误
-    CLOSING_RECONCILE --> FAILED: 查仓失败或无可执行盘口
-    FLATTENING --> FAILED: 拒单、3 秒超时或仍有残仓
+    RISK_HOLD --> WAITING_FOR_STABLE_QUOTE: 重连后订单终态且净仓确认归零
+    RISK_HOLD --> RISK_HOLD: 继续查询/重试，Ctrl+C 不关闭连接
+    CLOSING_RECONCILE --> FAILED: 已确认无订单、无仓但本轮算法无法继续
+    FLATTENING --> RISK_HOLD: 拒单、3 秒超时或仍有残仓
 ```
 
 `LiveGridSession.handle(event)` 是状态机唯一公开测试 seam：输入一个标准化外部事实，返回本次新产生的 `Action` 列表。状态机不直接导入 vn.py，不直接访问环境变量，也不自行制造订单回报。
@@ -242,14 +248,16 @@ stateDiagram-v2
 | 事件 | 来源 | 状态机用途 |
 | --- | --- | --- |
 | `ContractEvent` | `EVENT_CONTRACT` | 取得目标合约和真实 `pricetick`，触发启动查仓 |
-| `TickEvent` | `EVENT_TICK` | 检查盘口、稳定门槛、重定锚和 FAK 可执行价 |
-| `OrderEvent` | `EVENT_ORDER` | 更新订单状态和 CTP 已报告的累计成交量；`traded` 增加与 `TradeEvent` 同为开仓成交入口 |
+| `TickEvent` | `EVENT_TICK` | 携带交易所时间、交易日、更新时间毫秒、涨跌停和本地接收序号；检查盘口、稳定门槛、重定锚和 FAK 可执行价 |
+| `OrderEvent` | `EVENT_ORDER` | 更新订单状态、开平标记、OrderRef/订单号和 CTP 已报告的累计成交量；`traded` 增加与 `TradeEvent` 同为开仓成交入口 |
 | `TradeEvent` | `EVENT_TRADE` | 记录真实成交，同样触发首次成交收口及等待窗口 |
 | `PositionQueryCompleteEvent` | 项目扩展的 `ePositionQueryComplete` | 接收与本次请求号匹配的目标合约净仓 |
+| `OrderQueryCompleteEvent` / `TradeQueryCompleteEvent` | 项目扩展的 CTP 查询完成事件 | 启动/重连安全清理目标合约遗留委托和成交 |
+| `ConnectionEvent` / `OrderActionErrorEvent` | CTP 前置连接与报撤错误事件 | 断线、撤单失败或未知报单进入 `RISK_HOLD` |
 | `ClockEvent` | `EVENT_TIMER` | 携带单调时钟与本地墙钟时间，推进交易窗口、稳定时间、撤单超时、FAK 超时和滚动限流窗口 |
 | `InterruptEvent` | `Ctrl+C`/adapter interrupt | 进入人工结束收口路径 |
 
-其中 `ContractEvent.size`（合约乘数）、`OrderEvent.exchange_time`（交易所报单时间）、`TradeEvent.exchange_time`（交易所成交时间）是随事件落审计的交易所事实，供离线交易日成交明细报告使用；状态机逻辑不读取交易所时间字段，1 秒窗口从最先到达的委托或成交回报时刻起算。
+其中 `ContractEvent.size`（合约乘数）、`OrderEvent.exchange_time`（交易所报单时间）、`TradeEvent.exchange_time`（交易所成交时间）是随事件落审计的交易所事实，供离线交易日成交明细报告使用。普通行情模式下稳定门槛和报价新鲜度使用交易所 Tick 时间；本地单调时间只判断回调静默。7×24 回放覆盖开启后会在摘要中写入 `market_data_mode=replay_override`，但仍保留撤单、双边受理、盘口保护和订单恢复规则。
 
 所有事件先经过目标合约过滤。目标不是策略 JSON 指定的 `symbol + exchange` 时，状态机不处理。
 
@@ -259,6 +267,7 @@ stateDiagram-v2
 | --- | --- | --- |
 | `submit_order` | `OrderRequest`，可为 OPEN/LIMIT 报价或 CLOSE/FAK 平仓 | 开仓报价计入普通动作；平仓标为安全动作 |
 | `cancel_order` | `CancelRequest`，包含订单号、合约、交易所 | 重定锚撤单计入普通动作；成交/中断/异常收口撤单绕过普通限流 |
+| `query_order` | 调用项目内 gateway 的当日委托查询 | 双边受理超时后先对账；用 session request id 和 CTP numeric request id 双向关联 |
 | `query_position` | 调用项目内 gateway 的持仓查询 | 用 session request id 和 CTP numeric request id 双向关联 |
 | `audit_warning` | 只写审计，不调用 CTP | 例如普通动作达到 60 次、旧订单终态回报延迟 |
 
@@ -269,9 +278,10 @@ adapter 的动作转换只做协议映射，不决定策略逻辑。提交成功
 确认通过后，session 从 `WAITING_FOR_CONTRACT` 开始。必须按以下顺序通过：
 
 1. **目标合约元数据**：收到策略目标合约的 `ContractEvent`，且 `pricetick` 为有限正数。`pricetick` 只能来自 CTP 合约回报，不能写死。
-2. **目标合约零仓**：session 发出带 `phase=startup` 的 `query_position`，只接受相同 request id 的完成事件。非零净仓直接 `FAILED`，不会发送开仓订单。
-3. **有效盘口**：LastPrice、BidPrice1、AskPrice1 和 `pricetick` 都必须是有限正数，且 `bid <= ask`。
-4. **盘口保护**：计算价差 tick 数：
+2. **目标合约遗留委托/成交清理**：adapter 先查询目标合约当日委托和成交；活动 `OPEN` 委托全部自动撤销，活动 `CLOSE`、无法识别状态或撤单无法确认进入 `RISK_HOLD`。
+3. **目标合约零仓**：清理完成后再执行持仓查询，只接受相同 request id 的完成事件。非零净仓或查询失败进入 `RISK_HOLD`，不会发送开仓订单。
+4. **有效盘口**：LastPrice、BidPrice1、AskPrice1、涨跌停和 `pricetick` 都必须是有限正数，且 `bid <= ask`。
+5. **盘口保护**：计算价差 tick 数：
 
    ```text
    spread_ticks = ceil((AskPrice1 - BidPrice1) / pricetick)
@@ -283,7 +293,7 @@ adapter 的动作转换只做协议映射，不决定策略逻辑。提交成功
    W + D > book_protection_multiple × spread_ticks
    ```
 
-5. **连续稳定窗口**：有效且通过盘口保护的 Tick 必须同时满足：
+6. **连续稳定窗口**：有效且通过盘口保护的 Tick 必须同时满足：
    - 窗口内至少 2 条有效 Tick；
    - 相邻两条 Tick 的间隔不超过该合约的 `max_tick_age_seconds`（等于则通过）；
    - 准备下单那一刻，最新 Tick 的年龄不超过 `max_tick_age_seconds`；
@@ -291,7 +301,7 @@ adapter 的动作转换只做协议映射，不决定策略逻辑。提交成功
 
    任一条件不满足都视为行情不稳定：清空稳定计时，从下一条有效 Tick 重新开始下一个 2 秒窗口。中间任何无效或过宽行情同样清空稳定计时。
 
-只有第五步完成，才会发送一对双向被动开仓限价单。
+只有第六步完成，才会发送一对双向被动开仓限价单；价格还必须满足 `BUY < AskPrice1`、`SELL > BidPrice1` 且两侧均在涨跌停范围内。两笔订单进入 `QUOTE_PENDING`，只有双边收到有效受理回报才进入 `QUOTING`。
 
 ## 8. 报价、重定锚和替换
 
@@ -440,6 +450,10 @@ EVENT_ORDER
 EVENT_TRADE
 EVENT_ACCOUNT
 EVENT_POSITION_QUERY_COMPLETE
+EVENT_CTP_CONNECTION
+EVENT_CTP_ORDER_ACTION_ERROR
+EVENT_CTP_ORDER_QUERY_COMPLETE
+EVENT_CTP_TRADE_QUERY_COMPLETE
 EVENT_TIMER
 ```
 
@@ -459,7 +473,7 @@ adapter 只汇总目标合约：多仓量减空仓量得到净仓。其他合约
 
 ### 12.4 查仓发送重试与关闭时序
 
-CTP 同一时刻只允许一个在途查询。目标合约回报经常在合约查询响应流的中间到达（按字母序 AP610 靠前），此时查仓发送会被 CTP 拒绝；网关自身的资金/持仓轮询（每 2 秒一次）也会占用查询通道。因此 `query_position` 动作的发送失败不代表查询失败：adapter 把被拒请求挂入待重试队列，随 `EVENT_TIMER` 每秒重试一次，最多 `POSITION_QUERY_MAX_ATTEMPTS = 60` 次（约 60 秒）；重试耗尽仍无法发送时，才合成 `error_id=1` 的失败完成事件交给状态机。SimNow 上合约响应流可能持续两分钟，启动阶段等待 2～3 分钟属正常。
+CTP 同一时刻只允许一个在途查询。启动/重连按“委托 → 成交 → 持仓”顺序执行；目标合约遗留 `OPEN` 委托自动撤销，`CLOSE` 委托、未知状态或撤单未确认停在 `RISK_HOLD`。每类查询的发送失败都进入待重试队列，随 `EVENT_TIMER` 按退避间隔重发（1s→2s→4s，之后固定 5s，避免持续踩中 CTP 秒级流控），最多 `POSITION_QUERY_MAX_ATTEMPTS = 60` 次；耗尽后发布结构化错误事件，状态机继续保持风险托管而不是关闭连接。网关层（`CtpTdApi.last_query_send_refusal`）会保留最近一次 `ReqQry*` 被拒的原始返回码描述，耗尽事件的 `error_msg` 会携带它（例如“CTP 持仓查询请求未发送（ReqQryInvestorPosition 返回 -3）”），便于区分网络失败与流控拒绝。
 
 `close()` 的调用时序受锁约束：`EventEngine.stop()` 会 join 事件引擎工作线程，而工作线程可能正阻塞在 adapter 的 `RLock` 回调上。持锁调用 `MainEngine.close()` 会造成互等死锁，表现为终态后进程不退出。正确顺序是：锁内仅把 `main_engine` 换手置空，释放锁后关闭引擎，最后再持锁关闭审计。
 
@@ -506,8 +520,8 @@ audit/
 }
 ```
 
-- `event`：输入。`type` 是事件类型（`ClockEvent` / `TickEvent` / `OrderEvent` / `TradeEvent` / `ContractEvent` / `PositionQueryCompleteEvent` / `InterruptEvent`），`data` 是事件内容；委托与成交里的 `exchange_time` 是交易所墙上时间。
-- `actions`：输出。状态机因该事件产生的 CTP 动作（`submit_order` / `cancel_order` / `query_position`）及其参数；空数组表示该事件没有触发任何动作（多数时钟与行情事件为空）。
+- `event`：输入。`type` 是事件类型（含连接、报撤错误、订单/成交查询完成事件），`data` 是事件内容；Tick、委托与成交里的交易所时间字段均落审计。
+- `actions`：输出。状态机因该事件产生的 CTP 动作（`submit_order` / `cancel_order` / `query_order` / `query_position`）及其参数；空数组表示该事件没有触发任何动作（多数时钟与行情事件为空）。
 - `at`：审计落笔的 `time.monotonic()` 秒数，不是墙上时间。相邻两行相减得到精确间隔，报告中的挂单等待与持仓时长由此计算。
 - `state_before` / `state_after`：会话状态机消费该事件前后的状态；两者不等即一次状态跳变，可据此定位触发跳变的具体事件行。
 
@@ -519,6 +533,7 @@ audit/
 
 ```text
 terminal_state
+market_data_mode
 target_symbol / target_exchange / target_lots
 strategy_hash
 startup_position_result
@@ -532,6 +547,8 @@ active_order_count / active_orders
 state_transitions
 failure_reason
 ```
+
+风险未清时 `terminal_state=RISK_HOLD` 不是安全结束；只有 `active_order_count=0` 且 `final_net_position=0` 才允许关闭 CTP。普通 `Ctrl+C` 在该状态只记录告警并继续查询/重试。
 
 判断结果时不能只看 `terminal_state`：
 
@@ -622,7 +639,7 @@ python report.py --run-dir audit/<run-id> --out-dir reports
 1. 是否只运行了预览，或者缺少 `--confirm-simnow`；
 2. 策略 JSON 的目标 `symbol/exchange` 是否与当前 CTP 合约回报一致；
 3. `pricetick` 是否为正；
-4. startup `query_position` 是否完成且 request id 匹配；被拒发送会按 12.4 每秒重试最多 60 次，等待期间不算失败；
+4. startup `query_position` 是否完成且 request id 匹配；被拒发送会按 12.4 的退避间隔（1s→2s→4s→固定5s）重试最多 60 次，等待期间不算失败，耗尽事件的 error_msg 携带 CTP 原始返回码；
 5. 目标合约净仓是否确实为零；
 6. Bid/Ask/Last 是否有效，且严格通过盘口保护；
 7. 当前合约的稳定行情窗口是否满 2 秒，是否至少 2 条有效 Tick，最新 Tick 是否仍在该合约配置的阈值内；

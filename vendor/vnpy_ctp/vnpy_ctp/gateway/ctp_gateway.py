@@ -61,7 +61,18 @@ from ..api import (
     THOST_FTDC_VC_CV,
     THOST_FTDC_AF_Delete
 )
-from .position_query import EVENT_POSITION_QUERY_COMPLETE, PositionQueryComplete
+from .position_query import (
+    EVENT_CTP_CONNECTION,
+    EVENT_CTP_ORDER_ACTION_ERROR,
+    EVENT_CTP_ORDER_QUERY_COMPLETE,
+    EVENT_CTP_TRADE_QUERY_COMPLETE,
+    EVENT_POSITION_QUERY_COMPLETE,
+    CtpConnection,
+    CtpOrderActionError,
+    CtpOrderQueryComplete,
+    CtpTradeQueryComplete,
+    PositionQueryComplete,
+)
 
 
 # 委托状态映射
@@ -209,6 +220,14 @@ class CtpGateway(BaseGateway):
         """查询持仓"""
         return self.td_api.query_position()
 
+    def query_order(self) -> int | None:
+        """查询当日委托"""
+        return self.td_api.query_order()
+
+    def query_trade(self) -> int | None:
+        """查询当日成交"""
+        return self.td_api.query_trade()
+
     def close(self) -> None:
         """关闭接口"""
         self.td_api.close()
@@ -266,11 +285,13 @@ class CtpMdApi(MdApi):
     def onFrontConnected(self) -> None:
         """服务器连接成功回报"""
         self.gateway.write_log("行情服务器连接成功")
+        self.gateway.on_event(EVENT_CTP_CONNECTION, CtpConnection("market", True))
         self.login()
 
     def onFrontDisconnected(self, reason: int) -> None:
         """服务器连接断开回报"""
         self.login_status = False
+        self.gateway.on_event(EVENT_CTP_CONNECTION, CtpConnection("market", False, str(reason)))
         self.gateway.write_log(f"行情服务器连接断开，原因{reason}")
 
     def onRspUserLogin(self, data: dict, error: dict, reqid: int, last: bool) -> None:
@@ -338,6 +359,11 @@ class CtpMdApi(MdApi):
             ask_volume_1=data["AskVolume1"],
             gateway_name=self.gateway_name
         )
+        # Keep raw CTP clock fields alongside vn.py's normalized datetime. They
+        # are needed to distinguish a quiet contract from replayed/stale data.
+        tick.trading_day = data.get("TradingDay", "")
+        tick.action_day = data.get("ActionDay", "")
+        tick.update_millisec = int(data.get("UpdateMillisec", 0) or 0)
 
         if data["BidVolume2"] or data["AskVolume2"]:
             tick.bid_price_2 = adjust_price(data["BidPrice2"])
@@ -438,10 +464,15 @@ class CtpTdApi(TdApi):
         self.position_queries: dict[int, dict[str, PositionData]] = {}
         self.sysid_orderid_map: dict[str, str] = {}
         self.position_query_request_id: int | None = None
+        self.order_queries: dict[int, list[dict]] = {}
+        self.trade_queries: dict[int, list[dict]] = {}
+        # 最近一次 ReqQry* 发送被拒的原始返回码描述；None 表示最近一次发送成功。
+        self.last_query_send_refusal: str | None = None
 
     def onFrontConnected(self) -> None:
         """服务器连接成功回报"""
         self.gateway.write_log("交易服务器连接成功")
+        self.gateway.on_event(EVENT_CTP_CONNECTION, CtpConnection("trade", True))
 
         if self.auth_code:
             self.authenticate()
@@ -451,6 +482,7 @@ class CtpTdApi(TdApi):
     def onFrontDisconnected(self, reason: int) -> None:
         """服务器连接断开回报"""
         self.login_status = False
+        self.gateway.on_event(EVENT_CTP_CONNECTION, CtpConnection("trade", False, str(reason)))
         self.gateway.write_log(f"交易服务器连接断开，原因{reason}")
 
     def onRspAuthenticate(self, data: dict, error: dict, reqid: int, last: bool) -> None:
@@ -505,13 +537,45 @@ class CtpTdApi(TdApi):
             status=Status.REJECTED,
             gateway_name=self.gateway_name
         )
+        order.order_ref = order_ref
+        order.order_sys_id = data.get("OrderSysID", "")
         self.gateway.on_order(order)
+        self.gateway.on_event(
+            EVENT_CTP_ORDER_ACTION_ERROR,
+            CtpOrderActionError(
+                orderid=orderid,
+                symbol=symbol,
+                exchange=contract.exchange.value,
+                error_id=error.get("ErrorID", 0),
+                error_msg=error.get("ErrorMsg", ""),
+                action="insert",
+            ),
+        )
 
         self.gateway.write_error("交易委托失败", error)
 
     def onRspOrderAction(self, data: dict, error: dict, reqid: int, last: bool) -> None:
         """委托撤单失败回报"""
+        symbol = data.get("InstrumentID", "")
+        contract = symbol_contract_map.get(symbol)
+        orderid = f"{data.get('FrontID', self.frontid)}_{data.get('SessionID', self.sessionid)}_{data.get('OrderRef', '')}"
+        if error.get("ErrorID", 0):
+            self.gateway.on_event(
+                EVENT_CTP_ORDER_ACTION_ERROR,
+                CtpOrderActionError(
+                    orderid=orderid,
+                    symbol=symbol,
+                    exchange=contract.exchange.value if contract is not None else "",
+                    error_id=error.get("ErrorID", 0),
+                    error_msg=error.get("ErrorMsg", ""),
+                    action="cancel",
+                ),
+            )
         self.gateway.write_error("交易撤单失败", error)
+
+    def onRspError(self, error: dict, reqid: int, last: bool) -> None:
+        """交易接口通用请求报错回报"""
+        self.gateway.write_error("交易接口报错", error)
 
     def onRspSettlementInfoConfirm(self, data: dict, error: dict, reqid: int, last: bool) -> None:
         """确认结算单回报"""
@@ -607,40 +671,79 @@ class CtpTdApi(TdApi):
 
         self.gateway.on_account(account)
 
+    def onRspQryOrder(self, data: dict, error: dict, reqid: int, last: bool) -> None:
+        """Collect today's orders and emit one structured completion event."""
+        orders = self.order_queries.setdefault(reqid, [])
+        if data:
+            orders.append(dict(data))
+        if last:
+            self.gateway.on_event(
+                EVENT_CTP_ORDER_QUERY_COMPLETE,
+                CtpOrderQueryComplete(
+                    request_id=reqid,
+                    orders=tuple(orders),
+                    error_id=error.get("ErrorID", 0),
+                    error_msg=error.get("ErrorMsg", ""),
+                ),
+            )
+            self.order_queries.pop(reqid, None)
+
+    def onRspQryTrade(self, data: dict, error: dict, reqid: int, last: bool) -> None:
+        """Collect today's trades and emit one structured completion event."""
+        trades = self.trade_queries.setdefault(reqid, [])
+        if data:
+            trades.append(dict(data))
+        if last:
+            self.gateway.on_event(
+                EVENT_CTP_TRADE_QUERY_COMPLETE,
+                CtpTradeQueryComplete(
+                    request_id=reqid,
+                    trades=tuple(trades),
+                    error_id=error.get("ErrorID", 0),
+                    error_msg=error.get("ErrorMsg", ""),
+                ),
+            )
+            self.trade_queries.pop(reqid, None)
+
     def onRspQryInstrument(self, data: dict, error: dict, reqid: int, last: bool) -> None:
         """合约查询回报"""
-        product: Product = PRODUCT_CTP2VT.get(data["ProductClass"], None)
-        if product:
-            contract: ContractData = ContractData(
-                symbol=data["InstrumentID"],
-                exchange=EXCHANGE_CTP2VT[data["ExchangeID"]],
-                name=data["InstrumentName"],
-                product=product,
-                size=data["VolumeMultiple"],
-                pricetick=data["PriceTick"],
-                min_volume=data["MinLimitOrderVolume"],
-                max_volume=data["MaxLimitOrderVolume"],
-                gateway_name=self.gateway_name
-            )
+        if error.get("ErrorID", 0):
+            self.gateway.write_error("合约查询失败", error)
+            return
 
-            # 期权相关
-            if contract.product == Product.OPTION:
-                # 移除郑商所期权产品名称带有的C/P后缀
-                if contract.exchange == Exchange.CZCE:
-                    contract.option_portfolio = data["ProductID"][:-1]
-                else:
-                    contract.option_portfolio = data["ProductID"]
+        if data:
+            product: Product = PRODUCT_CTP2VT.get(data["ProductClass"], None)
+            if product:
+                contract: ContractData = ContractData(
+                    symbol=data["InstrumentID"],
+                    exchange=EXCHANGE_CTP2VT[data["ExchangeID"]],
+                    name=data["InstrumentName"],
+                    product=product,
+                    size=data["VolumeMultiple"],
+                    pricetick=data["PriceTick"],
+                    min_volume=data["MinLimitOrderVolume"],
+                    max_volume=data["MaxLimitOrderVolume"],
+                    gateway_name=self.gateway_name
+                )
 
-                contract.option_underlying = data["UnderlyingInstrID"]
-                contract.option_type = OPTIONTYPE_CTP2VT.get(data["OptionsType"], None)
-                contract.option_strike = data["StrikePrice"]
-                contract.option_index = str(data["StrikePrice"])
-                contract.option_listed = datetime.strptime(data["OpenDate"], "%Y%m%d")
-                contract.option_expiry = datetime.strptime(data["ExpireDate"], "%Y%m%d")
+                # 期权相关
+                if contract.product == Product.OPTION:
+                    # 移除郑商所期权产品名称带有的C/P后缀
+                    if contract.exchange == Exchange.CZCE:
+                        contract.option_portfolio = data["ProductID"][:-1]
+                    else:
+                        contract.option_portfolio = data["ProductID"]
 
-            self.gateway.on_contract(contract)
+                    contract.option_underlying = data["UnderlyingInstrID"]
+                    contract.option_type = OPTIONTYPE_CTP2VT.get(data["OptionsType"], None)
+                    contract.option_strike = data["StrikePrice"]
+                    contract.option_index = str(data["StrikePrice"])
+                    contract.option_listed = datetime.strptime(data["OpenDate"], "%Y%m%d")
+                    contract.option_expiry = datetime.strptime(data["ExpireDate"], "%Y%m%d")
 
-            symbol_contract_map[contract.symbol] = contract
+                self.gateway.on_contract(contract)
+
+                symbol_contract_map[contract.symbol] = contract
 
         if last:
             self.contract_inited = True
@@ -668,10 +771,8 @@ class CtpTdApi(TdApi):
         order_ref: str = data["OrderRef"]
         orderid: str = f"{frontid}_{sessionid}_{order_ref}"
 
-        status: Status = STATUS_CTP2VT.get(data["OrderStatus"], None)
-        if not status:
-            self.gateway.write_log(f"收到不支持的委托状态，委托号：{orderid}")
-            return
+        status: Status = STATUS_CTP2VT.get(data["OrderStatus"], Status.SUBMITTING)
+        status_unknown = data["OrderStatus"] not in STATUS_CTP2VT
 
         timestamp: str = f"{data['InsertDate']} {data['InsertTime']}"
         dt: datetime = datetime.strptime(timestamp, "%Y%m%d %H:%M:%S")
@@ -697,6 +798,12 @@ class CtpTdApi(TdApi):
             datetime=dt,
             gateway_name=self.gateway_name
         )
+        order.order_ref = order_ref
+        order.order_sys_id = data["OrderSysID"]
+        # CTP uses the documented ``Unknown`` status as a transient
+        # submitting state.  Only an unmapped status code is genuinely
+        # unknown to the adapter and should stop the strategy.
+        order.ctp_status_unknown = status_unknown
         self.gateway.on_order(order)
 
         self.sysid_orderid_map[data["OrderSysID"]] = orderid
@@ -874,8 +981,34 @@ class CtpTdApi(TdApi):
         self.position_query_request_id = self.reqid
         n: int = self.reqQryInvestorPosition(ctp_req, self.reqid)
         if n:
+            self.last_query_send_refusal = f"ReqQryInvestorPosition 返回 {n}"
             return None
+        self.last_query_send_refusal = None
         return self.position_query_request_id
+
+    def query_order(self) -> int | None:
+        """Query today's orders; return None when CTP flow control rejects it."""
+        ctp_req = {"BrokerID": self.brokerid, "InvestorID": self.userid}
+        self.reqid += 1
+        request_id = self.reqid
+        n = self.reqQryOrder(ctp_req, request_id)
+        if n:
+            self.last_query_send_refusal = f"ReqQryOrder 返回 {n}"
+            return None
+        self.last_query_send_refusal = None
+        return request_id
+
+    def query_trade(self) -> int | None:
+        """Query today's trades; return None when CTP flow control rejects it."""
+        ctp_req = {"BrokerID": self.brokerid, "InvestorID": self.userid}
+        self.reqid += 1
+        request_id = self.reqid
+        n = self.reqQryTrade(ctp_req, request_id)
+        if n:
+            self.last_query_send_refusal = f"ReqQryTrade 返回 {n}"
+            return None
+        self.last_query_send_refusal = None
+        return request_id
 
     def close(self) -> None:
         """关闭连接"""
