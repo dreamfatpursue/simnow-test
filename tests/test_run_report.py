@@ -354,9 +354,15 @@ class RunReportTests(unittest.TestCase):
             self.assertIn("CTP 委托号", html)
             self.assertIn("接受时间", html)
             self.assertIn("终态时间", html)
-            self.assertIn("NOTTRADED → PARTTRADED", html)
-            self.assertNotIn("NOTTRADED → PARTTRADED → NOTTRADED", html)
+            self.assertIn("未成交 → 部分成交", html)
+            self.assertNotIn("未成交 → 部分成交 → 未成交", html)
             self.assertNotIn("单笔委托净盈亏", html)
+            self.assertNotIn("运行因果时间线", html)
+            self.assertIn("原始数据", html)
+            self.assertIn("买", html)
+            self.assertIn("开仓", html)
+            self.assertIn("正常结束", html)
+            self.assertIn("达到配置的最大完成轮数后正常停止", html)
 
     def test_report_consumes_real_audit_writer_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -408,8 +414,8 @@ class RunReportTests(unittest.TestCase):
             output_dir = root / "reports"
             self.assertEqual(report.main(["--run-dir", str(run_dir), "--out-dir", str(output_dir)]), 0)
             html = (output_dir / f"run-{run_dir.name}.html").read_text(encoding="utf-8")
-            self.assertIn("启动查仓", html)
-            self.assertIn("操作员中断", html)
+            self.assertNotIn("运行因果时间线", html)
+            self.assertIn("操作员手动中断本 run", html)
 
     def test_run_mode_rejects_missing_trace_and_forbidden_nested_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -528,6 +534,40 @@ class RunReportTests(unittest.TestCase):
             self.assertIn("交易所：CZCE", html)
             self.assertIn("品种代码：rb", html)
             self.assertIn("准确合约：rb2601", html)
+
+    def test_fak_cancelled_without_strategy_cancel_explains_exchange_kill(self) -> None:
+        order = report.RunOrder(
+            client_id="flatten-7",
+            payload={"order_type": "FAK", "side": "BUY", "offset": "CLOSE", "price": 4516.6, "volume": 1},
+            order_id="1_301937953_11",
+            final_status="CANCELLED",
+            traded=0,
+            actions=[{"at": 1.0, "kind": "submit_order", "payload": {"order_type": "FAK"}}],
+            status_events=[{"at": 1.1, "status": "CANCELLED", "traded": 0, "exchange_time": "2026-09-03T14:23:14+08:00"}],
+            traces=[
+                {
+                    "code": "flatten_submitted",
+                    "calculation": {
+                        "side": "BUY",
+                        "offset": "CLOSE",
+                        "volume": 1,
+                        "reprice_attempt": 3,
+                        "market_executable_price": 4516.6,
+                        "initial_executable_price": 4516.6,
+                        "adverse_price_limit": 4518.6,
+                        "actual_price": 4516.6,
+                    },
+                },
+                {
+                    "code": "flatten_terminal",
+                    "calculation": {"order_id": "1_301937953_11", "status": "CANCELLED", "traded": 0, "volume": 1},
+                },
+            ],
+        )
+        html = report._render_run_order_details(order)
+        self.assertIn("Fill-And-Kill", html)
+        self.assertIn("不是策略主动撤单", html)
+        self.assertIn("FAK 撤销原因：本笔完全未成交", html)
 
 
 if __name__ == "__main__":

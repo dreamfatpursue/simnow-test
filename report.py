@@ -1022,6 +1022,8 @@ def _trace_label(code: str | None) -> str:
         "quote_submitted": "首次报价",
         "market_pause": "盘口保护失败，暂停报价",
         "reanchor": "价格越界，重定锚",
+        "quote_stale": "行情超时，安全撤换报价",
+        "invalid_market_time": "行情时间异常，安全撤换报价",
         "replacement_ready": "旧报价已终态，重新获得报价资格",
         "replacement_delayed": "等待旧报价终态",
         "normal_action_limit": "报撤动作限制",
@@ -1068,6 +1070,100 @@ def _order_purpose(client_id: str, payload: dict[str, Any]) -> str:
     return "其他委托"
 
 
+_ORDER_STATUS_ZH = {
+    "SUBMITTING": "提交中",
+    "NOTTRADED": "未成交",
+    "PARTTRADED": "部分成交",
+    "ALLTRADED": "全部成交",
+    "CANCELLED": "已撤销",
+    "REJECTED": "已拒单",
+}
+_SIDE_ZH = {"BUY": "买", "SELL": "卖"}
+_OFFSET_ZH = {
+    "OPEN": "开仓",
+    "CLOSE": "平仓",
+    "CLOSETODAY": "平今",
+    "CLOSEYESTERDAY": "平昨",
+}
+_ORDER_TYPE_ZH = {"LIMIT": "限价", "FAK": "FAK", "FOK": "FOK", "MARKET": "市价"}
+_TERMINAL_STATE_ZH = {"FINISHED": "正常结束", "FAILED": "失败", "CRASHED": "异常退出"}
+_ACTION_KIND_ZH = {"submit_order": "提交委托", "cancel_order": "撤单"}
+_REASON_ZH = {
+    "max_round_trips": "达到配置的最大完成轮数后正常停止",
+    "quote_window_end": "到达当前报价窗口结束时刻，收市前安全收口",
+    "session_end": "到达会话结束时间，按中断链路收口",
+    "interrupted": "操作员手动中断本 run",
+    "nonzero_startup_position": "启动查仓发现目标合约非零仓，拒绝开报",
+    "flatten_rejected": "受限 FAK 平仓被拒单，收口失败",
+    "flatten_timeout": "受限 FAK 平仓超时未终态，收口失败",
+    "cancel_timeout": "撤单超过时限仍未收到终态回报",
+    "interrupted_before_zero_position": "操作员中断时净仓尚未归零",
+    "late_opening_fill_after_finish": "终态后仍收到迟到开仓成交，触发风险收口",
+    "late_flatten_fill_after_finish": "终态后仍收到迟到平仓成交，触发风险收口",
+    "confirmation_required": "未加 --confirm-simnow，入口拒绝具备下单能力",
+    "market_pause": "盘口保护失败（价差过宽或盘口无效），安全撤销双边报价并暂停，待行情重新达标后再挂",
+    "reanchor": "最新价持续越出网格带，确认后撤旧单并重定锚点，再走稳定行情门槛重新报价",
+    "quote_stale": "报价期间最新有效 Tick 年龄超过该合约 max_tick_age_seconds，视为行情超时，安全撤单后重新等待稳定行情再挂",
+    "invalid_market_time": "行情时间无效或相对本地时钟异常，安全撤单并等待有效行情后再挂",
+    "spread_complete": "对侧成交使价差窗口完成，撤销剩余开仓委托",
+    "window_timeout": "价差窗口超时，净仓未平，转入受限 FAK 收口",
+    "window_net_zero": "价差窗口内净仓已归零，结束本轮",
+    "window_fill": "价差窗口内又发生同向追加成交",
+    "opposite_fill": "对侧报价成交，结束价差窗口",
+    "additional_fill": "窗口内追加成交",
+}
+
+
+def _display_zh(value: Any, mapping: dict[str, str]) -> str:
+    if value is None or value == "":
+        return "—"
+    text = str(value)
+    return mapping.get(text, text)
+
+
+def _status_path_zh(statuses: list[str]) -> str:
+    if not statuses:
+        return "—"
+    return " → ".join(_display_zh(status, _ORDER_STATUS_ZH) for status in statuses)
+
+
+def _reason_zh(value: Any) -> str:
+    return _display_zh(value, _REASON_ZH)
+
+
+def _render_raw_block(title: str, value: Any) -> str:
+    return (
+        f"<details><summary>{escape(title)}</summary>"
+        f"<pre>{escape(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True))}</pre>"
+        "</details>"
+    )
+
+
+def _fak_cancel_note(order: "RunOrder") -> str | None:
+    """Explain CANCELLED FAK flatten using order type + whether a cancel action exists."""
+    if order.final_status != "CANCELLED":
+        return None
+    payload = order.payload or {}
+    is_fak = payload.get("order_type") == "FAK" or order.client_id.startswith("flatten-")
+    if not is_fak:
+        return None
+    strategy_cancel = any(item.get("kind") == "cancel_order" for item in order.actions)
+    if strategy_cancel:
+        return (
+            "撤销说明：审计中存在策略撤单动作；在途 FAK 被主动撤销"
+            "（常见于净仓在平仓过程中被对侧成交翻向等情况），再按最新净仓决定是否重报。"
+        )
+    if order.traded == 0:
+        return (
+            "撤销说明：本单为 FAK 平仓且完全未成交；交易所按 Fill-And-Kill 规则"
+            "即时撤销未成交部分，不是策略主动撤单。若净仓仍未归零，会在不利上限内继续重报。"
+        )
+    return (
+        f"撤销说明：本单为 FAK 平仓，已成交 {order.traded} 手，"
+        "剩余未成交部分由交易所按 FAK 规则即时撤销，不是策略主动撤单。"
+    )
+
+
 def _render_run_trace(trace: dict[str, Any]) -> str:
     label = _trace_label(trace.get("code"))
     if trace.get("code") == "quote_submitted" and isinstance(trace.get("replacement"), dict):
@@ -1085,17 +1181,33 @@ def _render_run_trace(trace: dict[str, Any]) -> str:
         )
     elif code == "market_pause" and calculation:
         parts.append(
-            "<div>盘口保护："
-            f"{escape(_price(calculation.get('distance_ticks')))} &gt; "
-            f"{escape(_price(calculation.get('protection_multiple')))} × "
-            f"{escape(_price(calculation.get('spread_ticks')))}，结果不通过。</div>"
+            "<div>盘口保护未通过："
+            f"报价距离 {escape(_price(calculation.get('distance_ticks')))} tick "
+            f"未严格大于保护倍数 {escape(_price(calculation.get('protection_multiple')))} × "
+            f"盘口价差 {escape(_price(calculation.get('spread_ticks')))} tick，"
+            "因此安全撤销当前报价并暂停。</div>"
         )
     elif code == "reanchor" and calculation:
         parts.append(
-            "<div>重定锚："
+            "<div>价格越带触发重定锚："
             f"锚点 {escape(_price(calculation.get('old_anchor_ticks')))} → "
             f"{escape(_price(calculation.get('new_anchor_ticks')))} tick，"
-            f"越界持续 {escape(_seconds(calculation.get('elapsed_seconds')))}。</div>"
+            f"越界已持续 {escape(_seconds(calculation.get('elapsed_seconds')))} "
+            f"（确认阈值 {escape(_seconds(calculation.get('confirmation_seconds')))}）。</div>"
+        )
+    elif code == "quote_stale" and calculation:
+        parts.append(
+            "<div>行情超时："
+            f"最新有效 Tick 年龄 {escape(_seconds(calculation.get('age_seconds')))}，"
+            f"超过本合约静默阈值 {escape(_seconds(calculation.get('max_tick_age_seconds')))}，"
+            "安全撤销当前双边报价，恢复后须重新走稳定行情门槛。</div>"
+        )
+    elif code == "invalid_market_time" and calculation:
+        parts.append(
+            "<div>行情时间异常："
+            f"{escape(_reason_zh(calculation.get('reason')))}；"
+            f"静默阈值 {escape(_seconds(calculation.get('max_tick_age_seconds')))}，"
+            "安全撤单并等待有效行情。</div>"
         )
     elif code == "first_fill" and calculation:
         parts.append(
@@ -1109,7 +1221,7 @@ def _render_run_trace(trace: dict[str, Any]) -> str:
             "<div>窗口净仓变化："
             f"成交 {escape(_price(calculation.get('price')))} × {calculation.get('volume', '—')}，"
             f"净仓 {calculation.get('net_position', '—')}，"
-            f"原因 {escape(str(calculation.get('reason') or '—'))}。</div>"
+            f"原因 {escape(_reason_zh(calculation.get('reason')))}。</div>"
         )
     elif code == "window_timeout" and calculation:
         parts.append(
@@ -1120,11 +1232,47 @@ def _render_run_trace(trace: dict[str, Any]) -> str:
         )
     elif code == "flatten_submitted" and calculation:
         parts.append(
-            "<div>FAK："
+            "<div>提交受限 FAK 平仓："
+            f"方向 {escape(_display_zh(calculation.get('side'), _SIDE_ZH))}，"
+            f"开平 {escape(_display_zh(calculation.get('offset'), _OFFSET_ZH))}，"
+            f"数量 {calculation.get('volume', '—')}，"
+            f"第 {calculation.get('reprice_attempt', '—')} 次尝试；"
             f"盘口可执行价 {escape(_price(calculation.get('market_executable_price')))}，"
             f"初始价 {escape(_price(calculation.get('initial_executable_price')))}，"
             f"不利上限 {escape(_price(calculation.get('adverse_price_limit')))}，"
-            f"实际委托价 {escape(_price(calculation.get('actual_price')))}。</div>"
+            f"实际委托价 {escape(_price(calculation.get('actual_price')))}。"
+            "FAK 规则下未成交部分会由交易所即时撤销。</div>"
+        )
+    elif code == "flatten_terminal" and calculation:
+        status = calculation.get("status")
+        traded = calculation.get("traded", 0)
+        volume = calculation.get("volume", "—")
+        if status == "ALLTRADED":
+            parts.append(
+                "<div>FAK 终态：全部成交 "
+                f"{traded} / {volume}，本笔平仓完成。</div>"
+            )
+        elif status == "CANCELLED" and traded == 0:
+            parts.append(
+                "<div>FAK 撤销原因：本笔完全未成交，交易所按 Fill-And-Kill（FAK）规则"
+                "即时撤销未成交部分；审计中无策略撤单动作。若净仓仍未归零，会话会在不利上限内继续重报。</div>"
+            )
+        elif status == "CANCELLED":
+            parts.append(
+                "<div>FAK 撤销原因：已成交 "
+                f"{traded} / {volume}，剩余未成交部分由交易所按 FAK 规则即时撤销。</div>"
+            )
+        else:
+            parts.append(
+                "<div>FAK 终态："
+                f"{escape(_display_zh(status, _ORDER_STATUS_ZH))}，"
+                f"成交 {traded} / {volume}。</div>"
+            )
+    elif code == "flatten_rejected" and calculation:
+        parts.append(
+            "<div>FAK 拒单："
+            f"CTP 拒绝本笔平仓（{escape(_reason_zh(calculation.get('reason')))}），"
+            f"成交 {calculation.get('traded', 0)} / {calculation.get('volume', '—')}，收口失败。</div>"
         )
     elif code == "flatten_fill" and calculation:
         parts.append(
@@ -1146,15 +1294,18 @@ def _render_run_trace(trace: dict[str, Any]) -> str:
         parts.append(
             "<div>替代前驱："
             f"{previous_links or '—'}；"
-            f"原因：{escape(str(replacement.get('reason') or '—'))}</div>"
+            f"替代原因：{escape(_reason_zh(replacement.get('reason')))}</div>"
         )
-    for key in ("market", "calculation"):
+    raw_parts: list[str] = []
+    for key, title in (("market", "当时行情"), ("calculation", "计算数据")):
         value = trace.get(key)
         if value is not None:
-            parts.append(
-                f"<div><span class=\"label\">{escape(key)}</span> "
-                f"<code>{escape(json.dumps(value, ensure_ascii=False, sort_keys=True))}</code></div>"
+            raw_parts.append(
+                f"<div><span class=\"label\">{escape(title)}</span>"
+                f"<pre>{escape(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True))}</pre></div>"
             )
+    if raw_parts:
+        parts.append("<details><summary>原始数据</summary>" + "".join(raw_parts) + "</details>")
     return "<li>" + "".join(parts) + "</li>"
 
 
@@ -1175,6 +1326,9 @@ def _render_run_order_details(order: RunOrder) -> str:
         f"接受时间：{escape(str(accepted_time or '—'))}；"
         f"终态时间：{escape(str(terminal_time or '—'))}</p>"
     )
+    cancel_note = _fak_cancel_note(order)
+    if cancel_note:
+        details.append(f"<p>{escape(cancel_note)}</p>")
     if order.successor_client_ids:
         details.append(
             "<p>后继报价："
@@ -1185,19 +1339,19 @@ def _render_run_order_details(order: RunOrder) -> str:
         details.append("<h4>动作与状态</h4><ol class=\"trace\">")
         lifecycle: list[tuple[float, int, str]] = []
         for item in order.actions:
-            lifecycle.append(
-                (
-                    float(item.get("at") or 0),
-                    0,
-                    f"动作 {escape(str(item.get('kind') or '—'))}：<code>{escape(json.dumps(item.get('payload') or {}, ensure_ascii=False, sort_keys=True))}</code>",
-                )
-            )
+            payload = item.get("payload") or {}
+            kind = _display_zh(item.get("kind"), _ACTION_KIND_ZH)
+            action_line = f"动作 {escape(kind)}"
+            if payload:
+                action_line += "：" + _render_raw_block("动作参数", payload)
+            lifecycle.append((float(item.get("at") or 0), 0, action_line))
         for item in order.status_events:
             lifecycle.append(
                 (
                     float(item.get("at") or 0),
                     1,
-                    f"状态 {escape(str(item.get('status') or '—'))}，累计成交 {item.get('traded', 0)}；"
+                    f"状态 {escape(_display_zh(item.get('status'), _ORDER_STATUS_ZH))}，"
+                    f"累计成交 {item.get('traded', 0)}；"
                     f"交易所时间 {escape(str(item.get('exchange_time') or '—'))}",
                 )
             )
@@ -1207,9 +1361,8 @@ def _render_run_order_details(order: RunOrder) -> str:
     if order.traces:
         details.append("<ol class=\"trace\">" + "".join(_render_run_trace(trace) for trace in order.traces) + "</ol>")
     if order.trades:
-        details.append("<h4>成交</h4><pre>")
-        details.append(escape(json.dumps(order.trades, ensure_ascii=False, indent=2, sort_keys=True)))
-        details.append("</pre>")
+        details.append("<h4>成交</h4>")
+        details.append(_render_raw_block("成交明细", order.trades))
     if not order.traces and not order.trades and not order.successor_client_ids:
         details.append("<p class=\"note\">暂无结构化详情。</p>")
     details.append("</details>")
@@ -1271,10 +1424,10 @@ def render_run_html(model: RunReport) -> str:
         sections.append(
             "<tr>"
             f"<td>{escape(contract)}</td>"
-            f"<td>{escape(str(entry.get('terminal_state') or '—'))}</td>"
+            f"<td>{escape(_display_zh(entry.get('terminal_state'), _TERMINAL_STATE_ZH))}</td>"
             f"<td>{entry.get('round_trips', '—')}</td>"
-            f"<td>{escape(str(entry.get('stop_reason') or '—'))}</td>"
-            f"<td>{escape(str(entry.get('failure_reason') or '—'))}</td>"
+            f"<td>{escape(_reason_zh(entry.get('stop_reason')))}</td>"
+            f"<td>{escape(_reason_zh(entry.get('failure_reason')))}</td>"
             f"<td>{escape(str(entry.get('final_net_position') if entry.get('final_net_position') is not None else '—'))}</td>"
             f"<td>{entry.get('active_order_count', '—')}</td>"
             "</tr>"
@@ -1288,10 +1441,6 @@ def render_run_html(model: RunReport) -> str:
             f"交易所：{escape(contract.exchange)}；"
             f"最小变动价位：{_price(contract.pricetick)}；合约乘数：{_price(contract.size)}</p>"
         )
-        if contract.timeline:
-            sections.append("<h3>运行因果时间线</h3><ol class=\"trace\">")
-            sections.extend(_render_run_trace(trace) for trace in contract.timeline)
-            sections.append("</ol>")
         if contract.rounds:
             sections.append(
                 "<h3>轮次结果（毛盈亏）</h3>"
@@ -1329,14 +1478,14 @@ def render_run_html(model: RunReport) -> str:
                 f'<tr id="{_order_anchor(order.client_id)}">'
                 f"<td>{escape(order.client_id)}</td>"
                 f"<td>{escape(_order_purpose(order.client_id, payload))}</td>"
-                f"<td>{escape(str(payload.get('side') or '—'))}</td>"
-                f"<td>{escape(str(payload.get('offset') or '—'))}</td>"
-                f"<td>{escape(str(payload.get('order_type') or '—'))}</td>"
+                f"<td>{escape(_display_zh(payload.get('side'), _SIDE_ZH))}</td>"
+                f"<td>{escape(_display_zh(payload.get('offset'), _OFFSET_ZH))}</td>"
+                f"<td>{escape(_display_zh(payload.get('order_type'), _ORDER_TYPE_ZH))}</td>"
                 f"<td>{_price(payload.get('price'))}</td>"
                 f"<td>{payload.get('volume', '—')}</td>"
                 f"<td>{_seconds(order.submit_at)}</td>"
-                f"<td>{escape(' → '.join(order.statuses) if order.statuses else '—')}</td>"
-                f"<td>{escape(str(order.final_status or '—'))}</td>"
+                f"<td>{escape(_status_path_zh(order.statuses))}</td>"
+                f"<td>{escape(_display_zh(order.final_status, _ORDER_STATUS_ZH))}</td>"
                 f"<td>{order.traded}</td>"
                 f"<td>{_render_run_order_details(order)}</td>"
                 "</tr>"
