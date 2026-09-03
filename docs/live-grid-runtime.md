@@ -70,12 +70,20 @@ CTP_TRADE_FRONT
 CTP_MARKET_FRONT
 CTP_7X24_TRADE_FRONT
 CTP_7X24_MARKET_FRONT
+CTP_GUANGFA_USER_ID
+CTP_GUANGFA_PASSWORD
+CTP_GUANGFA_BROKER_ID
+CTP_GUANGFA_TRADE_FRONT
+CTP_GUANGFA_MARKET_FRONT
+CTP_GUANGFA_APP_ID
+CTP_GUANGFA_AUTH_CODE
+CTP_GUANGFA_PRODUCT_INFO   # 可选
 CTP_APP_ID
 CTP_AUTH_CODE
 CTP_PRODUCT_INFO   # 可选
 ```
 
-第一套环境（默认 `--env first`）继续使用 `CTP_TRADE_FRONT`、`CTP_MARKET_FRONT`。7×24 API 测试环境使用 `CTP_7X24_TRADE_FRONT`、`CTP_7X24_MARKET_FRONT`；两套环境共用其余账号类凭证。环境选择是每次启动时的人工显式动作，不会因断线、收盘或行情缺失自动切换。7×24 不提供结算服务，不能根据第一套的持仓或结算状态推断 7×24 的结果。
+第一套环境（默认 `--env first`）继续使用 `CTP_TRADE_FRONT`、`CTP_MARKET_FRONT`。7×24 API 测试环境使用 `CTP_7X24_TRADE_FRONT`、`CTP_7X24_MARKET_FRONT`，两者共用 SimNow 账号类凭证。广发仿真使用完整独立的 `CTP_GUANGFA_*` 变量，启动时选择 `--env guangfa`。环境选择是每次启动时的人工显式动作，不会因断线、收盘或行情缺失自动切换。7×24 不提供结算服务，不能根据第一套的持仓或结算状态推断 7×24 的结果。
 
 `CTP_SYMBOL`、`CTP_EXCHANGE` 只服务于普通只读连接的行情订阅；报撤测试的交易目标来自策略 JSON 的 `symbol` 和 `exchange`，不会从只读订阅设置继承。
 
@@ -88,7 +96,7 @@ set +a
 python run.py --check --env first
 ```
 
-`run.py --check` 只校验所选环境的必填环境变量，不连接 CTP。返回码为：`0` 配置有效，`2` 环境变量缺失或配置错误。7×24 检查命令为 `python run.py --check --env 7x24`。
+`run.py --check` 只校验所选环境的必填环境变量，不连接 CTP。返回码为：`0` 配置有效，`2` 环境变量缺失或配置错误。7×24 和广发检查命令分别为 `python run.py --check --env 7x24`、`python run.py --check --env guangfa`。
 
 ### 3.3 只读连接
 
@@ -141,7 +149,7 @@ python run_live_grid.py \
 confirm-simnow = true
 ```
 
-7×24 环境需显式写出 `--env 7x24 --confirm-simnow`；它和第一套都保留零仓启动、收口和限流边界。运行级与合约级 `summary.json` 记录 `environment=first|7x24` 与 `market_data_mode=normal|replay_override`，不记录前置或凭证。历史化行情只能额外使用 `--allow-replay-market-data`，且必须同时满足 `--env 7x24 --confirm-simnow`。
+7×24 环境需显式写出 `--env 7x24 --confirm-simulation`；它和第一套都保留零仓启动、收口和限流边界。运行级与合约级 `summary.json` 记录所选 `environment` 与 `market_data_mode=normal|replay_override`，不记录前置或凭证。历史化行情只能额外使用 `--allow-replay-market-data`，且必须同时满足 `--env 7x24 --confirm-simulation`。
 
 策略 JSON 任何字段变化都会改变 effective 配置和哈希。哈希会随本次配置写入预览和审计，但不作为命令授权条件。
 

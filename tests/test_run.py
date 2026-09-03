@@ -19,21 +19,39 @@ class LoadSettingsTests(unittest.TestCase):
             "CTP_7X24_MARKET_FRONT": "tcp://7x24-market",
             "CTP_APP_ID": "simnow_client_test",
             "CTP_AUTH_CODE": "0000000000000000",
+            "CTP_GUANGFA_USER_ID": "guangfa-user",
+            "CTP_GUANGFA_PASSWORD": "guangfa-password",
+            "CTP_GUANGFA_BROKER_ID": "2358",
+            "CTP_GUANGFA_TRADE_FRONT": "tcp://guangfa-trade",
+            "CTP_GUANGFA_MARKET_FRONT": "tcp://guangfa-market",
+            "CTP_GUANGFA_APP_ID": "guangfa-app",
+            "CTP_GUANGFA_AUTH_CODE": "guangfa-auth",
         }
 
     def test_selected_environment_uses_its_own_fronts(self) -> None:
         with patch.dict(os.environ, self.environ, clear=True):
             first = load_settings()
             continuous = load_settings("7x24")
+            guangfa = load_settings("guangfa")
 
         self.assertEqual((first.environment, first.trade_front, first.market_front), ("first", "tcp://first-trade", "tcp://first-market"))
         self.assertEqual((continuous.environment, continuous.trade_front, continuous.market_front), ("7x24", "tcp://7x24-trade", "tcp://7x24-market"))
+        self.assertEqual(
+            (guangfa.environment, guangfa.user_id, guangfa.broker_id, guangfa.trade_front, guangfa.market_front),
+            ("guangfa", "guangfa-user", "2358", "tcp://guangfa-trade", "tcp://guangfa-market"),
+        )
 
     def test_7x24_never_falls_back_to_first_fronts(self) -> None:
         self.environ.pop("CTP_7X24_MARKET_FRONT")
         with patch.dict(os.environ, self.environ, clear=True):
             with self.assertRaisesRegex(ValueError, "CTP_7X24_MARKET_FRONT"):
                 load_settings("7x24")
+
+    def test_guangfa_never_falls_back_to_simnow_credentials(self) -> None:
+        self.environ.pop("CTP_GUANGFA_AUTH_CODE")
+        with patch.dict(os.environ, self.environ, clear=True):
+            with self.assertRaisesRegex(ValueError, "CTP_GUANGFA_AUTH_CODE"):
+                load_settings("guangfa")
 
     def test_diagnostic_snapshot_exposes_login_stage(self) -> None:
         diagnostics = {

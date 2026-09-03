@@ -843,7 +843,8 @@ class LiveGridSession:
                     self.stop_reason = "max_round_trips"
                 self._reset_stable_quote_gate()
                 self._anchor_ticks = None
-                if self.stop_reason == "max_round_trips":
+                if self.stop_reason is not None:
+                    # 托管前已表达的停止意图（中断/收盘）在恢复时同样生效，不得带意图续挂。
                     self.state = SessionState.FINISHED
                 else:
                     self.state = SessionState.WAITING_FOR_STABLE_QUOTE
@@ -904,9 +905,28 @@ class LiveGridSession:
         if event.net_position == 0:
             if self._resume_after_reconcile:
                 self._resume_after_reconcile = False
+                # 与 RISK_HOLD 恢复同款记账：报价对失败收口期间完成的开平成交
+                # 也要补记轮次，漏记会多跑一整对报撤凑满 max_round_trips。
+                if self._round_has_fill:
+                    self._round_trips += 1
+                    self._round_has_fill = False
                 self._anchor_ticks = None
                 self._reset_stable_quote_gate()
-                self.state = SessionState.WAITING_FOR_STABLE_QUOTE
+                if self.stop_reason is None and self._round_trips >= self.config.effective["max_round_trips"]:
+                    self.stop_reason = "max_round_trips"
+                if self.stop_reason is not None:
+                    # 操作员中断等停止条件先于收口完成：恢复报价会违背已表达的停止意图。
+                    self.state = SessionState.FINISHED
+                else:
+                    self.state = SessionState.WAITING_FOR_STABLE_QUOTE
+                self._record_trace(
+                    "reconcile_resume",
+                    calculation={
+                        "round_trips": self._round_trips,
+                        "stop_reason": self.stop_reason,
+                        "next_state": self.state.value,
+                    },
+                )
                 return
             self._finish_or_fail()
             return

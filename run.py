@@ -15,16 +15,37 @@ from typing import Any
 
 
 GATEWAY_NAME = "CTP"
-REQUIRED_ENV = (
-    "CTP_USER_ID",
-    "CTP_PASSWORD",
-    "CTP_BROKER_ID",
-    "CTP_APP_ID",
-    "CTP_AUTH_CODE",
-)
-FRONT_ENV_BY_PROFILE = {
-    "first": ("CTP_TRADE_FRONT", "CTP_MARKET_FRONT"),
-    "7x24": ("CTP_7X24_TRADE_FRONT", "CTP_7X24_MARKET_FRONT"),
+SETTING_ENV_BY_PROFILE = {
+    "first": {
+        "user_id": "CTP_USER_ID",
+        "password": "CTP_PASSWORD",
+        "broker_id": "CTP_BROKER_ID",
+        "trade_front": "CTP_TRADE_FRONT",
+        "market_front": "CTP_MARKET_FRONT",
+        "app_id": "CTP_APP_ID",
+        "auth_code": "CTP_AUTH_CODE",
+        "product_info": "CTP_PRODUCT_INFO",
+    },
+    "7x24": {
+        "user_id": "CTP_USER_ID",
+        "password": "CTP_PASSWORD",
+        "broker_id": "CTP_BROKER_ID",
+        "trade_front": "CTP_7X24_TRADE_FRONT",
+        "market_front": "CTP_7X24_MARKET_FRONT",
+        "app_id": "CTP_APP_ID",
+        "auth_code": "CTP_AUTH_CODE",
+        "product_info": "CTP_PRODUCT_INFO",
+    },
+    "guangfa": {
+        "user_id": "CTP_GUANGFA_USER_ID",
+        "password": "CTP_GUANGFA_PASSWORD",
+        "broker_id": "CTP_GUANGFA_BROKER_ID",
+        "trade_front": "CTP_GUANGFA_TRADE_FRONT",
+        "market_front": "CTP_GUANGFA_MARKET_FRONT",
+        "app_id": "CTP_GUANGFA_APP_ID",
+        "auth_code": "CTP_GUANGFA_AUTH_CODE",
+        "product_info": "CTP_GUANGFA_PRODUCT_INFO",
+    },
 }
 _DIAGNOSTIC_MARKERS = {
     "交易服务器连接成功": "td_front_connected",
@@ -74,28 +95,28 @@ class Settings:
 
 def load_settings(environment: str = "first") -> Settings:
     try:
-        trade_front_key, market_front_key = FRONT_ENV_BY_PROFILE[environment]
+        names = SETTING_ENV_BY_PROFILE[environment]
     except KeyError as exc:
-        raise ValueError(f"不支持的 SimNow 环境: {environment}") from exc
+        raise ValueError(f"不支持的 CTP 环境: {environment}") from exc
 
     missing = [
-        name
-        for name in (*REQUIRED_ENV, trade_front_key, market_front_key)
-        if not os.environ.get(name, "").strip()
+        names[key]
+        for key in ("user_id", "password", "broker_id", "trade_front", "market_front", "app_id", "auth_code")
+        if not os.environ.get(names[key], "").strip()
     ]
     if missing:
         raise ValueError("缺少环境变量: " + ", ".join(missing))
 
     return Settings(
         environment=environment,
-        user_id=os.environ["CTP_USER_ID"].strip(),
-        password=os.environ["CTP_PASSWORD"],
-        broker_id=os.environ["CTP_BROKER_ID"].strip(),
-        trade_front=os.environ[trade_front_key].strip(),
-        market_front=os.environ[market_front_key].strip(),
-        app_id=os.environ["CTP_APP_ID"].strip(),
-        auth_code=os.environ["CTP_AUTH_CODE"].strip(),
-        product_info=os.getenv("CTP_PRODUCT_INFO", "").strip(),
+        user_id=os.environ[names["user_id"]].strip(),
+        password=os.environ[names["password"]],
+        broker_id=os.environ[names["broker_id"]].strip(),
+        trade_front=os.environ[names["trade_front"]].strip(),
+        market_front=os.environ[names["market_front"]].strip(),
+        app_id=os.environ[names["app_id"]].strip(),
+        auth_code=os.environ[names["auth_code"]].strip(),
+        product_info=os.getenv(names["product_info"], "").strip(),
         symbol=os.getenv("CTP_SYMBOL", "").strip(),
         exchange=os.getenv("CTP_EXCHANGE", "SHFE").strip().upper(),
     )
@@ -284,9 +305,9 @@ def connect(settings: Settings) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="SimNow/CTP read-only connection check")
+    parser = argparse.ArgumentParser(description="CTP read-only connection check")
     parser.add_argument("--check", action="store_true", help="只校验配置，不连接")
-    parser.add_argument("--env", choices=FRONT_ENV_BY_PROFILE, default="first", help="SimNow 连接环境")
+    parser.add_argument("--env", choices=SETTING_ENV_BY_PROFILE, default="first", help="CTP 连接环境")
     args = parser.parse_args()
 
     try:

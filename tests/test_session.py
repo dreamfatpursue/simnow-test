@@ -1386,6 +1386,65 @@ def open_flatten_and_wait_opposite_cancel(session: LiveGridSession, tag: str) ->
 
 
 class LiveGridSessionRecoveryTests(unittest.TestCase):
+    def test_interrupt_during_quote_pair_failure_stops_instead_of_resuming(self) -> None:
+        """报价对失败收口期间操作员中断：收口完成后必须终止，不得恢复报价。"""
+        session = start_session(make_config(max_round_trips=5))
+        submitted = qualify_market(session)
+        buy = next(action for action in submitted if action.payload["side"] == "BUY")
+        sell = next(action for action in submitted if action.payload["side"] == "SELL")
+
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "REJECTED", 1, client_id=buy.payload["client_id"]))
+        self.assertEqual(session.state, SessionState.CLOSING_CANCELS)
+        session.handle(InterruptEvent())
+        self.assertEqual(session.stop_reason, "interrupted")
+
+        closing = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1, client_id=sell.payload["client_id"]))
+        query = next(action for action in closing if action.kind == "query_position")
+        session.handle(PositionQueryCompleteEvent(query.payload["request_id"], "rb2601", "SHFE", 0))
+
+        self.assertEqual(session.state, SessionState.FINISHED)
+        self.assertEqual(session.stop_reason, "interrupted")
+        self.assertEqual(session.handle(ClockEvent(session._now + 5)), [])
+
+    def test_quote_pair_failure_without_interrupt_resumes_quoting(self) -> None:
+        """无停止意图时，报价对失败收口后仍回到稳定行情门槛继续联调。"""
+        session = start_session(make_config(max_round_trips=5))
+        submitted = qualify_market(session)
+        buy = next(action for action in submitted if action.payload["side"] == "BUY")
+        sell = next(action for action in submitted if action.payload["side"] == "SELL")
+
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "REJECTED", 1, client_id=buy.payload["client_id"]))
+        closing = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1, client_id=sell.payload["client_id"]))
+        query = next(action for action in closing if action.kind == "query_position")
+        session.handle(PositionQueryCompleteEvent(query.payload["request_id"], "rb2601", "SHFE", 0))
+
+        self.assertEqual(session.state, SessionState.WAITING_FOR_STABLE_QUOTE)
+        self.assertIsNone(session.stop_reason)
+
+    def test_risk_hold_recovery_respects_stop_reason_set_before_hold(self) -> None:
+        """进入托管前操作员已中断：恢复确认零仓后按停止意图收尾，不续挂。"""
+        session = start_session(make_config(max_round_trips=5))
+        submitted = qualify_market(session)
+        buy = next(action for action in submitted if action.payload["side"] == "BUY")
+        sell = next(action for action in submitted if action.payload["side"] == "SELL")
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
+        session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
+        self.assertEqual(session.state, SessionState.QUOTING)
+
+        session.handle(InterruptEvent())
+        self.assertEqual(session.stop_reason, "interrupted")
+        session.handle(ConnectionEvent("td", False, "disconnect"))
+        self.assertEqual(session.state, SessionState.RISK_HOLD)
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1))
+        session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
+
+        recovery = session.handle(ClockEvent(session._now + 2))
+        query_action = next(action for action in recovery if action.kind == "query_position")
+        session.handle(PositionQueryCompleteEvent(query_action.payload["request_id"], "rb2601", "SHFE", 0))
+
+        self.assertEqual(session.state, SessionState.FINISHED)
+        self.assertEqual(session.stop_reason, "interrupted")
+
     def test_ctp_error_26_confirms_terminal_order_without_risk_hold(self) -> None:
         """撤单错误26=委托已全成交或已撤销：是终态证明，不再升级 RISK_HOLD。"""
         session = start_session(make_config(max_round_trips=1))

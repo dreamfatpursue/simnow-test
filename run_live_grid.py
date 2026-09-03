@@ -13,7 +13,7 @@ from live_grid.audit import MultiContractAuditWriter
 from live_grid.config import MultiContractConfig, StrategyConfigError
 from live_grid.ctp_adapter import CtpLiveGridAdapter
 from live_grid.session import LiveGridSession, SessionState
-from run import FRONT_ENV_BY_PROFILE, load_settings
+from run import SETTING_ENV_BY_PROFILE, load_settings
 
 _TERMINAL_STATES = {SessionState.FINISHED, SessionState.FAILED}
 
@@ -109,10 +109,16 @@ def _interrupt_and_wait(adapter: CtpLiveGridAdapter) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="SimNow 多合约报撤联调入口")
+    parser = argparse.ArgumentParser(description="CTP 仿真多合约报撤联调入口")
     parser.add_argument("--config", required=True, help="无凭证多合约策略 JSON 配置")
-    parser.add_argument("--env", choices=FRONT_ENV_BY_PROFILE, default="first", help="SimNow 连接环境")
-    parser.add_argument("--confirm-simnow", action="store_true", help="确认当前连接是 SimNow")
+    parser.add_argument("--env", choices=SETTING_ENV_BY_PROFILE, default="first", help="CTP 仿真连接环境")
+    parser.add_argument(
+        "--confirm-simulation",
+        "--confirm-simnow",
+        dest="confirm_simnow",
+        action="store_true",
+        help="确认当前连接是仿真环境",
+    )
     parser.add_argument(
         "--allow-replay-market-data",
         action="store_true",
@@ -160,7 +166,7 @@ def main() -> int:
                     _run_summary(config, sessions, args.env, failure_reason="confirmation_required", market_data_mode=market_data_mode)
                 )
                 print(
-                    f"当前为预览模式：environment={args.env}，缺少 SimNow 确认，未连接且不会下单。"
+                    f"当前为预览模式：environment={args.env}，缺少仿真环境确认，未连接且不会下单。"
                     f"审计目录={directory}"
                 )
                 return 0
