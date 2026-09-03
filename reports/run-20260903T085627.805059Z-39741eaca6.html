@@ -1,0 +1,2326 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>单 run 委托成交报告 20260903T085627.805059Z-39741eaca6</title><style>body{font-family:-apple-system,'PingFang SC',sans-serif;margin:24px;color:#222}h1{font-size:20px}h2{font-size:16px;margin-top:28px}h3{font-size:14px;margin-top:20px}table{border-collapse:collapse;margin-top:8px;width:100%}th,td{border:1px solid #ccc;padding:5px 8px;text-align:left;vertical-align:top;font-variant-numeric:tabular-nums}th{background:#f5f5f5}.note{color:#666;font-size:13px}.label{color:#666;margin-right:6px}code{white-space:pre-wrap}.trace{margin:8px 0;padding-left:24px}.trace li{margin:8px 0}pre{background:#f7f7f7;padding:8px;overflow:auto}summary{cursor:pointer;color:#065}</style></head><body><h1>单 run 委托成交报告 · 20260903T085627.805059Z-39741eaca6</h1><h2>运行参数</h2><p>策略哈希：<code>a69c8773f3659ac9a8a8c204df98ea0e9d5260e83b25fe9a3fe95aee65fed313</code></p><pre>{
+  &quot;action_limit_per_minute&quot;: 60,
+  &quot;book_protection_multiple&quot;: 0.5,
+  &quot;cancel_timeout_seconds&quot;: 10,
+  &quot;closing_wait_seconds&quot;: 1,
+  &quot;contracts&quot;: [
+    {
+      &quot;exchange&quot;: &quot;CFFEX&quot;,
+      &quot;max_tick_age_seconds&quot;: 10,
+      &quot;quote_windows&quot;: [
+        {
+          &quot;end&quot;: &quot;23:59&quot;,
+          &quot;start&quot;: &quot;00:00&quot;
+        }
+      ],
+      &quot;symbol&quot;: &quot;IF2610&quot;,
+      &quot;target_lots&quot;: 1
+    }
+  ],
+  &quot;d_ticks&quot;: 3,
+  &quot;flatten_adverse_ticks&quot;: 10,
+  &quot;flatten_timeout_seconds&quot;: 3,
+  &quot;max_round_trips&quot;: 5,
+  &quot;quote_ack_timeout_seconds&quot;: 5,
+  &quot;reanchor_confirmation_seconds&quot;: 1,
+  &quot;s_ticks&quot;: 1,
+  &quot;stable_market_seconds&quot;: 2,
+  &quot;version&quot;: 2,
+  &quot;w_ticks&quot;: 1
+}</pre><h2>资金结果</h2><table><tr><th>起始资金</th><th>结束资金</th><th>资金差净盈亏</th><th>轮次毛盈亏</th><th>推算手续费</th></tr><tr><td>21,997,968.67</td><td>21,993,910.82</td><td>-4,057.85</td><td>-1,500.00</td><td>2,557.85</td></tr></table><p class="note">推算手续费 = Σ轮次毛盈亏 − 资金差；不是 CTP 逐笔费用。</p><h2>run 总览</h2><table><tr><th>合约</th><th>终态</th><th>轮数</th><th>停止原因</th><th>失败原因</th><th>最终净仓</th><th>活动委托</th></tr><tr><td>IF2610@CFFEX</td><td>正常结束</td><td>5</td><td>达到配置的最大完成轮数后正常停止</td><td>—</td><td>0</td><td>0</td></tr></table><h2>IF2610@CFFEX</h2><p>品种代码：if；准确合约：IF2610；交易所：CFFEX；最小变动价位：0.2；合约乘数：300</p><h3>轮次结果（毛盈亏）</h3><p class="note">毛盈亏按成交价、数量、合约乘数计算；资金差净盈亏不分摊到单笔委托。</p><table><tr><th>轮次</th><th>开仓</th><th>平仓</th><th>结束方式</th><th>价差 tick</th><th>毛盈亏</th></tr><tr><td>1</td><td>4501.8 × 1</td><td>4501.4 × 1</td><td>FAK 平仓</td><td>-2</td><td>-120.00</td></tr><tr><td>2</td><td>4503.4 × 1</td><td>4504 × 1</td><td>FAK 平仓</td><td>-3</td><td>-180.00</td></tr><tr><td>3</td><td>4503.8 × 1</td><td>4505 × 1</td><td>FAK 平仓</td><td>-6</td><td>-360.00</td></tr><tr><td>4</td><td>4504.2 × 1</td><td>4503.2 × 1</td><td>FAK 平仓</td><td>-5</td><td>-300.00</td></tr><tr><td>5</td><td>4504.4 × 1</td><td>4502.6 × 1</td><td>FAK 平仓</td><td>-9</td><td>-540.00</td></tr></table><h3>逻辑委托</h3><table><tr><th>client identity</th><th>用途</th><th>方向</th><th>开平</th><th>类型</th><th>价格</th><th>数量</th><th>提交审计时钟</th><th>状态路径</th><th>最终结果</th><th>成交量</th><th>详情</th></tr><tr id="order-quote-1-buy"><td>quote-1-buy</td><td>网格报价</td><td>买</td><td>开仓</td><td>限价</td><td>4501.8</td><td>1</td><td>18725.8s</td><td>提交中 → 未成交 → 全部成交</td><td>全部成交</td><td>1</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_1；接受时间：—；终态时间：2026-09-01T17:04:10+08:00</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18725.8s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-1-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4501.8,
+  &quot;quote_group_id&quot;: &quot;1&quot;,
+  &quot;side&quot;: &quot;BUY&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18725.8s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18725.8s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:56:50+08:00</li><li><span class="label">审计时钟 18725.8s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:10+08:00</li><li><span class="label">审计时钟 18728.6s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:10+08:00</li><li><span class="label">审计时钟 18728.6s</span>状态 全部成交，累计成交 1；交易所时间 2026-09-01T17:04:10+08:00</li></ol><ol class="trace"><li><strong>首次报价</strong><div>报价计算：锚点 4502.6，距离 4 tick；买价 4501.8，卖价 4503.4。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4502.2,
+  &quot;bid_price&quot;: 4501.4,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4502.6,
+  &quot;anchor_ticks&quot;: 22513,
+  &quot;buy_price&quot;: 4501.8,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.400000000001,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:10+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_1&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;1&quot;
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:10+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_1&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;ALLTRADED&quot;,
+  &quot;traded&quot;: 1,
+  &quot;traded_delta&quot;: 1,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>首次成交，进入价差窗口</strong><div>成交 4501.8 × 1，进入 1.0s 价差窗口，结束时刻 18728.8s。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:10+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_1&quot;,
+  &quot;price&quot;: 4501.8,
+  &quot;reason&quot;: &quot;first_fill&quot;,
+  &quot;trade_id&quot;: &quot;&quot;,
+  &quot;volume&quot;: 1,
+  &quot;window_ends_at&quot;: 18728.789962875,
+  &quot;window_seconds&quot;: 1,
+  &quot;window_started_at&quot;: 18727.789962875
+}</pre></div></details></li></ol><h4>成交</h4><details><summary>成交明细</summary><pre>[
+  {
+    &quot;at&quot;: 18728.577951291,
+    &quot;client_id&quot;: &quot;quote-1-buy&quot;,
+    &quot;exchange&quot;: &quot;CFFEX&quot;,
+    &quot;exchange_time&quot;: &quot;2026-09-01T17:04:13+08:00&quot;,
+    &quot;order_id&quot;: &quot;1_909642209_1&quot;,
+    &quot;price&quot;: 4501.8,
+    &quot;side&quot;: &quot;BUY&quot;,
+    &quot;symbol&quot;: &quot;IF2610&quot;,
+    &quot;trade_id&quot;: &quot;        2194&quot;,
+    &quot;volume&quot;: 1
+  }
+]</pre></details></details></td></tr><tr id="order-quote-1-sell"><td>quote-1-sell</td><td>网格报价</td><td>卖</td><td>开仓</td><td>限价</td><td>4503.4</td><td>1</td><td>18725.8s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_2；接受时间：—；终态时间：2026-09-01T17:04:10+08:00</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18725.8s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-1-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4503.400000000001,
+  &quot;quote_group_id&quot;: &quot;1&quot;,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18725.8s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18725.8s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:56:50+08:00</li><li><span class="label">审计时钟 18725.8s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:10+08:00</li><li><span class="label">审计时钟 18728.8s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-1-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_2&quot;,
+  &quot;safety&quot;: true,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18728.9s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:10+08:00</li><li><span class="label">审计时钟 18728.9s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:04:10+08:00</li></ol><ol class="trace"><li><strong>首次报价</strong><div>报价计算：锚点 4502.6，距离 4 tick；买价 4501.8，卖价 4503.4。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4502.2,
+  &quot;bid_price&quot;: 4501.4,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4502.6,
+  &quot;anchor_ticks&quot;: 22513,
+  &quot;buy_price&quot;: 4501.8,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.400000000001,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:10+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_2&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;1&quot;
+}</pre></div></details></li><li><strong>价差窗口超时</strong><div>窗口超时：1.0s / 1.0s，净仓 1，开始受限平仓。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;elapsed_seconds&quot;: 1.004172416000074,
+  &quot;ended_at&quot;: 18728.794135291,
+  &quot;net_position&quot;: 1,
+  &quot;reason&quot;: &quot;window_timeout&quot;,
+  &quot;window_seconds&quot;: 1,
+  &quot;window_started_at&quot;: 18727.789962875
+}</pre></div></details></li><li><strong>撤销剩余委托</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;active_client_ids&quot;: [
+    &quot;quote-1-sell&quot;
+  ],
+  &quot;net_position&quot;: 0,
+  &quot;pending_client_ids&quot;: [],
+  &quot;reason&quot;: &quot;flatten_complete&quot;
+}</pre></div></details></li><li><strong>撤销剩余委托</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;active_client_ids&quot;: [
+    &quot;quote-1-sell&quot;
+  ],
+  &quot;net_position&quot;: 0,
+  &quot;pending_client_ids&quot;: [],
+  &quot;reason&quot;: &quot;flatten_complete&quot;
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:10+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_2&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-2"><td>flatten-2</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4501.4</td><td>1</td><td>18728.8s</td><td>提交中 → 全部成交</td><td>全部成交</td><td>1</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_3；接受时间：—；终态时间：2026-09-01T17:04:13+08:00</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18728.8s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-2&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4501.4,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18728.8s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18728.8s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:56:53+08:00</li><li><span class="label">审计时钟 18728.8s</span>状态 提交中，累计成交 0；交易所时间 2026-09-01T17:04:13+08:00</li><li><span class="label">审计时钟 18728.8s</span>状态 全部成交，累计成交 1；交易所时间 2026-09-01T17:04:13+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 1 次尝试；盘口可执行价 4501.4，初始价 4501.4，不利上限 4499.4，实际委托价 4501.4。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4502.0,
+  &quot;bid_price&quot;: 4501.4,
+  &quot;last_price&quot;: 4502.6
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4501.4,
+  &quot;adverse_price_limit&quot;: 4499.4,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4501.4,
+  &quot;market_executable_price&quot;: 4501.4,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 1,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:13+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_3&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;ALLTRADED&quot;,
+  &quot;traded&quot;: 1,
+  &quot;traded_delta&quot;: 1,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 终态：全部成交 1 / 1，本笔平仓完成。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_3&quot;,
+  &quot;status&quot;: &quot;ALLTRADED&quot;,
+  &quot;traded&quot;: 1,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol><h4>成交</h4><details><summary>成交明细</summary><pre>[
+  {
+    &quot;at&quot;: 18728.841261666,
+    &quot;client_id&quot;: &quot;flatten-2&quot;,
+    &quot;exchange&quot;: &quot;CFFEX&quot;,
+    &quot;exchange_time&quot;: &quot;2026-09-01T17:04:13+08:00&quot;,
+    &quot;order_id&quot;: &quot;1_909642209_3&quot;,
+    &quot;price&quot;: 4501.4,
+    &quot;side&quot;: &quot;SELL&quot;,
+    &quot;symbol&quot;: &quot;IF2610&quot;,
+    &quot;trade_id&quot;: &quot;        2195&quot;,
+    &quot;volume&quot;: 1
+  }
+]</pre></details></details></td></tr><tr id="order-quote-3-buy"><td>quote-3-buy</td><td>网格报价</td><td>买</td><td>开仓</td><td>限价</td><td>4501.8</td><td>1</td><td>18731.8s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_4；接受时间：—；终态时间：2026-09-01T17:04:16+08:00</p><p>后继报价：<a href="#order-quote-4-buy">quote-4-buy</a>, <a href="#order-quote-4-sell">quote-4-sell</a></p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18731.8s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-3-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4501.8,
+  &quot;quote_group_id&quot;: &quot;3&quot;,
+  &quot;side&quot;: &quot;BUY&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18731.8s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18731.9s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:56:56+08:00</li><li><span class="label">审计时钟 18731.9s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:16+08:00</li><li><span class="label">审计时钟 18733.5s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-3-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_4&quot;,
+  &quot;safety&quot;: true,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18733.6s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:16+08:00</li><li><span class="label">审计时钟 18733.6s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:04:16+08:00</li></ol><ol class="trace"><li><strong>首次报价</strong><div>报价计算：锚点 4502.6，距离 4 tick；买价 4501.8，卖价 4503.4。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4502.0,
+  &quot;bid_price&quot;: 4501.4,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4502.6,
+  &quot;anchor_ticks&quot;: 22513,
+  &quot;buy_price&quot;: 4501.8,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.400000000001,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:16+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_4&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;3&quot;
+}</pre></div></details></li><li><strong>盘口保护失败，暂停报价</strong><div>盘口保护未通过：报价距离 4 tick 未严格大于保护倍数 0.5 × 盘口价差 10 tick，因此安全撤销当前报价并暂停。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4503.6,
+  &quot;bid_price&quot;: 4501.6,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;comparison&quot;: &quot;distance_ticks &gt; protection_multiple * spread_ticks&quot;,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;passed&quot;: false,
+  &quot;protection_multiple&quot;: 0.5,
+  &quot;spread_ticks&quot;: 10,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:16+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_4&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>旧报价已终态，重新获得报价资格</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;next_state&quot;: &quot;WAITING_FOR_STABLE_QUOTE&quot;,
+  &quot;reason&quot;: &quot;market_pause&quot;
+}</pre></div></details></li></ol></details></td></tr><tr id="order-quote-3-sell"><td>quote-3-sell</td><td>网格报价</td><td>卖</td><td>开仓</td><td>限价</td><td>4503.4</td><td>1</td><td>18731.8s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_5；接受时间：—；终态时间：2026-09-01T17:04:16+08:00</p><p>后继报价：<a href="#order-quote-4-buy">quote-4-buy</a>, <a href="#order-quote-4-sell">quote-4-sell</a></p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18731.8s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-3-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4503.400000000001,
+  &quot;quote_group_id&quot;: &quot;3&quot;,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18731.8s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18731.9s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:56:56+08:00</li><li><span class="label">审计时钟 18731.9s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:16+08:00</li><li><span class="label">审计时钟 18733.5s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-3-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_5&quot;,
+  &quot;safety&quot;: true,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18733.6s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:16+08:00</li><li><span class="label">审计时钟 18733.6s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:04:16+08:00</li></ol><ol class="trace"><li><strong>首次报价</strong><div>报价计算：锚点 4502.6，距离 4 tick；买价 4501.8，卖价 4503.4。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4502.0,
+  &quot;bid_price&quot;: 4501.4,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4502.6,
+  &quot;anchor_ticks&quot;: 22513,
+  &quot;buy_price&quot;: 4501.8,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.400000000001,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:16+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_5&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;3&quot;
+}</pre></div></details></li><li><strong>盘口保护失败，暂停报价</strong><div>盘口保护未通过：报价距离 4 tick 未严格大于保护倍数 0.5 × 盘口价差 10 tick，因此安全撤销当前报价并暂停。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4503.6,
+  &quot;bid_price&quot;: 4501.6,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;comparison&quot;: &quot;distance_ticks &gt; protection_multiple * spread_ticks&quot;,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;passed&quot;: false,
+  &quot;protection_multiple&quot;: 0.5,
+  &quot;spread_ticks&quot;: 10,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:16+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_5&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>旧报价已终态，重新获得报价资格</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;next_state&quot;: &quot;WAITING_FOR_STABLE_QUOTE&quot;,
+  &quot;reason&quot;: &quot;market_pause&quot;
+}</pre></div></details></li></ol></details></td></tr><tr id="order-quote-4-buy"><td>quote-4-buy</td><td>网格报价</td><td>买</td><td>开仓</td><td>限价</td><td>4501.8</td><td>1</td><td>18736.8s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_6；接受时间：—；终态时间：2026-09-01T17:04:21+08:00</p><p>后继报价：<a href="#order-quote-5-buy">quote-5-buy</a>, <a href="#order-quote-5-sell">quote-5-sell</a></p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18736.8s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-4-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4501.8,
+  &quot;quote_group_id&quot;: &quot;4&quot;,
+  &quot;side&quot;: &quot;BUY&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18736.8s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18736.9s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:57:01+08:00</li><li><span class="label">审计时钟 18736.9s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:21+08:00</li><li><span class="label">审计时钟 18738.3s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-4-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_6&quot;,
+  &quot;safety&quot;: true,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18738.4s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:21+08:00</li><li><span class="label">审计时钟 18738.4s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:04:21+08:00</li></ol><ol class="trace"><li><strong>替代报价提交</strong><div>报价计算：锚点 4502.6，距离 4 tick；买价 4501.8，卖价 4503.4。</div><div>替代前驱：<a href="#order-quote-3-buy">quote-3-buy</a>, <a href="#order-quote-3-sell">quote-3-sell</a>；替代原因：盘口保护失败（价差过宽或盘口无效），安全撤销双边报价并暂停，待行情重新达标后再挂</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4503.4,
+  &quot;bid_price&quot;: 4502.6,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4502.6,
+  &quot;anchor_ticks&quot;: 22513,
+  &quot;buy_price&quot;: 4501.8,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.400000000001,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:21+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_6&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;4&quot;
+}</pre></div></details></li><li><strong>盘口保护失败，暂停报价</strong><div>盘口保护未通过：报价距离 4 tick 未严格大于保护倍数 0.5 × 盘口价差 8 tick，因此安全撤销当前报价并暂停。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.2,
+  &quot;bid_price&quot;: 4502.6,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;comparison&quot;: &quot;distance_ticks &gt; protection_multiple * spread_ticks&quot;,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;passed&quot;: false,
+  &quot;protection_multiple&quot;: 0.5,
+  &quot;spread_ticks&quot;: 8,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:21+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_6&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>旧报价已终态，重新获得报价资格</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;next_state&quot;: &quot;WAITING_FOR_STABLE_QUOTE&quot;,
+  &quot;reason&quot;: &quot;market_pause&quot;
+}</pre></div></details></li></ol></details></td></tr><tr id="order-quote-4-sell"><td>quote-4-sell</td><td>网格报价</td><td>卖</td><td>开仓</td><td>限价</td><td>4503.4</td><td>1</td><td>18736.8s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_7；接受时间：—；终态时间：2026-09-01T17:04:21+08:00</p><p>后继报价：<a href="#order-quote-5-buy">quote-5-buy</a>, <a href="#order-quote-5-sell">quote-5-sell</a></p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18736.8s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-4-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4503.400000000001,
+  &quot;quote_group_id&quot;: &quot;4&quot;,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18736.8s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18736.9s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:57:01+08:00</li><li><span class="label">审计时钟 18736.9s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:21+08:00</li><li><span class="label">审计时钟 18738.3s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-4-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_7&quot;,
+  &quot;safety&quot;: true,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18738.4s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:21+08:00</li><li><span class="label">审计时钟 18738.4s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:04:21+08:00</li></ol><ol class="trace"><li><strong>替代报价提交</strong><div>报价计算：锚点 4502.6，距离 4 tick；买价 4501.8，卖价 4503.4。</div><div>替代前驱：<a href="#order-quote-3-buy">quote-3-buy</a>, <a href="#order-quote-3-sell">quote-3-sell</a>；替代原因：盘口保护失败（价差过宽或盘口无效），安全撤销双边报价并暂停，待行情重新达标后再挂</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4503.4,
+  &quot;bid_price&quot;: 4502.6,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4502.6,
+  &quot;anchor_ticks&quot;: 22513,
+  &quot;buy_price&quot;: 4501.8,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.400000000001,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:21+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_7&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;4&quot;
+}</pre></div></details></li><li><strong>盘口保护失败，暂停报价</strong><div>盘口保护未通过：报价距离 4 tick 未严格大于保护倍数 0.5 × 盘口价差 8 tick，因此安全撤销当前报价并暂停。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.2,
+  &quot;bid_price&quot;: 4502.6,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;comparison&quot;: &quot;distance_ticks &gt; protection_multiple * spread_ticks&quot;,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;passed&quot;: false,
+  &quot;protection_multiple&quot;: 0.5,
+  &quot;spread_ticks&quot;: 8,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:21+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_7&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>旧报价已终态，重新获得报价资格</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;next_state&quot;: &quot;WAITING_FOR_STABLE_QUOTE&quot;,
+  &quot;reason&quot;: &quot;market_pause&quot;
+}</pre></div></details></li></ol></details></td></tr><tr id="order-quote-5-buy"><td>quote-5-buy</td><td>网格报价</td><td>买</td><td>开仓</td><td>限价</td><td>4501.8</td><td>1</td><td>18740.8s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_8；接受时间：—；终态时间：2026-09-01T17:04:25+08:00</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18740.8s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-5-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4501.8,
+  &quot;quote_group_id&quot;: &quot;5&quot;,
+  &quot;side&quot;: &quot;BUY&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18740.8s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18740.9s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:57:05+08:00</li><li><span class="label">审计时钟 18740.9s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:25+08:00</li><li><span class="label">审计时钟 18748.9s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-5-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_8&quot;,
+  &quot;safety&quot;: true,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18749.0s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:25+08:00</li><li><span class="label">审计时钟 18749.0s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:04:25+08:00</li></ol><ol class="trace"><li><strong>替代报价提交</strong><div>报价计算：锚点 4502.6，距离 4 tick；买价 4501.8，卖价 4503.4。</div><div>替代前驱：<a href="#order-quote-4-buy">quote-4-buy</a>, <a href="#order-quote-4-sell">quote-4-sell</a>；替代原因：盘口保护失败（价差过宽或盘口无效），安全撤销双边报价并暂停，待行情重新达标后再挂</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4503.8,
+  &quot;bid_price&quot;: 4502.8,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4502.6,
+  &quot;anchor_ticks&quot;: 22513,
+  &quot;buy_price&quot;: 4501.8,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.400000000001,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:25+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_8&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;5&quot;
+}</pre></div></details></li><li><strong>价差窗口超时</strong><div>窗口超时：1.3s / 1.0s，净仓 -1，开始受限平仓。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;elapsed_seconds&quot;: 1.3113824169995496,
+  &quot;ended_at&quot;: 18748.8673165,
+  &quot;net_position&quot;: -1,
+  &quot;reason&quot;: &quot;window_timeout&quot;,
+  &quot;window_seconds&quot;: 1,
+  &quot;window_started_at&quot;: 18747.555934083
+}</pre></div></details></li><li><strong>撤销剩余委托</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;active_client_ids&quot;: [
+    &quot;quote-5-buy&quot;
+  ],
+  &quot;net_position&quot;: 0,
+  &quot;pending_client_ids&quot;: [],
+  &quot;reason&quot;: &quot;flatten_complete&quot;
+}</pre></div></details></li><li><strong>撤销剩余委托</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;active_client_ids&quot;: [
+    &quot;quote-5-buy&quot;
+  ],
+  &quot;net_position&quot;: 0,
+  &quot;pending_client_ids&quot;: [],
+  &quot;reason&quot;: &quot;flatten_complete&quot;
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:25+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_8&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-quote-5-sell"><td>quote-5-sell</td><td>网格报价</td><td>卖</td><td>开仓</td><td>限价</td><td>4503.4</td><td>1</td><td>18740.8s</td><td>提交中 → 未成交 → 全部成交</td><td>全部成交</td><td>1</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_9；接受时间：—；终态时间：2026-09-01T17:04:25+08:00</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18740.8s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-5-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4503.400000000001,
+  &quot;quote_group_id&quot;: &quot;5&quot;,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18740.8s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18740.9s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:57:05+08:00</li><li><span class="label">审计时钟 18740.9s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:25+08:00</li><li><span class="label">审计时钟 18747.6s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:25+08:00</li><li><span class="label">审计时钟 18747.6s</span>状态 全部成交，累计成交 1；交易所时间 2026-09-01T17:04:25+08:00</li></ol><ol class="trace"><li><strong>替代报价提交</strong><div>报价计算：锚点 4502.6，距离 4 tick；买价 4501.8，卖价 4503.4。</div><div>替代前驱：<a href="#order-quote-4-buy">quote-4-buy</a>, <a href="#order-quote-4-sell">quote-4-sell</a>；替代原因：盘口保护失败（价差过宽或盘口无效），安全撤销双边报价并暂停，待行情重新达标后再挂</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4503.8,
+  &quot;bid_price&quot;: 4502.8,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4502.6,
+  &quot;anchor_ticks&quot;: 22513,
+  &quot;buy_price&quot;: 4501.8,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.400000000001,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:25+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_9&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;5&quot;
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:25+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_9&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;ALLTRADED&quot;,
+  &quot;traded&quot;: 1,
+  &quot;traded_delta&quot;: 1,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>首次成交，进入价差窗口</strong><div>成交 4503.4 × 1，进入 1.0s 价差窗口，结束时刻 18748.6s。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:25+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_9&quot;,
+  &quot;price&quot;: 4503.400000000001,
+  &quot;reason&quot;: &quot;first_fill&quot;,
+  &quot;trade_id&quot;: &quot;&quot;,
+  &quot;volume&quot;: 1,
+  &quot;window_ends_at&quot;: 18748.555934083,
+  &quot;window_seconds&quot;: 1,
+  &quot;window_started_at&quot;: 18747.555934083
+}</pre></div></details></li></ol><h4>成交</h4><details><summary>成交明细</summary><pre>[
+  {
+    &quot;at&quot;: 18747.556609458,
+    &quot;client_id&quot;: &quot;quote-5-sell&quot;,
+    &quot;exchange&quot;: &quot;CFFEX&quot;,
+    &quot;exchange_time&quot;: &quot;2026-09-01T17:04:32+08:00&quot;,
+    &quot;order_id&quot;: &quot;1_909642209_9&quot;,
+    &quot;price&quot;: 4503.4,
+    &quot;side&quot;: &quot;SELL&quot;,
+    &quot;symbol&quot;: &quot;IF2610&quot;,
+    &quot;trade_id&quot;: &quot;        2196&quot;,
+    &quot;volume&quot;: 1
+  }
+]</pre></details></details></td></tr><tr id="order-flatten-6"><td>flatten-6</td><td>FAK 平仓</td><td>买</td><td>平仓</td><td>FAK</td><td>4504.2</td><td>1</td><td>18748.9s</td><td>提交中 → 全部成交</td><td>全部成交</td><td>1</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_10；接受时间：—；终态时间：2026-09-01T17:04:33+08:00</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18748.9s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-6&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4504.2,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;BUY&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18748.9s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18748.9s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:57:13+08:00</li><li><span class="label">审计时钟 18748.9s</span>状态 提交中，累计成交 0；交易所时间 2026-09-01T17:04:33+08:00</li><li><span class="label">审计时钟 18748.9s</span>状态 全部成交，累计成交 1；交易所时间 2026-09-01T17:04:33+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 买，开平 平仓，数量 1，第 2 次尝试；盘口可执行价 4504.2，初始价 4504.2，不利上限 4506.2，实际委托价 4504.2。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.2,
+  &quot;bid_price&quot;: 4503.4,
+  &quot;last_price&quot;: 4502.6
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4504.2,
+  &quot;adverse_price_limit&quot;: 4506.2,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4504.2,
+  &quot;market_executable_price&quot;: 4504.2,
+  &quot;net_position&quot;: -1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 2,
+  &quot;side&quot;: &quot;BUY&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:33+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_10&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;ALLTRADED&quot;,
+  &quot;traded&quot;: 1,
+  &quot;traded_delta&quot;: 1,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 终态：全部成交 1 / 1，本笔平仓完成。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_10&quot;,
+  &quot;status&quot;: &quot;ALLTRADED&quot;,
+  &quot;traded&quot;: 1,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol><h4>成交</h4><details><summary>成交明细</summary><pre>[
+  {
+    &quot;at&quot;: 18748.916284791,
+    &quot;client_id&quot;: &quot;flatten-6&quot;,
+    &quot;exchange&quot;: &quot;CFFEX&quot;,
+    &quot;exchange_time&quot;: &quot;2026-09-01T17:04:33+08:00&quot;,
+    &quot;order_id&quot;: &quot;1_909642209_10&quot;,
+    &quot;price&quot;: 4504.0,
+    &quot;side&quot;: &quot;BUY&quot;,
+    &quot;symbol&quot;: &quot;IF2610&quot;,
+    &quot;trade_id&quot;: &quot;        2197&quot;,
+    &quot;volume&quot;: 1
+  }
+]</pre></details></details></td></tr><tr id="order-quote-7-buy"><td>quote-7-buy</td><td>网格报价</td><td>买</td><td>开仓</td><td>限价</td><td>4501.8</td><td>1</td><td>18751.9s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_11；接受时间：—；终态时间：2026-09-01T17:04:36+08:00</p><p>后继报价：<a href="#order-quote-8-buy">quote-8-buy</a>, <a href="#order-quote-8-sell">quote-8-sell</a></p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18751.9s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-7-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4501.8,
+  &quot;quote_group_id&quot;: &quot;7&quot;,
+  &quot;side&quot;: &quot;BUY&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18751.9s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18751.9s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:57:16+08:00</li><li><span class="label">审计时钟 18751.9s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:36+08:00</li><li><span class="label">审计时钟 18758.8s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-7-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_11&quot;,
+  &quot;safety&quot;: true,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18758.8s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:36+08:00</li><li><span class="label">审计时钟 18758.8s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:04:36+08:00</li></ol><ol class="trace"><li><strong>首次报价</strong><div>报价计算：锚点 4502.6，距离 4 tick；买价 4501.8，卖价 4503.4。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.2,
+  &quot;bid_price&quot;: 4503.2,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4502.6,
+  &quot;anchor_ticks&quot;: 22513,
+  &quot;buy_price&quot;: 4501.8,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.400000000001,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:36+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_11&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;7&quot;
+}</pre></div></details></li><li><strong>盘口保护失败，暂停报价</strong><div>盘口保护未通过：报价距离 4 tick 未严格大于保护倍数 0.5 × 盘口价差 9 tick，因此安全撤销当前报价并暂停。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.0,
+  &quot;bid_price&quot;: 4502.2,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;comparison&quot;: &quot;distance_ticks &gt; protection_multiple * spread_ticks&quot;,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;passed&quot;: false,
+  &quot;protection_multiple&quot;: 0.5,
+  &quot;spread_ticks&quot;: 9,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:36+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_11&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>旧报价已终态，重新获得报价资格</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;next_state&quot;: &quot;WAITING_FOR_STABLE_QUOTE&quot;,
+  &quot;reason&quot;: &quot;market_pause&quot;
+}</pre></div></details></li></ol></details></td></tr><tr id="order-quote-7-sell"><td>quote-7-sell</td><td>网格报价</td><td>卖</td><td>开仓</td><td>限价</td><td>4503.4</td><td>1</td><td>18751.9s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_12；接受时间：—；终态时间：2026-09-01T17:04:36+08:00</p><p>后继报价：<a href="#order-quote-8-buy">quote-8-buy</a>, <a href="#order-quote-8-sell">quote-8-sell</a></p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18751.9s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-7-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4503.400000000001,
+  &quot;quote_group_id&quot;: &quot;7&quot;,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18751.9s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18751.9s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:57:16+08:00</li><li><span class="label">审计时钟 18751.9s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:36+08:00</li><li><span class="label">审计时钟 18758.8s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-7-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_12&quot;,
+  &quot;safety&quot;: true,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18758.8s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:36+08:00</li><li><span class="label">审计时钟 18758.8s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:04:36+08:00</li></ol><ol class="trace"><li><strong>首次报价</strong><div>报价计算：锚点 4502.6，距离 4 tick；买价 4501.8，卖价 4503.4。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.2,
+  &quot;bid_price&quot;: 4503.2,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4502.6,
+  &quot;anchor_ticks&quot;: 22513,
+  &quot;buy_price&quot;: 4501.8,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.400000000001,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:36+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_12&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;7&quot;
+}</pre></div></details></li><li><strong>盘口保护失败，暂停报价</strong><div>盘口保护未通过：报价距离 4 tick 未严格大于保护倍数 0.5 × 盘口价差 9 tick，因此安全撤销当前报价并暂停。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.0,
+  &quot;bid_price&quot;: 4502.2,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;comparison&quot;: &quot;distance_ticks &gt; protection_multiple * spread_ticks&quot;,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;passed&quot;: false,
+  &quot;protection_multiple&quot;: 0.5,
+  &quot;spread_ticks&quot;: 9,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:36+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_12&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>旧报价已终态，重新获得报价资格</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;next_state&quot;: &quot;WAITING_FOR_STABLE_QUOTE&quot;,
+  &quot;reason&quot;: &quot;market_pause&quot;
+}</pre></div></details></li></ol></details></td></tr><tr id="order-quote-8-buy"><td>quote-8-buy</td><td>网格报价</td><td>买</td><td>开仓</td><td>限价</td><td>4501.8</td><td>1</td><td>18762.9s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_13；接受时间：—；终态时间：2026-09-01T17:04:47+08:00</p><p>后继报价：<a href="#order-quote-9-buy">quote-9-buy</a>, <a href="#order-quote-9-sell">quote-9-sell</a></p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18762.9s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-8-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4501.8,
+  &quot;quote_group_id&quot;: &quot;8&quot;,
+  &quot;side&quot;: &quot;BUY&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18762.9s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18763.0s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:57:27+08:00</li><li><span class="label">审计时钟 18763.0s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:47+08:00</li><li><span class="label">审计时钟 18765.5s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-8-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_13&quot;,
+  &quot;safety&quot;: false,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18765.6s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:47+08:00</li><li><span class="label">审计时钟 18765.6s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:04:47+08:00</li></ol><ol class="trace"><li><strong>替代报价提交</strong><div>报价计算：锚点 4502.6，距离 4 tick；买价 4501.8，卖价 4503.4。</div><div>替代前驱：<a href="#order-quote-7-buy">quote-7-buy</a>, <a href="#order-quote-7-sell">quote-7-sell</a>；替代原因：盘口保护失败（价差过宽或盘口无效），安全撤销双边报价并暂停，待行情重新达标后再挂</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4503.2,
+  &quot;bid_price&quot;: 4502.2,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4502.6,
+  &quot;anchor_ticks&quot;: 22513,
+  &quot;buy_price&quot;: 4501.8,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.400000000001,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:47+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_13&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;8&quot;
+}</pre></div></details></li><li><strong>价格越界，重定锚</strong><div>价格越带触发重定锚：锚点 22513 → 22515 tick，越界已持续 1.0s （确认阈值 1.0s）。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4502.8,
+  &quot;bid_price&quot;: 4502.4,
+  &quot;last_price&quot;: 4503.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;confirmation_seconds&quot;: 1,
+  &quot;current_ticks&quot;: 22516,
+  &quot;elapsed_seconds&quot;: 1.0152359579988115,
+  &quot;lower_bound_ticks&quot;: 22512,
+  &quot;new_anchor_price&quot;: 4503.0,
+  &quot;new_anchor_ticks&quot;: 22515,
+  &quot;old_anchor_price&quot;: 4502.6,
+  &quot;old_anchor_ticks&quot;: 22513,
+  &quot;outside_since&quot;: 18764.47085075,
+  &quot;s_ticks&quot;: 1,
+  &quot;upper_bound_ticks&quot;: 22514,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:47+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_13&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>旧报价已终态，重新获得报价资格</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;next_state&quot;: &quot;WAITING_FOR_STABLE_QUOTE&quot;,
+  &quot;reason&quot;: &quot;reanchor&quot;
+}</pre></div></details></li></ol></details></td></tr><tr id="order-quote-8-sell"><td>quote-8-sell</td><td>网格报价</td><td>卖</td><td>开仓</td><td>限价</td><td>4503.4</td><td>1</td><td>18762.9s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_14；接受时间：—；终态时间：2026-09-01T17:04:47+08:00</p><p>后继报价：<a href="#order-quote-9-buy">quote-9-buy</a>, <a href="#order-quote-9-sell">quote-9-sell</a></p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18762.9s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-8-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4503.400000000001,
+  &quot;quote_group_id&quot;: &quot;8&quot;,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18762.9s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18763.0s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:57:27+08:00</li><li><span class="label">审计时钟 18763.0s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:47+08:00</li><li><span class="label">审计时钟 18765.5s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-8-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_14&quot;,
+  &quot;safety&quot;: false,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18765.6s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:47+08:00</li><li><span class="label">审计时钟 18765.6s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:04:47+08:00</li></ol><ol class="trace"><li><strong>替代报价提交</strong><div>报价计算：锚点 4502.6，距离 4 tick；买价 4501.8，卖价 4503.4。</div><div>替代前驱：<a href="#order-quote-7-buy">quote-7-buy</a>, <a href="#order-quote-7-sell">quote-7-sell</a>；替代原因：盘口保护失败（价差过宽或盘口无效），安全撤销双边报价并暂停，待行情重新达标后再挂</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4503.2,
+  &quot;bid_price&quot;: 4502.2,
+  &quot;last_price&quot;: 4502.6,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4502.6,
+  &quot;anchor_ticks&quot;: 22513,
+  &quot;buy_price&quot;: 4501.8,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.400000000001,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:47+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_14&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;8&quot;
+}</pre></div></details></li><li><strong>价格越界，重定锚</strong><div>价格越带触发重定锚：锚点 22513 → 22515 tick，越界已持续 1.0s （确认阈值 1.0s）。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4502.8,
+  &quot;bid_price&quot;: 4502.4,
+  &quot;last_price&quot;: 4503.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;confirmation_seconds&quot;: 1,
+  &quot;current_ticks&quot;: 22516,
+  &quot;elapsed_seconds&quot;: 1.0152359579988115,
+  &quot;lower_bound_ticks&quot;: 22512,
+  &quot;new_anchor_price&quot;: 4503.0,
+  &quot;new_anchor_ticks&quot;: 22515,
+  &quot;old_anchor_price&quot;: 4502.6,
+  &quot;old_anchor_ticks&quot;: 22513,
+  &quot;outside_since&quot;: 18764.47085075,
+  &quot;s_ticks&quot;: 1,
+  &quot;upper_bound_ticks&quot;: 22514,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:47+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_14&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>旧报价已终态，重新获得报价资格</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;next_state&quot;: &quot;WAITING_FOR_STABLE_QUOTE&quot;,
+  &quot;reason&quot;: &quot;reanchor&quot;
+}</pre></div></details></li></ol></details></td></tr><tr id="order-quote-9-buy"><td>quote-9-buy</td><td>网格报价</td><td>买</td><td>开仓</td><td>限价</td><td>4502.2</td><td>1</td><td>18768.9s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_15；接受时间：—；终态时间：2026-09-01T17:04:53+08:00</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18768.9s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-9-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4502.2,
+  &quot;quote_group_id&quot;: &quot;9&quot;,
+  &quot;side&quot;: &quot;BUY&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18768.9s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18769.1s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:57:33+08:00</li><li><span class="label">审计时钟 18769.1s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:53+08:00</li><li><span class="label">审计时钟 18783.2s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-9-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_15&quot;,
+  &quot;safety&quot;: true,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18783.3s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:53+08:00</li><li><span class="label">审计时钟 18783.3s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:04:53+08:00</li></ol><ol class="trace"><li><strong>替代报价提交</strong><div>报价计算：锚点 4503，距离 4 tick；买价 4502.2，卖价 4503.8。</div><div>替代前驱：<a href="#order-quote-8-buy">quote-8-buy</a>, <a href="#order-quote-8-sell">quote-8-sell</a>；替代原因：最新价持续越出网格带，确认后撤旧单并重定锚点，再走稳定行情门槛重新报价</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4502.8,
+  &quot;bid_price&quot;: 4502.2,
+  &quot;last_price&quot;: 4503.2,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4503.0,
+  &quot;anchor_ticks&quot;: 22515,
+  &quot;buy_price&quot;: 4502.2,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.8,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:53+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_15&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;9&quot;
+}</pre></div></details></li><li><strong>价差窗口超时</strong><div>窗口超时：2.0s / 1.0s，净仓 -1，开始受限平仓。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;elapsed_seconds&quot;: 1.9927882910014887,
+  &quot;ended_at&quot;: 18782.970753541,
+  &quot;net_position&quot;: -1,
+  &quot;reason&quot;: &quot;window_timeout&quot;,
+  &quot;window_seconds&quot;: 1,
+  &quot;window_started_at&quot;: 18780.97796525
+}</pre></div></details></li><li><strong>撤销剩余委托</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;active_client_ids&quot;: [
+    &quot;quote-9-buy&quot;
+  ],
+  &quot;net_position&quot;: 0,
+  &quot;pending_client_ids&quot;: [],
+  &quot;reason&quot;: &quot;flatten_complete&quot;
+}</pre></div></details></li><li><strong>撤销剩余委托</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;active_client_ids&quot;: [
+    &quot;quote-9-buy&quot;
+  ],
+  &quot;net_position&quot;: 0,
+  &quot;pending_client_ids&quot;: [],
+  &quot;reason&quot;: &quot;flatten_complete&quot;
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:53+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_15&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-quote-9-sell"><td>quote-9-sell</td><td>网格报价</td><td>卖</td><td>开仓</td><td>限价</td><td>4503.8</td><td>1</td><td>18768.9s</td><td>提交中 → 未成交 → 全部成交</td><td>全部成交</td><td>1</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_16；接受时间：—；终态时间：2026-09-01T17:04:53+08:00</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18768.9s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-9-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4503.8,
+  &quot;quote_group_id&quot;: &quot;9&quot;,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18768.9s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18769.1s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:57:33+08:00</li><li><span class="label">审计时钟 18769.1s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:53+08:00</li><li><span class="label">审计时钟 18781.1s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:04:53+08:00</li><li><span class="label">审计时钟 18781.1s</span>状态 全部成交，累计成交 1；交易所时间 2026-09-01T17:04:53+08:00</li></ol><ol class="trace"><li><strong>替代报价提交</strong><div>报价计算：锚点 4503，距离 4 tick；买价 4502.2，卖价 4503.8。</div><div>替代前驱：<a href="#order-quote-8-buy">quote-8-buy</a>, <a href="#order-quote-8-sell">quote-8-sell</a>；替代原因：最新价持续越出网格带，确认后撤旧单并重定锚点，再走稳定行情门槛重新报价</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4502.8,
+  &quot;bid_price&quot;: 4502.2,
+  &quot;last_price&quot;: 4503.2,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4503.0,
+  &quot;anchor_ticks&quot;: 22515,
+  &quot;buy_price&quot;: 4502.2,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.8,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:53+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_16&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;9&quot;
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:53+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_16&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;ALLTRADED&quot;,
+  &quot;traded&quot;: 1,
+  &quot;traded_delta&quot;: 1,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>首次成交，进入价差窗口</strong><div>成交 4503.8 × 1，进入 1.0s 价差窗口，结束时刻 18782.0s。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:04:53+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_16&quot;,
+  &quot;price&quot;: 4503.8,
+  &quot;reason&quot;: &quot;first_fill&quot;,
+  &quot;trade_id&quot;: &quot;&quot;,
+  &quot;volume&quot;: 1,
+  &quot;window_ends_at&quot;: 18781.97796525,
+  &quot;window_seconds&quot;: 1,
+  &quot;window_started_at&quot;: 18780.97796525
+}</pre></div></details></li></ol><h4>成交</h4><details><summary>成交明细</summary><pre>[
+  {
+    &quot;at&quot;: 18781.109885958,
+    &quot;client_id&quot;: &quot;quote-9-sell&quot;,
+    &quot;exchange&quot;: &quot;CFFEX&quot;,
+    &quot;exchange_time&quot;: &quot;2026-09-01T17:05:05+08:00&quot;,
+    &quot;order_id&quot;: &quot;1_909642209_16&quot;,
+    &quot;price&quot;: 4503.8,
+    &quot;side&quot;: &quot;SELL&quot;,
+    &quot;symbol&quot;: &quot;IF2610&quot;,
+    &quot;trade_id&quot;: &quot;        2201&quot;,
+    &quot;volume&quot;: 1
+  }
+]</pre></details></details></td></tr><tr id="order-flatten-10"><td>flatten-10</td><td>FAK 平仓</td><td>买</td><td>平仓</td><td>FAK</td><td>4505</td><td>1</td><td>18783.0s</td><td>提交中 → 全部成交</td><td>全部成交</td><td>1</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_17；接受时间：—；终态时间：2026-09-01T17:05:07+08:00</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18783.0s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-10&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4505.0,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;BUY&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18783.0s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18783.2s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:57:47+08:00</li><li><span class="label">审计时钟 18783.2s</span>状态 提交中，累计成交 0；交易所时间 2026-09-01T17:05:07+08:00</li><li><span class="label">审计时钟 18783.2s</span>状态 全部成交，累计成交 1；交易所时间 2026-09-01T17:05:07+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 买，开平 平仓，数量 1，第 3 次尝试；盘口可执行价 4505，初始价 4505，不利上限 4507，实际委托价 4505。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4505.0,
+  &quot;bid_price&quot;: 4504.0,
+  &quot;last_price&quot;: 4502.8
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4505.0,
+  &quot;adverse_price_limit&quot;: 4507.0,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4505.0,
+  &quot;market_executable_price&quot;: 4505.0,
+  &quot;net_position&quot;: -1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 3,
+  &quot;side&quot;: &quot;BUY&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:05:07+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_17&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;ALLTRADED&quot;,
+  &quot;traded&quot;: 1,
+  &quot;traded_delta&quot;: 1,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 终态：全部成交 1 / 1，本笔平仓完成。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_17&quot;,
+  &quot;status&quot;: &quot;ALLTRADED&quot;,
+  &quot;traded&quot;: 1,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol><h4>成交</h4><details><summary>成交明细</summary><pre>[
+  {
+    &quot;at&quot;: 18783.20472975,
+    &quot;client_id&quot;: &quot;flatten-10&quot;,
+    &quot;exchange&quot;: &quot;CFFEX&quot;,
+    &quot;exchange_time&quot;: &quot;2026-09-01T17:05:07+08:00&quot;,
+    &quot;order_id&quot;: &quot;1_909642209_17&quot;,
+    &quot;price&quot;: 4505.0,
+    &quot;side&quot;: &quot;BUY&quot;,
+    &quot;symbol&quot;: &quot;IF2610&quot;,
+    &quot;trade_id&quot;: &quot;        2203&quot;,
+    &quot;volume&quot;: 1
+  }
+]</pre></details></details></td></tr><tr id="order-quote-11-buy"><td>quote-11-buy</td><td>网格报价</td><td>买</td><td>开仓</td><td>限价</td><td>4502</td><td>1</td><td>18807.1s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_18；接受时间：—；终态时间：2026-09-01T17:05:31+08:00</p><p>后继报价：<a href="#order-quote-12-buy">quote-12-buy</a>, <a href="#order-quote-12-sell">quote-12-sell</a></p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18807.1s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-11-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4502.0,
+  &quot;quote_group_id&quot;: &quot;11&quot;,
+  &quot;side&quot;: &quot;BUY&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18807.1s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18807.1s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:58:11+08:00</li><li><span class="label">审计时钟 18807.1s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:05:31+08:00</li><li><span class="label">审计时钟 18809.5s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-11-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_18&quot;,
+  &quot;safety&quot;: false,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18809.6s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:05:31+08:00</li><li><span class="label">审计时钟 18809.6s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:05:31+08:00</li></ol><ol class="trace"><li><strong>首次报价</strong><div>报价计算：锚点 4502.8，距离 4 tick；买价 4502，卖价 4503.6。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.4,
+  &quot;bid_price&quot;: 4503.2,
+  &quot;last_price&quot;: 4504.2,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4502.8,
+  &quot;anchor_ticks&quot;: 22514,
+  &quot;buy_price&quot;: 4502.0,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.6,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:05:31+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_18&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;11&quot;
+}</pre></div></details></li><li><strong>价格越界，重定锚</strong><div>价格越带触发重定锚：锚点 22514 → 22520 tick，越界已持续 2.0s （确认阈值 1.0s）。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.0,
+  &quot;bid_price&quot;: 4503.2,
+  &quot;last_price&quot;: 4504.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;confirmation_seconds&quot;: 1,
+  &quot;current_ticks&quot;: 22521,
+  &quot;elapsed_seconds&quot;: 2.000548957999854,
+  &quot;lower_bound_ticks&quot;: 22513,
+  &quot;new_anchor_price&quot;: 4504.0,
+  &quot;new_anchor_ticks&quot;: 22520,
+  &quot;old_anchor_price&quot;: 4502.8,
+  &quot;old_anchor_ticks&quot;: 22514,
+  &quot;outside_since&quot;: 18807.470895833,
+  &quot;s_ticks&quot;: 1,
+  &quot;upper_bound_ticks&quot;: 22515,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:05:31+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_18&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>旧报价已终态，重新获得报价资格</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;next_state&quot;: &quot;WAITING_FOR_STABLE_QUOTE&quot;,
+  &quot;reason&quot;: &quot;reanchor&quot;
+}</pre></div></details></li></ol></details></td></tr><tr id="order-quote-11-sell"><td>quote-11-sell</td><td>网格报价</td><td>卖</td><td>开仓</td><td>限价</td><td>4503.6</td><td>1</td><td>18807.1s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_19；接受时间：—；终态时间：2026-09-01T17:05:31+08:00</p><p>后继报价：<a href="#order-quote-12-buy">quote-12-buy</a>, <a href="#order-quote-12-sell">quote-12-sell</a></p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18807.1s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-11-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4503.6,
+  &quot;quote_group_id&quot;: &quot;11&quot;,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18807.1s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18807.1s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:58:11+08:00</li><li><span class="label">审计时钟 18807.1s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:05:31+08:00</li><li><span class="label">审计时钟 18809.5s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-11-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_19&quot;,
+  &quot;safety&quot;: false,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18809.6s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:05:31+08:00</li><li><span class="label">审计时钟 18809.6s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:05:31+08:00</li></ol><ol class="trace"><li><strong>首次报价</strong><div>报价计算：锚点 4502.8，距离 4 tick；买价 4502，卖价 4503.6。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.4,
+  &quot;bid_price&quot;: 4503.2,
+  &quot;last_price&quot;: 4504.2,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4502.8,
+  &quot;anchor_ticks&quot;: 22514,
+  &quot;buy_price&quot;: 4502.0,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4503.6,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:05:31+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_19&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;11&quot;
+}</pre></div></details></li><li><strong>价格越界，重定锚</strong><div>价格越带触发重定锚：锚点 22514 → 22520 tick，越界已持续 2.0s （确认阈值 1.0s）。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.0,
+  &quot;bid_price&quot;: 4503.2,
+  &quot;last_price&quot;: 4504.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;confirmation_seconds&quot;: 1,
+  &quot;current_ticks&quot;: 22521,
+  &quot;elapsed_seconds&quot;: 2.000548957999854,
+  &quot;lower_bound_ticks&quot;: 22513,
+  &quot;new_anchor_price&quot;: 4504.0,
+  &quot;new_anchor_ticks&quot;: 22520,
+  &quot;old_anchor_price&quot;: 4502.8,
+  &quot;old_anchor_ticks&quot;: 22514,
+  &quot;outside_since&quot;: 18807.470895833,
+  &quot;s_ticks&quot;: 1,
+  &quot;upper_bound_ticks&quot;: 22515,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:05:31+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_19&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>旧报价已终态，重新获得报价资格</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;next_state&quot;: &quot;WAITING_FOR_STABLE_QUOTE&quot;,
+  &quot;reason&quot;: &quot;reanchor&quot;
+}</pre></div></details></li></ol></details></td></tr><tr id="order-quote-12-buy"><td>quote-12-buy</td><td>网格报价</td><td>买</td><td>开仓</td><td>限价</td><td>4503.2</td><td>1</td><td>18814.1s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_20；接受时间：—；终态时间：2026-09-01T17:05:38+08:00</p><p>后继报价：<a href="#order-quote-13-buy">quote-13-buy</a>, <a href="#order-quote-13-sell">quote-13-sell</a></p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18814.1s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-12-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4503.2,
+  &quot;quote_group_id&quot;: &quot;12&quot;,
+  &quot;side&quot;: &quot;BUY&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18814.1s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18814.2s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:58:18+08:00</li><li><span class="label">审计时钟 18814.2s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:05:38+08:00</li><li><span class="label">审计时钟 18833.5s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-12-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_20&quot;,
+  &quot;safety&quot;: false,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18833.6s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:05:38+08:00</li><li><span class="label">审计时钟 18833.6s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:05:38+08:00</li></ol><ol class="trace"><li><strong>替代报价提交</strong><div>报价计算：锚点 4504，距离 4 tick；买价 4503.2，卖价 4504.8。</div><div>替代前驱：<a href="#order-quote-11-buy">quote-11-buy</a>, <a href="#order-quote-11-sell">quote-11-sell</a>；替代原因：最新价持续越出网格带，确认后撤旧单并重定锚点，再走稳定行情门槛重新报价</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4503.8,
+  &quot;bid_price&quot;: 4503.2,
+  &quot;last_price&quot;: 4504.2,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4504.0,
+  &quot;anchor_ticks&quot;: 22520,
+  &quot;buy_price&quot;: 4503.2,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4504.8,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:05:38+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_20&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;12&quot;
+}</pre></div></details></li><li><strong>价格越界，重定锚</strong><div>价格越带触发重定锚：锚点 22520 → 22525 tick，越界已持续 1.0s （确认阈值 1.0s）。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4505.2,
+  &quot;bid_price&quot;: 4504.0,
+  &quot;last_price&quot;: 4505.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;confirmation_seconds&quot;: 1,
+  &quot;current_ticks&quot;: 22526,
+  &quot;elapsed_seconds&quot;: 1.0475431660015602,
+  &quot;lower_bound_ticks&quot;: 22519,
+  &quot;new_anchor_price&quot;: 4505.0,
+  &quot;new_anchor_ticks&quot;: 22525,
+  &quot;old_anchor_price&quot;: 4504.0,
+  &quot;old_anchor_ticks&quot;: 22520,
+  &quot;outside_since&quot;: 18832.49156825,
+  &quot;s_ticks&quot;: 1,
+  &quot;upper_bound_ticks&quot;: 22521,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:05:38+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_20&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>旧报价已终态，重新获得报价资格</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;next_state&quot;: &quot;WAITING_FOR_STABLE_QUOTE&quot;,
+  &quot;reason&quot;: &quot;reanchor&quot;
+}</pre></div></details></li></ol></details></td></tr><tr id="order-quote-12-sell"><td>quote-12-sell</td><td>网格报价</td><td>卖</td><td>开仓</td><td>限价</td><td>4504.8</td><td>1</td><td>18814.1s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_21；接受时间：—；终态时间：2026-09-01T17:05:38+08:00</p><p>后继报价：<a href="#order-quote-13-buy">quote-13-buy</a>, <a href="#order-quote-13-sell">quote-13-sell</a></p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18814.1s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-12-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4504.8,
+  &quot;quote_group_id&quot;: &quot;12&quot;,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18814.1s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18814.2s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:58:18+08:00</li><li><span class="label">审计时钟 18814.2s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:05:38+08:00</li><li><span class="label">审计时钟 18833.5s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-12-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_21&quot;,
+  &quot;safety&quot;: false,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18833.6s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:05:38+08:00</li><li><span class="label">审计时钟 18833.6s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:05:38+08:00</li></ol><ol class="trace"><li><strong>替代报价提交</strong><div>报价计算：锚点 4504，距离 4 tick；买价 4503.2，卖价 4504.8。</div><div>替代前驱：<a href="#order-quote-11-buy">quote-11-buy</a>, <a href="#order-quote-11-sell">quote-11-sell</a>；替代原因：最新价持续越出网格带，确认后撤旧单并重定锚点，再走稳定行情门槛重新报价</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4503.8,
+  &quot;bid_price&quot;: 4503.2,
+  &quot;last_price&quot;: 4504.2,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4504.0,
+  &quot;anchor_ticks&quot;: 22520,
+  &quot;buy_price&quot;: 4503.2,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4504.8,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:05:38+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_21&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;12&quot;
+}</pre></div></details></li><li><strong>价格越界，重定锚</strong><div>价格越带触发重定锚：锚点 22520 → 22525 tick，越界已持续 1.0s （确认阈值 1.0s）。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4505.2,
+  &quot;bid_price&quot;: 4504.0,
+  &quot;last_price&quot;: 4505.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;confirmation_seconds&quot;: 1,
+  &quot;current_ticks&quot;: 22526,
+  &quot;elapsed_seconds&quot;: 1.0475431660015602,
+  &quot;lower_bound_ticks&quot;: 22519,
+  &quot;new_anchor_price&quot;: 4505.0,
+  &quot;new_anchor_ticks&quot;: 22525,
+  &quot;old_anchor_price&quot;: 4504.0,
+  &quot;old_anchor_ticks&quot;: 22520,
+  &quot;outside_since&quot;: 18832.49156825,
+  &quot;s_ticks&quot;: 1,
+  &quot;upper_bound_ticks&quot;: 22521,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:05:38+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_21&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>旧报价已终态，重新获得报价资格</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;next_state&quot;: &quot;WAITING_FOR_STABLE_QUOTE&quot;,
+  &quot;reason&quot;: &quot;reanchor&quot;
+}</pre></div></details></li></ol></details></td></tr><tr id="order-quote-13-buy"><td>quote-13-buy</td><td>网格报价</td><td>买</td><td>开仓</td><td>限价</td><td>4504.2</td><td>1</td><td>18838.2s</td><td>提交中 → 未成交 → 全部成交</td><td>全部成交</td><td>1</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_22；接受时间：—；终态时间：2026-09-01T17:06:02+08:00</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18838.2s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-13-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4504.2,
+  &quot;quote_group_id&quot;: &quot;13&quot;,
+  &quot;side&quot;: &quot;BUY&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18838.2s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18838.3s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:58:42+08:00</li><li><span class="label">审计时钟 18838.3s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:06:02+08:00</li><li><span class="label">审计时钟 18839.0s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:06:02+08:00</li><li><span class="label">审计时钟 18839.0s</span>状态 全部成交，累计成交 1；交易所时间 2026-09-01T17:06:02+08:00</li></ol><ol class="trace"><li><strong>替代报价提交</strong><div>报价计算：锚点 4505，距离 4 tick；买价 4504.2，卖价 4505.8。</div><div>替代前驱：<a href="#order-quote-12-buy">quote-12-buy</a>, <a href="#order-quote-12-sell">quote-12-sell</a>；替代原因：最新价持续越出网格带，确认后撤旧单并重定锚点，再走稳定行情门槛重新报价</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4505.0,
+  &quot;bid_price&quot;: 4503.8,
+  &quot;last_price&quot;: 4505.2,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4505.0,
+  &quot;anchor_ticks&quot;: 22525,
+  &quot;buy_price&quot;: 4504.2,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4505.8,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:06:02+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_22&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;13&quot;
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:06:02+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_22&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;ALLTRADED&quot;,
+  &quot;traded&quot;: 1,
+  &quot;traded_delta&quot;: 1,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>首次成交，进入价差窗口</strong><div>成交 4504.2 × 1，进入 1.0s 价差窗口，结束时刻 18840.0s。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:06:02+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_22&quot;,
+  &quot;price&quot;: 4504.2,
+  &quot;reason&quot;: &quot;first_fill&quot;,
+  &quot;trade_id&quot;: &quot;&quot;,
+  &quot;volume&quot;: 1,
+  &quot;window_ends_at&quot;: 18839.979239958,
+  &quot;window_seconds&quot;: 1,
+  &quot;window_started_at&quot;: 18838.979239958
+}</pre></div></details></li></ol><h4>成交</h4><details><summary>成交明细</summary><pre>[
+  {
+    &quot;at&quot;: 18838.980224125,
+    &quot;client_id&quot;: &quot;quote-13-buy&quot;,
+    &quot;exchange&quot;: &quot;CFFEX&quot;,
+    &quot;exchange_time&quot;: &quot;2026-09-01T17:06:03+08:00&quot;,
+    &quot;order_id&quot;: &quot;1_909642209_22&quot;,
+    &quot;price&quot;: 4504.2,
+    &quot;side&quot;: &quot;BUY&quot;,
+    &quot;symbol&quot;: &quot;IF2610&quot;,
+    &quot;trade_id&quot;: &quot;        2219&quot;,
+    &quot;volume&quot;: 1
+  }
+]</pre></details></details></td></tr><tr id="order-quote-13-sell"><td>quote-13-sell</td><td>网格报价</td><td>卖</td><td>开仓</td><td>限价</td><td>4505.8</td><td>1</td><td>18838.2s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_23；接受时间：—；终态时间：2026-09-01T17:06:02+08:00</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18838.2s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-13-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4505.8,
+  &quot;quote_group_id&quot;: &quot;13&quot;,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18838.2s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18838.3s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:58:42+08:00</li><li><span class="label">审计时钟 18838.3s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:06:02+08:00</li><li><span class="label">审计时钟 18840.6s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-13-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_23&quot;,
+  &quot;safety&quot;: true,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 18840.7s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:06:02+08:00</li><li><span class="label">审计时钟 18840.7s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:06:02+08:00</li></ol><ol class="trace"><li><strong>替代报价提交</strong><div>报价计算：锚点 4505，距离 4 tick；买价 4504.2，卖价 4505.8。</div><div>替代前驱：<a href="#order-quote-12-buy">quote-12-buy</a>, <a href="#order-quote-12-sell">quote-12-sell</a>；替代原因：最新价持续越出网格带，确认后撤旧单并重定锚点，再走稳定行情门槛重新报价</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4505.0,
+  &quot;bid_price&quot;: 4503.8,
+  &quot;last_price&quot;: 4505.2,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4505.0,
+  &quot;anchor_ticks&quot;: 22525,
+  &quot;buy_price&quot;: 4504.2,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4505.8,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:06:02+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_23&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;13&quot;
+}</pre></div></details></li><li><strong>价差窗口超时</strong><div>窗口超时：1.2s / 1.0s，净仓 1，开始受限平仓。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;elapsed_seconds&quot;: 1.204837375000352,
+  &quot;ended_at&quot;: 18840.184077333,
+  &quot;net_position&quot;: 1,
+  &quot;reason&quot;: &quot;window_timeout&quot;,
+  &quot;window_seconds&quot;: 1,
+  &quot;window_started_at&quot;: 18838.979239958
+}</pre></div></details></li><li><strong>撤销剩余委托</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;active_client_ids&quot;: [
+    &quot;quote-13-sell&quot;
+  ],
+  &quot;net_position&quot;: 0,
+  &quot;pending_client_ids&quot;: [],
+  &quot;reason&quot;: &quot;flatten_complete&quot;
+}</pre></div></details></li><li><strong>撤销剩余委托</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;active_client_ids&quot;: [
+    &quot;quote-13-sell&quot;
+  ],
+  &quot;net_position&quot;: 0,
+  &quot;pending_client_ids&quot;: [],
+  &quot;reason&quot;: &quot;flatten_complete&quot;
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:06:02+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_23&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-14"><td>flatten-14</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4503.4</td><td>1</td><td>18840.2s</td><td>提交中 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_24；接受时间：—；终态时间：2026-09-01T17:06:04+08:00</p><p>撤销说明：本单为 FAK 平仓且完全未成交；交易所按 Fill-And-Kill 规则即时撤销未成交部分，不是策略主动撤单。若净仓仍未归零，会在不利上限内继续重报。</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18840.2s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-14&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4503.4,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18840.2s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18840.2s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:58:44+08:00</li><li><span class="label">审计时钟 18840.2s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:06:04+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 4 次尝试；盘口可执行价 4503.4，初始价 4503.4，不利上限 4501.4，实际委托价 4503.4。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.4,
+  &quot;bid_price&quot;: 4503.4,
+  &quot;last_price&quot;: 4505.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4503.4,
+  &quot;adverse_price_limit&quot;: 4501.4,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.4,
+  &quot;market_executable_price&quot;: 4503.4,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 4,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:06:04+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_24&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 撤销原因：本笔完全未成交，交易所按 Fill-And-Kill（FAK）规则即时撤销未成交部分；审计中无策略撤单动作。若净仓仍未归零，会话会在不利上限内继续重报。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_24&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-15"><td>flatten-15</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4503.4</td><td>1</td><td>18840.2s</td><td>提交中 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_25；接受时间：—；终态时间：2026-09-01T17:06:04+08:00</p><p>撤销说明：本单为 FAK 平仓且完全未成交；交易所按 Fill-And-Kill 规则即时撤销未成交部分，不是策略主动撤单。若净仓仍未归零，会在不利上限内继续重报。</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18840.2s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-15&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4503.4,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18840.2s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18840.4s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:58:44+08:00</li><li><span class="label">审计时钟 18840.4s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:06:04+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 5 次尝试；盘口可执行价 4503.4，初始价 4503.4，不利上限 4501.4，实际委托价 4503.4。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.4,
+  &quot;bid_price&quot;: 4503.4,
+  &quot;last_price&quot;: 4505.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4503.4,
+  &quot;adverse_price_limit&quot;: 4501.4,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.4,
+  &quot;market_executable_price&quot;: 4503.4,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 5,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:06:04+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_25&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 撤销原因：本笔完全未成交，交易所按 Fill-And-Kill（FAK）规则即时撤销未成交部分；审计中无策略撤单动作。若净仓仍未归零，会话会在不利上限内继续重报。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_25&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-16"><td>flatten-16</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4503.4</td><td>1</td><td>18840.4s</td><td>提交中 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_26；接受时间：—；终态时间：2026-09-01T17:06:04+08:00</p><p>撤销说明：本单为 FAK 平仓且完全未成交；交易所按 Fill-And-Kill 规则即时撤销未成交部分，不是策略主动撤单。若净仓仍未归零，会在不利上限内继续重报。</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18840.4s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-16&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4503.4,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18840.4s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18840.4s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:58:44+08:00</li><li><span class="label">审计时钟 18840.4s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:06:04+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 6 次尝试；盘口可执行价 4503.4，初始价 4503.4，不利上限 4501.4，实际委托价 4503.4。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.4,
+  &quot;bid_price&quot;: 4503.4,
+  &quot;last_price&quot;: 4505.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4503.4,
+  &quot;adverse_price_limit&quot;: 4501.4,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.4,
+  &quot;market_executable_price&quot;: 4503.4,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 6,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:06:04+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_26&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 撤销原因：本笔完全未成交，交易所按 Fill-And-Kill（FAK）规则即时撤销未成交部分；审计中无策略撤单动作。若净仓仍未归零，会话会在不利上限内继续重报。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_26&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-17"><td>flatten-17</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4503.4</td><td>1</td><td>18840.4s</td><td>提交中 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_27；接受时间：—；终态时间：2026-09-01T17:06:04+08:00</p><p>撤销说明：本单为 FAK 平仓且完全未成交；交易所按 Fill-And-Kill 规则即时撤销未成交部分，不是策略主动撤单。若净仓仍未归零，会在不利上限内继续重报。</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18840.4s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-17&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4503.4,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18840.4s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18840.4s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:58:44+08:00</li><li><span class="label">审计时钟 18840.4s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:06:04+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 7 次尝试；盘口可执行价 4503.4，初始价 4503.4，不利上限 4501.4，实际委托价 4503.4。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.4,
+  &quot;bid_price&quot;: 4503.4,
+  &quot;last_price&quot;: 4505.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4503.4,
+  &quot;adverse_price_limit&quot;: 4501.4,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.4,
+  &quot;market_executable_price&quot;: 4503.4,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 7,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:06:04+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_27&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 撤销原因：本笔完全未成交，交易所按 Fill-And-Kill（FAK）规则即时撤销未成交部分；审计中无策略撤单动作。若净仓仍未归零，会话会在不利上限内继续重报。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_27&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-18"><td>flatten-18</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4503.4</td><td>1</td><td>18840.4s</td><td>提交中 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_28；接受时间：—；终态时间：2026-09-01T17:06:05+08:00</p><p>撤销说明：本单为 FAK 平仓且完全未成交；交易所按 Fill-And-Kill 规则即时撤销未成交部分，不是策略主动撤单。若净仓仍未归零，会在不利上限内继续重报。</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18840.4s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-18&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4503.4,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18840.4s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18840.5s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:58:44+08:00</li><li><span class="label">审计时钟 18840.5s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:06:05+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 8 次尝试；盘口可执行价 4503.4，初始价 4503.4，不利上限 4501.4，实际委托价 4503.4。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.4,
+  &quot;bid_price&quot;: 4503.4,
+  &quot;last_price&quot;: 4505.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4503.4,
+  &quot;adverse_price_limit&quot;: 4501.4,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.4,
+  &quot;market_executable_price&quot;: 4503.4,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 8,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:06:05+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_28&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 撤销原因：本笔完全未成交，交易所按 Fill-And-Kill（FAK）规则即时撤销未成交部分；审计中无策略撤单动作。若净仓仍未归零，会话会在不利上限内继续重报。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_28&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-19"><td>flatten-19</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4503.2</td><td>1</td><td>18840.5s</td><td>提交中 → 全部成交</td><td>全部成交</td><td>1</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_29；接受时间：—；终态时间：2026-09-01T17:06:05+08:00</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 18840.5s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-19&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4503.2,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 18840.5s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 18840.6s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T16:58:45+08:00</li><li><span class="label">审计时钟 18840.6s</span>状态 提交中，累计成交 0；交易所时间 2026-09-01T17:06:05+08:00</li><li><span class="label">审计时钟 18840.6s</span>状态 全部成交，累计成交 1；交易所时间 2026-09-01T17:06:05+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 9 次尝试；盘口可执行价 4503.2，初始价 4503.4，不利上限 4501.4，实际委托价 4503.2。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.6,
+  &quot;bid_price&quot;: 4503.2,
+  &quot;last_price&quot;: 4505.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4503.2,
+  &quot;adverse_price_limit&quot;: 4501.4,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.4,
+  &quot;market_executable_price&quot;: 4503.2,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 9,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:06:05+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_29&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;ALLTRADED&quot;,
+  &quot;traded&quot;: 1,
+  &quot;traded_delta&quot;: 1,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 终态：全部成交 1 / 1，本笔平仓完成。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_29&quot;,
+  &quot;status&quot;: &quot;ALLTRADED&quot;,
+  &quot;traded&quot;: 1,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol><h4>成交</h4><details><summary>成交明细</summary><pre>[
+  {
+    &quot;at&quot;: 18840.608267333,
+    &quot;client_id&quot;: &quot;flatten-19&quot;,
+    &quot;exchange&quot;: &quot;CFFEX&quot;,
+    &quot;exchange_time&quot;: &quot;2026-09-01T17:06:05+08:00&quot;,
+    &quot;order_id&quot;: &quot;1_909642209_29&quot;,
+    &quot;price&quot;: 4503.2,
+    &quot;side&quot;: &quot;SELL&quot;,
+    &quot;symbol&quot;: &quot;IF2610&quot;,
+    &quot;trade_id&quot;: &quot;        2220&quot;,
+    &quot;volume&quot;: 1
+  }
+]</pre></details></details></td></tr><tr id="order-quote-20-buy"><td>quote-20-buy</td><td>网格报价</td><td>买</td><td>开仓</td><td>限价</td><td>4504.4</td><td>1</td><td>19009.9s</td><td>提交中 → 未成交 → 全部成交</td><td>全部成交</td><td>1</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_30；接受时间：—；终态时间：2026-09-01T17:08:54+08:00</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 19009.9s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-20-buy&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4504.400000000001,
+  &quot;quote_group_id&quot;: &quot;20&quot;,
+  &quot;side&quot;: &quot;BUY&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 19009.9s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 19010.0s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T17:01:34+08:00</li><li><span class="label">审计时钟 19010.0s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:08:54+08:00</li><li><span class="label">审计时钟 19011.0s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:08:54+08:00</li><li><span class="label">审计时钟 19011.0s</span>状态 全部成交，累计成交 1；交易所时间 2026-09-01T17:08:54+08:00</li></ol><ol class="trace"><li><strong>首次报价</strong><div>报价计算：锚点 4505.2，距离 4 tick；买价 4504.4，卖价 4506。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.8,
+  &quot;bid_price&quot;: 4503.4,
+  &quot;last_price&quot;: 4503.2,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4505.2,
+  &quot;anchor_ticks&quot;: 22526,
+  &quot;buy_price&quot;: 4504.400000000001,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4506.0,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:08:54+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_30&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;20&quot;
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:08:54+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_30&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;ALLTRADED&quot;,
+  &quot;traded&quot;: 1,
+  &quot;traded_delta&quot;: 1,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>首次成交，进入价差窗口</strong><div>成交 4504.4 × 1，进入 1.0s 价差窗口，结束时刻 19012.0s。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:08:54+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_30&quot;,
+  &quot;price&quot;: 4504.400000000001,
+  &quot;reason&quot;: &quot;first_fill&quot;,
+  &quot;trade_id&quot;: &quot;&quot;,
+  &quot;volume&quot;: 1,
+  &quot;window_ends_at&quot;: 19011.98390475,
+  &quot;window_seconds&quot;: 1,
+  &quot;window_started_at&quot;: 19010.98390475
+}</pre></div></details></li></ol><h4>成交</h4><details><summary>成交明细</summary><pre>[
+  {
+    &quot;at&quot;: 19011.035033083,
+    &quot;client_id&quot;: &quot;quote-20-buy&quot;,
+    &quot;exchange&quot;: &quot;CFFEX&quot;,
+    &quot;exchange_time&quot;: &quot;2026-09-01T17:08:55+08:00&quot;,
+    &quot;order_id&quot;: &quot;1_909642209_30&quot;,
+    &quot;price&quot;: 4504.4,
+    &quot;side&quot;: &quot;BUY&quot;,
+    &quot;symbol&quot;: &quot;IF2610&quot;,
+    &quot;trade_id&quot;: &quot;        2253&quot;,
+    &quot;volume&quot;: 1
+  }
+]</pre></details></details></td></tr><tr id="order-quote-20-sell"><td>quote-20-sell</td><td>网格报价</td><td>卖</td><td>开仓</td><td>限价</td><td>4506</td><td>1</td><td>19009.9s</td><td>提交中 → 未成交 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_31；接受时间：—；终态时间：2026-09-01T17:08:54+08:00</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 19009.9s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-20-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;OPEN&quot;,
+  &quot;order_type&quot;: &quot;LIMIT&quot;,
+  &quot;price&quot;: 4506.0,
+  &quot;quote_group_id&quot;: &quot;20&quot;,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 19009.9s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 19010.0s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T17:01:34+08:00</li><li><span class="label">审计时钟 19010.0s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:08:54+08:00</li><li><span class="label">审计时钟 19013.6s</span>动作 撤单：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;quote-20-sell&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_31&quot;,
+  &quot;safety&quot;: true,
+  &quot;symbol&quot;: &quot;IF2610&quot;
+}</pre></details></li><li><span class="label">审计时钟 19013.6s</span>状态 未成交，累计成交 0；交易所时间 2026-09-01T17:08:54+08:00</li><li><span class="label">审计时钟 19013.6s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:08:54+08:00</li></ol><ol class="trace"><li><strong>首次报价</strong><div>报价计算：锚点 4505.2，距离 4 tick；买价 4504.4，卖价 4506。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.8,
+  &quot;bid_price&quot;: 4503.4,
+  &quot;last_price&quot;: 4503.2,
+  &quot;limit_down&quot;: 4112.6,
+  &quot;limit_up&quot;: 5026.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;anchor_price&quot;: 4505.2,
+  &quot;anchor_ticks&quot;: 22526,
+  &quot;buy_price&quot;: 4504.400000000001,
+  &quot;d_ticks&quot;: 3,
+  &quot;distance_ticks&quot;: 4,
+  &quot;pricetick&quot;: 0.2,
+  &quot;sell_price&quot;: 4506.0,
+  &quot;w_ticks&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:08:54+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_31&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;NOTTRADED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>quote_pair_accepted</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;quote_group_id&quot;: &quot;20&quot;
+}</pre></div></details></li><li><strong>价差窗口超时</strong><div>窗口超时：2.0s / 1.0s，净仓 1，开始受限平仓。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;elapsed_seconds&quot;: 1.9532856660007383,
+  &quot;ended_at&quot;: 19012.937190416,
+  &quot;net_position&quot;: 1,
+  &quot;reason&quot;: &quot;window_timeout&quot;,
+  &quot;window_seconds&quot;: 1,
+  &quot;window_started_at&quot;: 19010.98390475
+}</pre></div></details></li><li><strong>撤销剩余委托</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;active_client_ids&quot;: [
+    &quot;quote-20-sell&quot;
+  ],
+  &quot;net_position&quot;: 0,
+  &quot;pending_client_ids&quot;: [],
+  &quot;reason&quot;: &quot;flatten_complete&quot;
+}</pre></div></details></li><li><strong>撤销剩余委托</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;active_client_ids&quot;: [
+    &quot;quote-20-sell&quot;
+  ],
+  &quot;net_position&quot;: 0,
+  &quot;pending_client_ids&quot;: [],
+  &quot;reason&quot;: &quot;flatten_complete&quot;
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:08:54+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_31&quot;,
+  &quot;previous_status&quot;: &quot;NOTTRADED&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-21"><td>flatten-21</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4503.2</td><td>1</td><td>19012.9s</td><td>提交中 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_32；接受时间：—；终态时间：2026-09-01T17:08:57+08:00</p><p>撤销说明：本单为 FAK 平仓且完全未成交；交易所按 Fill-And-Kill 规则即时撤销未成交部分，不是策略主动撤单。若净仓仍未归零，会在不利上限内继续重报。</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 19012.9s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-21&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4503.2,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 19012.9s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 19013.0s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T17:01:37+08:00</li><li><span class="label">审计时钟 19013.0s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:08:57+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 10 次尝试；盘口可执行价 4503.2，初始价 4503.2，不利上限 4501.2，实际委托价 4503.2。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.2,
+  &quot;bid_price&quot;: 4503.2,
+  &quot;last_price&quot;: 4503.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4503.2,
+  &quot;adverse_price_limit&quot;: 4501.2,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.2,
+  &quot;market_executable_price&quot;: 4503.2,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 10,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:08:57+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_32&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 撤销原因：本笔完全未成交，交易所按 Fill-And-Kill（FAK）规则即时撤销未成交部分；审计中无策略撤单动作。若净仓仍未归零，会话会在不利上限内继续重报。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_32&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-22"><td>flatten-22</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4502.8</td><td>1</td><td>19013.0s</td><td>提交中 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_33；接受时间：—；终态时间：2026-09-01T17:08:57+08:00</p><p>撤销说明：本单为 FAK 平仓且完全未成交；交易所按 Fill-And-Kill 规则即时撤销未成交部分，不是策略主动撤单。若净仓仍未归零，会在不利上限内继续重报。</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 19013.0s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-22&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4502.8,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 19013.0s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 19013.1s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T17:01:37+08:00</li><li><span class="label">审计时钟 19013.1s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:08:57+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 11 次尝试；盘口可执行价 4502.8，初始价 4503.2，不利上限 4501.2，实际委托价 4502.8。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.0,
+  &quot;bid_price&quot;: 4502.8,
+  &quot;last_price&quot;: 4503.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4502.8,
+  &quot;adverse_price_limit&quot;: 4501.2,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.2,
+  &quot;market_executable_price&quot;: 4502.8,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 11,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:08:57+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_33&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 撤销原因：本笔完全未成交，交易所按 Fill-And-Kill（FAK）规则即时撤销未成交部分；审计中无策略撤单动作。若净仓仍未归零，会话会在不利上限内继续重报。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_33&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-23"><td>flatten-23</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4502.8</td><td>1</td><td>19013.1s</td><td>提交中 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_34；接受时间：—；终态时间：2026-09-01T17:08:57+08:00</p><p>撤销说明：本单为 FAK 平仓且完全未成交；交易所按 Fill-And-Kill 规则即时撤销未成交部分，不是策略主动撤单。若净仓仍未归零，会在不利上限内继续重报。</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 19013.1s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-23&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4502.8,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 19013.1s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 19013.1s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T17:01:37+08:00</li><li><span class="label">审计时钟 19013.1s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:08:57+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 12 次尝试；盘口可执行价 4502.8，初始价 4503.2，不利上限 4501.2，实际委托价 4502.8。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.0,
+  &quot;bid_price&quot;: 4502.8,
+  &quot;last_price&quot;: 4503.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4502.8,
+  &quot;adverse_price_limit&quot;: 4501.2,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.2,
+  &quot;market_executable_price&quot;: 4502.8,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 12,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:08:57+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_34&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 撤销原因：本笔完全未成交，交易所按 Fill-And-Kill（FAK）规则即时撤销未成交部分；审计中无策略撤单动作。若净仓仍未归零，会话会在不利上限内继续重报。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_34&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-24"><td>flatten-24</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4502.8</td><td>1</td><td>19013.1s</td><td>提交中 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_35；接受时间：—；终态时间：2026-09-01T17:08:57+08:00</p><p>撤销说明：本单为 FAK 平仓且完全未成交；交易所按 Fill-And-Kill 规则即时撤销未成交部分，不是策略主动撤单。若净仓仍未归零，会在不利上限内继续重报。</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 19013.1s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-24&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4502.8,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 19013.1s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 19013.2s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T17:01:37+08:00</li><li><span class="label">审计时钟 19013.2s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:08:57+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 13 次尝试；盘口可执行价 4502.8，初始价 4503.2，不利上限 4501.2，实际委托价 4502.8。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.0,
+  &quot;bid_price&quot;: 4502.8,
+  &quot;last_price&quot;: 4503.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4502.8,
+  &quot;adverse_price_limit&quot;: 4501.2,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.2,
+  &quot;market_executable_price&quot;: 4502.8,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 13,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:08:57+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_35&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 撤销原因：本笔完全未成交，交易所按 Fill-And-Kill（FAK）规则即时撤销未成交部分；审计中无策略撤单动作。若净仓仍未归零，会话会在不利上限内继续重报。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_35&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-25"><td>flatten-25</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4502.8</td><td>1</td><td>19013.2s</td><td>提交中 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_36；接受时间：—；终态时间：2026-09-01T17:08:57+08:00</p><p>撤销说明：本单为 FAK 平仓且完全未成交；交易所按 Fill-And-Kill 规则即时撤销未成交部分，不是策略主动撤单。若净仓仍未归零，会在不利上限内继续重报。</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 19013.2s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-25&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4502.8,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 19013.2s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 19013.2s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T17:01:37+08:00</li><li><span class="label">审计时钟 19013.2s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:08:57+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 14 次尝试；盘口可执行价 4502.8，初始价 4503.2，不利上限 4501.2，实际委托价 4502.8。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.0,
+  &quot;bid_price&quot;: 4502.8,
+  &quot;last_price&quot;: 4503.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4502.8,
+  &quot;adverse_price_limit&quot;: 4501.2,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.2,
+  &quot;market_executable_price&quot;: 4502.8,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 14,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:08:57+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_36&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 撤销原因：本笔完全未成交，交易所按 Fill-And-Kill（FAK）规则即时撤销未成交部分；审计中无策略撤单动作。若净仓仍未归零，会话会在不利上限内继续重报。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_36&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-26"><td>flatten-26</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4502.8</td><td>1</td><td>19013.2s</td><td>提交中 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_37；接受时间：—；终态时间：2026-09-01T17:08:57+08:00</p><p>撤销说明：本单为 FAK 平仓且完全未成交；交易所按 Fill-And-Kill 规则即时撤销未成交部分，不是策略主动撤单。若净仓仍未归零，会在不利上限内继续重报。</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 19013.2s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-26&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4502.8,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 19013.2s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 19013.4s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T17:01:37+08:00</li><li><span class="label">审计时钟 19013.4s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:08:57+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 15 次尝试；盘口可执行价 4502.8，初始价 4503.2，不利上限 4501.2，实际委托价 4502.8。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.0,
+  &quot;bid_price&quot;: 4502.8,
+  &quot;last_price&quot;: 4503.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4502.8,
+  &quot;adverse_price_limit&quot;: 4501.2,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.2,
+  &quot;market_executable_price&quot;: 4502.8,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 15,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:08:57+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_37&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 撤销原因：本笔完全未成交，交易所按 Fill-And-Kill（FAK）规则即时撤销未成交部分；审计中无策略撤单动作。若净仓仍未归零，会话会在不利上限内继续重报。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_37&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-27"><td>flatten-27</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4502.8</td><td>1</td><td>19013.4s</td><td>提交中 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_38；接受时间：—；终态时间：2026-09-01T17:08:57+08:00</p><p>撤销说明：本单为 FAK 平仓且完全未成交；交易所按 Fill-And-Kill 规则即时撤销未成交部分，不是策略主动撤单。若净仓仍未归零，会在不利上限内继续重报。</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 19013.4s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-27&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4502.8,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 19013.4s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 19013.4s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T17:01:37+08:00</li><li><span class="label">审计时钟 19013.4s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:08:57+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 16 次尝试；盘口可执行价 4502.8，初始价 4503.2，不利上限 4501.2，实际委托价 4502.8。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.0,
+  &quot;bid_price&quot;: 4502.8,
+  &quot;last_price&quot;: 4503.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4502.8,
+  &quot;adverse_price_limit&quot;: 4501.2,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.2,
+  &quot;market_executable_price&quot;: 4502.8,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 16,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:08:57+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_38&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 撤销原因：本笔完全未成交，交易所按 Fill-And-Kill（FAK）规则即时撤销未成交部分；审计中无策略撤单动作。若净仓仍未归零，会话会在不利上限内继续重报。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_38&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-28"><td>flatten-28</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4502.8</td><td>1</td><td>19013.4s</td><td>提交中 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_39；接受时间：—；终态时间：2026-09-01T17:08:57+08:00</p><p>撤销说明：本单为 FAK 平仓且完全未成交；交易所按 Fill-And-Kill 规则即时撤销未成交部分，不是策略主动撤单。若净仓仍未归零，会在不利上限内继续重报。</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 19013.4s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-28&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4502.8,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 19013.4s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 19013.5s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T17:01:37+08:00</li><li><span class="label">审计时钟 19013.5s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:08:57+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 17 次尝试；盘口可执行价 4502.8，初始价 4503.2，不利上限 4501.2，实际委托价 4502.8。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.0,
+  &quot;bid_price&quot;: 4502.8,
+  &quot;last_price&quot;: 4503.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4502.8,
+  &quot;adverse_price_limit&quot;: 4501.2,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.2,
+  &quot;market_executable_price&quot;: 4502.8,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 17,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:08:57+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_39&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 撤销原因：本笔完全未成交，交易所按 Fill-And-Kill（FAK）规则即时撤销未成交部分；审计中无策略撤单动作。若净仓仍未归零，会话会在不利上限内继续重报。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_39&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-29"><td>flatten-29</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4502.8</td><td>1</td><td>19013.5s</td><td>提交中 → 已撤销</td><td>已撤销</td><td>0</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_40；接受时间：—；终态时间：2026-09-01T17:08:58+08:00</p><p>撤销说明：本单为 FAK 平仓且完全未成交；交易所按 Fill-And-Kill 规则即时撤销未成交部分，不是策略主动撤单。若净仓仍未归零，会在不利上限内继续重报。</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 19013.5s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-29&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4502.8,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 19013.5s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 19013.5s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T17:01:37+08:00</li><li><span class="label">审计时钟 19013.5s</span>状态 已撤销，累计成交 0；交易所时间 2026-09-01T17:08:58+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 18 次尝试；盘口可执行价 4502.8，初始价 4503.2，不利上限 4501.2，实际委托价 4502.8。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4504.0,
+  &quot;bid_price&quot;: 4502.8,
+  &quot;last_price&quot;: 4503.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4502.8,
+  &quot;adverse_price_limit&quot;: 4501.2,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.2,
+  &quot;market_executable_price&quot;: 4502.8,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 18,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:08:58+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_40&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;traded_delta&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 撤销原因：本笔完全未成交，交易所按 Fill-And-Kill（FAK）规则即时撤销未成交部分；审计中无策略撤单动作。若净仓仍未归零，会话会在不利上限内继续重报。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_40&quot;,
+  &quot;status&quot;: &quot;CANCELLED&quot;,
+  &quot;traded&quot;: 0,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol></details></td></tr><tr id="order-flatten-30"><td>flatten-30</td><td>FAK 平仓</td><td>卖</td><td>平仓</td><td>FAK</td><td>4502.2</td><td>1</td><td>19013.5s</td><td>提交中 → 全部成交</td><td>全部成交</td><td>1</td><td><details><summary>查看详情</summary><p>CTP 委托号：1_909642209_41；接受时间：—；终态时间：2026-09-01T17:08:58+08:00</p><h4>动作与状态</h4><ol class="trace"><li><span class="label">审计时钟 19013.5s</span>动作 提交委托：<details><summary>动作参数</summary><pre>{
+  &quot;client_id&quot;: &quot;flatten-30&quot;,
+  &quot;exchange&quot;: &quot;CFFEX&quot;,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;price&quot;: 4502.2,
+  &quot;safety&quot;: true,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;symbol&quot;: &quot;IF2610&quot;,
+  &quot;volume&quot;: 1
+}</pre></details></li><li><span class="label">审计时钟 19013.5s</span>状态 提交中，累计成交 0；交易所时间 —</li><li><span class="label">审计时钟 19013.6s</span>状态 提交中，累计成交 0；交易所时间 2026-09-03T17:01:38+08:00</li><li><span class="label">审计时钟 19013.6s</span>状态 提交中，累计成交 0；交易所时间 2026-09-01T17:08:58+08:00</li><li><span class="label">审计时钟 19013.6s</span>状态 全部成交，累计成交 1；交易所时间 2026-09-01T17:08:58+08:00</li></ol><ol class="trace"><li><strong>提交 FAK 平仓</strong><div>提交受限 FAK 平仓：方向 卖，开平 平仓，数量 1，第 19 次尝试；盘口可执行价 4502.2，初始价 4503.2，不利上限 4501.2，实际委托价 4502.2。FAK 规则下未成交部分会由交易所即时撤销。</div><details><summary>原始数据</summary><div><span class="label">当时行情</span><pre>{
+  &quot;ask_price&quot;: 4503.8,
+  &quot;bid_price&quot;: 4502.2,
+  &quot;last_price&quot;: 4503.2
+}</pre></div><div><span class="label">计算数据</span><pre>{
+  &quot;actual_price&quot;: 4502.2,
+  &quot;adverse_price_limit&quot;: 4501.2,
+  &quot;adverse_ticks&quot;: 10,
+  &quot;initial_executable_price&quot;: 4503.2,
+  &quot;market_executable_price&quot;: 4502.2,
+  &quot;net_position&quot;: 1,
+  &quot;offset&quot;: &quot;CLOSE&quot;,
+  &quot;order_type&quot;: &quot;FAK&quot;,
+  &quot;reprice_attempt&quot;: 19,
+  &quot;side&quot;: &quot;SELL&quot;,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>委托状态变化</strong><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;exchange_time&quot;: &quot;2026-09-01T17:08:58+08:00&quot;,
+  &quot;order_id&quot;: &quot;1_909642209_41&quot;,
+  &quot;previous_status&quot;: &quot;SUBMITTING&quot;,
+  &quot;status&quot;: &quot;ALLTRADED&quot;,
+  &quot;traded&quot;: 1,
+  &quot;traded_delta&quot;: 1,
+  &quot;volume&quot;: 1
+}</pre></div></details></li><li><strong>FAK 委托终态</strong><div>FAK 终态：全部成交 1 / 1，本笔平仓完成。</div><details><summary>原始数据</summary><div><span class="label">计算数据</span><pre>{
+  &quot;order_id&quot;: &quot;1_909642209_41&quot;,
+  &quot;status&quot;: &quot;ALLTRADED&quot;,
+  &quot;traded&quot;: 1,
+  &quot;volume&quot;: 1
+}</pre></div></details></li></ol><h4>成交</h4><details><summary>成交明细</summary><pre>[
+  {
+    &quot;at&quot;: 19013.591099458,
+    &quot;client_id&quot;: &quot;flatten-30&quot;,
+    &quot;exchange&quot;: &quot;CFFEX&quot;,
+    &quot;exchange_time&quot;: &quot;2026-09-01T17:08:58+08:00&quot;,
+    &quot;order_id&quot;: &quot;1_909642209_41&quot;,
+    &quot;price&quot;: 4502.6,
+    &quot;side&quot;: &quot;SELL&quot;,
+    &quot;symbol&quot;: &quot;IF2610&quot;,
+    &quot;trade_id&quot;: &quot;        2254&quot;,
+    &quot;volume&quot;: 1
+  }
+]</pre></details></details></td></tr></table></body></html>

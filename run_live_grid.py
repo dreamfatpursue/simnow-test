@@ -13,6 +13,7 @@ from live_grid.audit import MultiContractAuditWriter
 from live_grid.config import MultiContractConfig, StrategyConfigError
 from live_grid.ctp_adapter import CtpLiveGridAdapter
 from live_grid.session import LiveGridSession, SessionState
+from live_grid.ctp_native import activate_ctp_native_libs
 from run import SETTING_ENV_BY_PROFILE, load_settings
 
 _TERMINAL_STATES = {SessionState.FINISHED, SessionState.FAILED}
@@ -170,6 +171,8 @@ def main() -> int:
                     f"审计目录={directory}"
                 )
                 return 0
+            native_variant = activate_ctp_native_libs(args.env)
+            print(f"CTP 原生库变体: {native_variant} (environment={args.env})", flush=True)
             settings = load_settings(args.env)
             adapter = CtpLiveGridAdapter(
                 sessions=sessions,

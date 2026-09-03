@@ -33,6 +33,8 @@ cp .env.example .env
 
 编辑 `.env`，填入 SimNow 当前页面给出的账号、密码、BrokerID、产品名称/AppID、授权编码和第一套前置。第一套继续使用 `CTP_TRADE_FRONT`、`CTP_MARKET_FRONT`；7×24 API 测试环境使用 `CTP_7X24_TRADE_FRONT`、`CTP_7X24_MARKET_FRONT`。广发仿真使用独立的 `CTP_GUANGFA_*` 变量和 `--env guangfa`，不会复用 SimNow 凭证。连接环境必须在每次启动时人工选择，系统不会自动切换。
 
+CTP 原生库（Mac framework）按环境自动选择：`--env first|7x24` 用标准版 `v6.7.7_MacOS`，`--env guangfa` 用看穿式 `v6.7.7_MacOS_CP`。两套文件保存在 `vendor/vnpy_ctp/vnpy_ctp/api/ctp_variants/`；若只保留其中一套，另一环境会在启动时报缺少变体。
+
 加载配置并先做本地检查：
 
 ```bash

@@ -34,6 +34,7 @@
 | [`live_grid/config.py`](../live_grid/config.py) | 策略配置校验与哈希 | 凭证拒绝、默认值、规范化 JSON、SimNow 确认和策略身份 |
 | [`live_grid/session.py`](../live_grid/session.py) | 与 CTP 无关的确定性状态机 | 状态迁移、报价、撤换、收口、FAK、最终摘要 |
 | [`live_grid/ctp_adapter.py`](../live_grid/ctp_adapter.py) | vn.py/CTP 与状态机之间的薄适配层 | 回报转换、请求号关联、委托/撤单/查仓动作转换 |
+| [`live_grid/ctp_native.py`](../live_grid/ctp_native.py) | 按 `--env` 切换 SimNow/广发 CTP 原生库 | 必须在导入 `vnctptd`/`vnctpmd` 之前调用 |
 | [`live_grid/audit.py`](../live_grid/audit.py) | 每次运行的无凭证审计写入 | `effective_strategy.json`、`events.jsonl`、`summary.json`、`account.jsonl` |
 | [`vendor/vnpy_ctp`](../vendor/vnpy_ctp) | 项目内可追踪的 CTP 依赖 | 持仓查询完成事件和原生 CTP 扩展 |
 | [`tests/test_session.py`](../tests/test_session.py) | 状态机主测试 seam | 所有关键安全路径，不需要真实 CTP |
@@ -84,6 +85,8 @@ CTP_PRODUCT_INFO   # 可选
 ```
 
 第一套环境（默认 `--env first`）继续使用 `CTP_TRADE_FRONT`、`CTP_MARKET_FRONT`。7×24 API 测试环境使用 `CTP_7X24_TRADE_FRONT`、`CTP_7X24_MARKET_FRONT`，两者共用 SimNow 账号类凭证。广发仿真使用完整独立的 `CTP_GUANGFA_*` 变量，启动时选择 `--env guangfa`。环境选择是每次启动时的人工显式动作，不会因断线、收盘或行情缺失自动切换。7×24 不提供结算服务，不能根据第一套的持仓或结算状态推断 7×24 的结果。
+
+Mac 上 CTP 原生库按环境自动切换：`first`/`7x24` 使用标准版 `v6.7.7_MacOS`（`vendor/vnpy_ctp/vnpy_ctp/api/ctp_variants/simnow/`），`guangfa` 使用看穿式 `v6.7.7_MacOS_CP`（`ctp_variants/guangfa/`）。入口在导入 `vnpy_ctp` 原生扩展之前调用 [`live_grid/ctp_native.py`](../live_grid/ctp_native.py) 把对应文件拷进 active framework；同一进程内不可中途换库。
 
 `CTP_SYMBOL`、`CTP_EXCHANGE` 只服务于普通只读连接的行情订阅；报撤测试的交易目标来自策略 JSON 的 `symbol` 和 `exchange`，不会从只读订阅设置继承。
 

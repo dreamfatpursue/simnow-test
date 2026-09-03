@@ -14,6 +14,7 @@ Agent 不需要通读代码：先用下表定位模块，再按"文档路由"选
 | `live_grid/config.py` | 策略配置校验、规范化与 SHA-256 哈希（拒绝凭证字段） |
 | `live_grid/session.py` | 与 CTP 无关的确定性状态机：报价、撤换、价差窗口收口、受限 FAK、最终摘要 |
 | `live_grid/ctp_adapter.py` | vn.py/CTP 回报与状态机动作之间的薄适配层 |
+| `live_grid/ctp_native.py` | 按 `--env` 切换 SimNow/广发 CTP 原生库（导入扩展前） |
 | `live_grid/audit.py` | 每次运行的无凭证审计写入（`audit/<run>/`） |
 | `vendor/vnpy_ctp` | 项目内可追踪的 CTP 依赖（含持仓查询完成事件补丁，勿改 site-packages） |
 

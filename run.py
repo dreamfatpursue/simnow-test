@@ -252,11 +252,19 @@ def install_handlers(event_engine: Any, main_engine: Any, settings: Settings) ->
 
 def connect(settings: Settings) -> int:
     try:
+        from live_grid.ctp_native import activate_ctp_native_libs
+
+        native_variant = activate_ctp_native_libs(settings.environment)
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        print(f"CTP 原生库变体切换失败: {exc}", file=sys.stderr)
+        return 3
+
+    try:
         from vnpy.event import EventEngine
         from vnpy.trader.constant import Exchange
         from vnpy.trader.engine import MainEngine
         from vnpy_ctp import CtpGateway
-    except (ImportError, ModuleNotFoundError) as exc:
+    except (ImportError, ModuleNotFoundError, OSError) as exc:
         print(
             "依赖未安装或 CTP 原生库加载失败。请先按 README 安装 vnpy 和 vnpy_ctp。\n"
             f"原始错误: {exc}",
@@ -277,7 +285,8 @@ def connect(settings: Settings) -> int:
     diagnostics = install_handlers(event_engine, main_engine, settings)
 
     print(
-        f"[连接] environment={settings.environment} broker={settings.broker_id} user={settings.user_id} "
+        f"[连接] environment={settings.environment} ctp_native={native_variant} "
+        f"broker={settings.broker_id} user={settings.user_id} "
         f"trade={settings.trade_front} market={settings.market_front}",
         flush=True,
     )
