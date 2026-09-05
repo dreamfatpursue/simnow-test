@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "contracts": [
+    {
+      "symbol": "IF2610",
+      "exchange": "CFFEX",
+      "target_lots": 1,
+      "max_tick_age_seconds": 10,
+      "quote_windows": [
+        {"start": "00:00", "end": "23:59"}
+      ]
+    }
+  ],
+  "w_ticks": 1,
+  "d_ticks": 3,
+  "s_ticks": 1,
+  "book_protection_multiple": 0.5,
+  "reanchor_confirmation_seconds": 1,
+  "stable_market_seconds": 2,
+  "action_limit_per_minute": 60,
+  "cancel_timeout_seconds": 10,
+  "flatten_timeout_seconds": 3,
+  "flatten_adverse_ticks": 10,
+  "closing_wait_seconds": 1,
+  "quote_ack_timeout_seconds": 5,
+  "max_round_trips": 5
+}

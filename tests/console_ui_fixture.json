@@ -1,0 +1,278 @@
+{
+  "status": "active",
+  "overall_stage": "交易运行",
+  "data_stale": false,
+  "audit_started_at": 100,
+  "last_event_at": 260,
+  "stop_requested": false,
+  "run": {
+    "run_id": "offline-demo-20260905",
+    "pid": 0,
+    "started_at": "2026-09-05T12:00:00+00:00",
+    "environment": "7x24",
+    "market_data_mode": "replay_override",
+    "strategy_hash": "demo-only-not-a-real-strategy-hash",
+    "audit_dir": "离线合成数据，不对应真实账户"
+  },
+  "effective": {
+    "version": 2,
+    "w_ticks": 2,
+    "d_ticks": 2,
+    "s_ticks": 1,
+    "max_round_trips": 5,
+    "stable_market_seconds": 2,
+    "closing_wait_seconds": 1,
+    "book_protection_multiple": 2,
+    "reanchor_confirmation_seconds": 1,
+    "action_limit_per_minute": 60,
+    "cancel_timeout_seconds": 10,
+    "flatten_timeout_seconds": 3,
+    "flatten_adverse_ticks": 10,
+    "quote_ack_timeout_seconds": 5,
+    "contracts": [
+      {
+        "symbol": "IF2610",
+        "exchange": "CFFEX",
+        "target_lots": 1,
+        "max_tick_age_seconds": 60,
+        "quote_windows": [
+          {
+            "start": "20:00",
+            "end": "23:00"
+          }
+        ]
+      },
+      {
+        "symbol": "rb2610",
+        "exchange": "SHFE",
+        "target_lots": 1,
+        "max_tick_age_seconds": 30,
+        "quote_windows": [
+          {
+            "start": "21:00",
+            "end": "23:00"
+          }
+        ]
+      }
+    ]
+  },
+  "contracts": [
+    {
+      "symbol": "IF2610",
+      "exchange": "CFFEX",
+      "state": "QUOTING",
+      "stage": "交易运行",
+      "state_label": "交易运行／正在报价",
+      "trade_connected": true,
+      "market_connected": true,
+      "latest_tick": {
+        "last_price": 4509.600000000001,
+        "bid_price": 4509.4,
+        "ask_price": 4509.8,
+        "exchange_time": "2026-09-02T20:02:40+08:00",
+        "at": 260
+      },
+      "last_wall_time": "2026-09-05T20:02:40+08:00",
+      "tick_age_seconds": 1,
+      "tick_stale": false,
+      "round_trips": 1,
+      "max_round_trips": 5,
+      "active_order_count": 2,
+      "current_quote_window": {
+        "start": "20:00",
+        "end": "23:00",
+        "active": true
+      },
+      "quote_windows": [
+        {
+          "start": "20:00",
+          "end": "23:00"
+        }
+      ],
+      "confirmed_position": {
+        "net_position": 0,
+        "confirmed_at": 220,
+        "confirmed_wall_time": "2026-09-05T20:02:00+08:00",
+        "source": "CTP position query"
+      },
+      "last_position_query_error": null,
+      "risk": false,
+      "logical_orders": [
+        {
+          "logical_id": "quote-1",
+          "order_id": "demo-1",
+          "client_id": "quote-1-buy",
+          "symbol": "IF2610",
+          "exchange": "CFFEX",
+          "side": "BUY",
+          "offset": "OPEN",
+          "order_type": "LIMIT",
+          "price": 4508,
+          "volume": 1,
+          "traded": 1,
+          "status": "ALLTRADED",
+          "active": false,
+          "status_path": [
+            "SUBMITTING",
+            "NOTTRADED",
+            "ALLTRADED"
+          ],
+          "first_at": 115
+        },
+        {
+          "logical_id": "quote-2",
+          "order_id": "demo-2",
+          "client_id": "quote-2-buy",
+          "symbol": "IF2610",
+          "exchange": "CFFEX",
+          "side": "BUY",
+          "offset": "OPEN",
+          "order_type": "LIMIT",
+          "price": 4508,
+          "volume": 1,
+          "traded": 0,
+          "status": "NOTTRADED",
+          "active": true,
+          "status_path": [
+            "SUBMITTING",
+            "NOTTRADED"
+          ],
+          "first_at": 245
+        },
+        {
+          "logical_id": "quote-3",
+          "order_id": "demo-3",
+          "client_id": "quote-3-sell",
+          "symbol": "IF2610",
+          "exchange": "CFFEX",
+          "side": "SELL",
+          "offset": "OPEN",
+          "order_type": "LIMIT",
+          "price": 4512,
+          "volume": 1,
+          "traded": 0,
+          "status": "NOTTRADED",
+          "active": true,
+          "cancel_requested": true,
+          "status_path": [
+            "SUBMITTING",
+            "NOTTRADED"
+          ],
+          "first_at": 245
+        }
+      ],
+      "trades": [
+        {
+          "trade_id": "demo-fill-1",
+          "order_id": "demo-1",
+          "side": "BUY",
+          "offset": "OPEN",
+          "price": 4508,
+          "volume": 1,
+          "exchange_time": "2026-09-02T20:01:45+08:00",
+          "at": 205
+        },
+        {
+          "trade_id": "demo-fill-2",
+          "order_id": "demo-close",
+          "side": "SELL",
+          "offset": "CLOSE",
+          "price": 4507.8,
+          "volume": 1,
+          "exchange_time": "2026-09-02T20:01:46+08:00",
+          "at": 206
+        }
+      ],
+      "causal_timeline": [
+        {
+          "at": 110,
+          "code": "stable_quote_qualified",
+          "label": "稳定行情达标",
+          "state_before": "WAITING_FOR_STABLE_QUOTE",
+          "state_after": "QUOTE_PENDING",
+          "calculation": {
+            "elapsed_seconds": 2
+          }
+        },
+        {
+          "at": 205,
+          "code": "first_fill",
+          "label": "首次成交，进入价差窗口",
+          "state_before": "QUOTING",
+          "state_after": "CLOSING_WAIT",
+          "calculation": {
+            "price": 4508,
+            "volume": 1,
+            "window_seconds": 1
+          }
+        },
+        {
+          "at": 206,
+          "code": "flatten_submitted",
+          "label": "提交 FAK 平仓",
+          "state_before": "CLOSING_WAIT",
+          "state_after": "FLATTENING",
+          "calculation": {
+            "side": "SELL",
+            "offset": "CLOSE",
+            "volume": 1,
+            "reprice_attempt": 1,
+            "actual_price": 4507.8,
+            "market_executable_price": 4507.8,
+            "adverse_price_limit": 4505.8
+          }
+        },
+        {
+          "at": 220,
+          "code": "round_finished",
+          "label": "本轮完成",
+          "state_before": "CLOSING_RECONCILE",
+          "state_after": "WAITING_FOR_STABLE_QUOTE",
+          "calculation": {
+            "round_trips": 1
+          }
+        },
+        {
+          "at": 245,
+          "code": "quote_submitted",
+          "label": "首次报价",
+          "state_before": "WAITING_FOR_STABLE_QUOTE",
+          "state_after": "QUOTE_PENDING",
+          "calculation": {
+            "anchor_price": 4509.6,
+            "distance_ticks": 4,
+            "buy_price": 4508,
+            "sell_price": 4512
+          },
+          "client_ids": [
+            "quote-2-buy",
+            "quote-3-sell"
+          ]
+        }
+      ],
+      "risk_events": []
+    },
+    {
+      "symbol": "rb2610",
+      "exchange": "SHFE",
+      "state": "PAUSED",
+      "state_label": "交易运行／等待下一个报价窗口",
+      "stage": "交易运行",
+      "trade_connected": true,
+      "market_connected": true,
+      "latest_tick": null,
+      "last_wall_time": "2026-09-05T20:02:40+08:00",
+      "tick_age_seconds": null,
+      "tick_stale": null,
+      "round_trips": 0,
+      "max_round_trips": 5,
+      "active_order_count": 0,
+      "confirmed_position": null,
+      "current_quote_window": null,
+      "logical_orders": [],
+      "trades": [],
+      "causal_timeline": [],
+      "risk": false
+    }
+  ]
+}

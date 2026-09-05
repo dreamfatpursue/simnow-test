@@ -1467,7 +1467,11 @@ class LiveGridSession:
 
     def _on_interrupt(self) -> None:
         if self.state == SessionState.RISK_HOLD:
-            self._record_trace("interrupt_risk_hold", calculation={"action": "keep_connection"})
+            self.stop_reason = self.stop_reason or "interrupted"
+            self._record_trace(
+                "interrupt_risk_hold",
+                calculation={"action": "keep_connection", "reason": self.stop_reason},
+            )
             self._emit("audit_warning", code="risk_hold_requires_reconciliation")
             return
         if self.state in {SessionState.PREVIEW, SessionState.FINISHED, SessionState.FAILED}:

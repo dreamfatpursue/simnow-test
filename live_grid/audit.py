@@ -51,8 +51,12 @@ _FORBIDDEN_KEYS = {
 }
 
 
-def _run_name() -> str:
+def new_run_id() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ") + "-" + uuid.uuid4().hex[:10]
+
+
+def _run_name() -> str:
+    return new_run_id()
 
 
 def _write_json_file(directory: Path, name: str, value: Any) -> None:
@@ -174,10 +178,16 @@ class AuditWriter:
 class MultiContractAuditWriter:
     """One run directory with per-contract audit subdirectories and a run-level summary."""
 
-    def __init__(self, config: MultiContractConfig, root: str | Path = "audit") -> None:
+    def __init__(
+        self,
+        config: MultiContractConfig,
+        root: str | Path = "audit",
+        *,
+        run_id: str | None = None,
+    ) -> None:
         root_path = Path(root)
         root_path.mkdir(parents=True, exist_ok=True)
-        self.directory = root_path / _run_name()
+        self.directory = root_path / (run_id or _run_name())
         self.directory.mkdir()
         self.writers = [
             AuditWriter(

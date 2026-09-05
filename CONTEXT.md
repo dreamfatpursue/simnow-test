@@ -4,9 +4,13 @@ This context records the shared language for applying a grid quoting algorithm t
 
 ## Language
 
-**SimNow 连接环境**:
-An explicitly selected SimNow service boundary for one run: `first` is the regular simulated-trading service, while `7x24` is the API-test service without settlement. Selecting one does not transfer state or imply automatic switching to the other.
-_Avoid_: 前置地址本身、自动故障切换、两套环境共享状态
+**仿真连接环境**:
+An explicitly selected service boundary for one run: `first` is the regular SimNow service, `7x24` is the SimNow API-test service without settlement, and `guangfa` is the separate Guangfa simulation service. Selecting one does not transfer state or imply automatic switching; the trading console never exposes a production environment.
+_Avoid_: 前置地址本身、自动故障切换、环境间共享状态、生产交易环境
+
+**历史行情联调许可**:
+An explicit, per-run opt-in available only for the `7x24` environment that permits replayed exchange timestamps to pass the market-time gate while preserving the normal order, position, closing, and audit safeguards. It is off by default and remains visibly distinct from normal market-data mode throughout preview and execution.
+_Avoid_: 自动开启、普通实时行情模式、跨运行沿用许可、放宽订单与持仓安全边界
 
 **SimNow 行情快照**:
 A timestamped top-of-book and last-price observation received from SimNow for one contract. It drives live quoting decisions but does not prove an order was filled.
@@ -60,17 +64,53 @@ _Avoid_: 无限追价、静默忽略未平仓位、市价收口
 A versionable JSON document containing the grid and safety parameters shared by every target contract, plus one entry per contract with its symbol, exchange, and per-side lots. It excludes CTP credentials. The effective configuration is retained with that run's audit log.
 _Avoid_: 凭证文件、硬编码策略参数、每合约一份参数文件
 
+**策略文件预览**:
+A read-only, normalized view of one existing credential-free strategy file before launch. The console never edits or saves it; the operator changes the source JSON outside the console and previews again. Confirmation applies only while the selected file's effective hash, environment, and market-data mode remain unchanged.
+_Avoid_: 运行草稿、控制台配置编辑器、另存为、修改文件后沿用旧预览
+
 **多合约运行**:
 One SimNow test run quoting several target contracts concurrently, each driven by an independent single-contract session. The run ends only after every contract's session reaches a terminal state.
 _Avoid_: 共享网格状态、跨合约对冲、任一合约终态即结束
+
+**交易控制台**:
+The operator-facing workspace for selecting a strategy, starting a simulation run, observing its live state, and deliberately requesting whole-run safe termination. It does not provide discretionary orders, individual-order cancellation, single-contract intervention, production-environment selection, or credential editing. A control request is not proof that an order was cancelled, a position was closed, or the run reached a terminal state; those outcomes still require authoritative CTP callbacks and reconciliation.
+_Avoid_: 只读运行监控面板、手工下单终端、单合约干预、把按钮受理当作 CTP 执行成功
+
+**交易启动确认**:
+A per-run operator approval granted only after reviewing the selected simulation environment and the complete effective strategy, including its hash, contracts, quantities, quote windows, and stopping limits. It authorizes that exact preview once and has no clock-based expiry; configuration changes, use, or control-service restart invalidate it.
+_Avoid_: 单击直接启动、跨运行持续解锁、修改配置后沿用旧确认、无变化也按时间过期
+
+**活动运行**:
+The single multi-contract run whose trading process currently holds the activity lock. A stop request, one contract reaching a terminal state, or loss of the operator view does not make the run inactive; process exit releases the lock and ends its active status even when no complete safety summary exists.
+_Avoid_: 已请求停止的运行自动结束、任一合约结束即释放新运行、操作界面关闭即运行结束、进程退出后仍视为活动运行
+
+**单活动运行准入**:
+The rule that a confirmed start is rejected only while another trading process is still active. When one exists, the console returns that run and switches to its live view; after it exits, a new confirmed run may start even if the previous run lacked a complete safety summary. The first version does not preserve a post-exit verification gate or prove account continuity across runs.
+_Avoid_: 同时启动两个交易进程、用过期 PID 判断运行中、把上一运行摘要作为下一运行门槛
+
+**安全失败终态**:
+The exact contract-session state `FAILED`, reached only after the state machine knows there are no active orders and the final net position is zero. It communicates that the requested trading behavior failed but the session is safe to close; it is not an unknown-risk state.
+_Avoid_: 进程异常退出、残仓、未知委托、把所有失败都标成风险托管
+
+**进程异常退出**:
+The run-level fact that the trading process ended before every contract recorded a safe terminal state. It preserves each contract's last known exact state and risk facts rather than rewriting them as `FAILED`; in the first version it warns the operator but does not block a later confirmed run.
+_Avoid_: `SessionState.FAILED`、伪造合约终态、把最后已知事实冒充当前账户事实
+
+**运行态势**:
+The live operational view of an active run: connection and market freshness, each contract's session state, quote and order lifecycle, fills, reconciled position, stopping progress, and risk conditions. It deliberately excludes profit and loss; economic results belong to the completed-run report.
+_Avoid_: 实时盈亏看板、原始日志滚屏、最终运行报告
+
+**运行阶段**:
+The operator-facing Chinese summary of exact session states. A contract keeps its detailed label, while the whole run uses five fixed groups: startup preparation, trading run, safe closing, risk, and terminal. Waiting for a stable market, pausing between quote windows, and waiting for the opposite fill all remain part of the trading run; only cancellation, reconciliation, and flattening are safe closing. The grouping is display-only and never drives trading behavior.
+_Avoid_: 第二套状态机、只显示英文枚举、用中文文案猜测归属、把 `CLOSING_WAIT` 当作安全收口
 
 **合约独立收口**:
 The rule that a contract's first-fill closing, failure, or timeout stops and flattens only that contract's session. An operator interrupt is broadcast to every session, which each run their own closing sequence.
 _Avoid_: 任一成交全停、跨合约收口链路
 
 **人工结束收口**:
-The termination path for a no-time-limit test: on an operator interrupt, cancel every test order, wait for terminal order callbacks, reconcile the position, and use the same bounded FAK close if a fill occurred.
-_Avoid_: 直接退出、遗留活动委托
+The whole-run termination path requested by either a command-line interrupt or the trading console's safe-stop control. It broadcasts to every contract session, cancels every test order, waits for terminal order callbacks, reconciles each position, and uses the same bounded FAK close if a fill occurred; the request is not complete until every session reaches a safe terminal outcome. Its availability depends on identifying the active trading process, not on the freshness of the console's displayed market or audit projection.
+_Avoid_: 直接退出、单合约停止、遗留活动委托、把停止按钮受理当作收口完成、因页面数据过期拒绝停止
 
 **零仓启动门槛**:
 The test may submit its first quote only after CTP position data confirms the target contract has zero net position. Any nonzero position on any target contract rejects the whole run without sending an order.
@@ -121,8 +161,8 @@ The product code, exact contract symbol, exchange, contract multiplier, and mini
 _Avoid_: 报告自行补充品种名称、只写中文简称、用当前合约信息覆盖历史审计事实
 
 **运行参数**:
-The complete effective strategy and its hash retained by one audit run, including shared grid and safety settings plus each contract's configured quantity. It is the historical configuration actually used by that run, not a current source file or default value.
-_Avoid_: 当前策略文件、代码默认值、实际委托价格
+The complete effective strategy and its hash retained by one audit run, including shared grid and safety settings plus each contract's configured quantity. It is loaded once from the selected source file when the confirmed process starts and remains the historical configuration actually used by that run, not the source file's later contents or current defaults.
+_Avoid_: 当前策略文件、代码默认值、实际委托价格、运行中热更新参数
 
 **委托参数**:
 The actual instruction submitted for one logical order: its purpose, side, offset, order type, limit price, and quantity. It is distinct from both the run parameters that produced it and the repeated CTP callbacks that report its lifecycle.

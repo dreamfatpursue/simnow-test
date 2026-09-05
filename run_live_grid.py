@@ -5,11 +5,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from live_grid.audit import MultiContractAuditWriter
+from live_grid.activity import ActivityIdentity, ActivityLock, default_activity_lock_path
+from live_grid.audit import MultiContractAuditWriter, new_run_id
 from live_grid.config import MultiContractConfig, StrategyConfigError
 from live_grid.ctp_adapter import CtpLiveGridAdapter
 from live_grid.session import LiveGridSession, SessionState
@@ -17,6 +21,8 @@ from live_grid.ctp_native import activate_ctp_native_libs
 from run import SETTING_ENV_BY_PROFILE, load_settings
 
 _TERMINAL_STATES = {SessionState.FINISHED, SessionState.FAILED}
+ACTIVE_RUN_CONFLICT_EXIT_CODE = 4
+ACTIVITY_LOCK_PATH = default_activity_lock_path()
 
 
 def print_preview(config: MultiContractConfig, environment: str, market_data_mode: str = "normal") -> None:
@@ -142,9 +148,37 @@ def main() -> int:
     run_audit: MultiContractAuditWriter | None = None
     sessions: list[LiveGridSession] = []
     adapter: CtpLiveGridAdapter | None = None
+    activity_lock: ActivityLock | None = None
     try:
+        run_id: str | None = None
+        if args.confirm_simnow:
+            run_id = new_run_id()
+            identity = ActivityIdentity(
+                run_id=run_id,
+                pid=os.getpid(),
+                started_at=datetime.now(timezone.utc).isoformat(),
+                environment=args.env,
+                market_data_mode=market_data_mode,
+                strategy_hash=config.sha256,
+                contracts=tuple(f"{item.effective['symbol']}@{item.effective['exchange']}" for item in config.contracts),
+                audit_dir=str(Path(args.audit_dir).resolve() / run_id),
+            )
+            activity_lock, active_identity = ActivityLock.try_acquire(ACTIVITY_LOCK_PATH, identity)
+            if activity_lock is None:
+                if active_identity is None:
+                    print("已有活动运行，但其无凭证运行身份尚未写入。", file=sys.stderr)
+                else:
+                    print(
+                        "已有活动运行："
+                        f"run_id={active_identity.run_id} pid={active_identity.pid} "
+                        f"audit_dir={active_identity.audit_dir}",
+                        file=sys.stderr,
+                    )
+                return ACTIVE_RUN_CONFLICT_EXIT_CODE
         try:
-            run_audit = MultiContractAuditWriter(config, args.audit_dir)
+            run_audit = MultiContractAuditWriter(config, args.audit_dir, run_id=run_id)
+            if activity_lock is not None:
+                activity_lock.update_identity(identity.with_audit_dir(run_audit.directory))
             sessions = [
                 LiveGridSession(
                     contract,
@@ -241,6 +275,8 @@ def main() -> int:
             adapter.close()
         if run_audit is not None:
             run_audit.close()
+        if activity_lock is not None:
+            activity_lock.release()
 
 
 if __name__ == "__main__":

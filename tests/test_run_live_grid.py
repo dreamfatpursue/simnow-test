@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import run_live_grid
+from live_grid.activity import ActivityIdentity, ActivityLock
 from live_grid.config import MultiContractConfig
 from live_grid.ctp_adapter import CtpLiveGridAdapter
 
@@ -250,6 +251,36 @@ def write_config(root: str, doc: dict) -> Path:
 
 
 class RunLiveGridTests(unittest.TestCase):
+    def test_confirmed_start_returns_existing_activity_without_creating_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as config_root, tempfile.TemporaryDirectory() as audit_root, tempfile.TemporaryDirectory() as lock_root:
+            config_path = write_config(config_root, multi_strategy_doc())
+            lock_path = Path(lock_root) / "activity.lock"
+            held, _ = ActivityLock.try_acquire(
+                lock_path,
+                ActivityIdentity(
+                    run_id="existing-run",
+                    pid=4321,
+                    started_at="2026-09-04T01:02:03+00:00",
+                    environment="first",
+                    market_data_mode="normal",
+                    strategy_hash="existing-hash",
+                    contracts=("rb2601@SHFE", "AP610@CZCE"),
+                    audit_dir="audit/existing-run",
+                ),
+            )
+            argv = [
+                "run_live_grid.py",
+                "--config",
+                str(config_path),
+                "--confirm-simnow",
+                "--audit-dir",
+                audit_root,
+            ]
+            with patch.object(sys, "argv", argv), patch.object(run_live_grid, "ACTIVITY_LOCK_PATH", lock_path):
+                self.assertEqual(run_live_grid.main(), run_live_grid.ACTIVE_RUN_CONFLICT_EXIT_CODE)
+            self.assertEqual(list(Path(audit_root).iterdir()), [])
+            held.release()
+
     def test_startup_failure_writes_complete_run_summary(self) -> None:
         with tempfile.TemporaryDirectory() as config_root, tempfile.TemporaryDirectory() as audit_root:
             config_path = write_config(config_root, multi_strategy_doc())

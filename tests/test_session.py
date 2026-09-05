@@ -610,6 +610,7 @@ class LiveGridSessionTests(unittest.TestCase):
         self.assertEqual(session.handle(InterruptEvent()), [])
         self.assertEqual(session.state, SessionState.RISK_HOLD)
         self.assertEqual(session.failure_reason, "interrupted_before_zero_position")
+        self.assertEqual(session.stop_reason, "interrupted")
         self.assertEqual(session.final_net_position, None)
 
     def test_replacement_waits_for_terminal_callbacks_and_then_requalifies_market(self) -> None:
@@ -1444,6 +1445,28 @@ class LiveGridSessionRecoveryTests(unittest.TestCase):
 
         self.assertEqual(session.state, SessionState.FINISHED)
         self.assertEqual(session.stop_reason, "interrupted")
+
+    def test_interrupt_during_risk_hold_records_stop_and_finishes_after_zero_reconcile(self) -> None:
+        """风险托管中第一次中断也必须留下停止意图，恢复零仓后不得续挂。"""
+        session = start_session(make_config(max_round_trips=5))
+        session.handle(ConnectionEvent("market", False, "disconnect"))
+        self.assertEqual(session.state, SessionState.RISK_HOLD)
+
+        actions = session.handle(InterruptEvent())
+        self.assertEqual(session.stop_reason, "interrupted")
+        self.assertEqual([action.kind for action in actions], ["audit_warning"])
+        trace = session.audit_events[-1]["trace"][0]
+        self.assertEqual(trace["code"], "interrupt_risk_hold")
+        self.assertEqual(trace["calculation"]["reason"], "interrupted")
+
+        recovery = session.handle(ClockEvent(session._now + 2))
+        query_action = next(action for action in recovery if action.kind == "query_position")
+        session.handle(PositionQueryCompleteEvent(query_action.payload["request_id"], "rb2601", "SHFE", 0))
+
+        self.assertEqual(session.state, SessionState.FINISHED)
+        self.assertEqual(session.summary()["stop_reason"], "interrupted")
+        self.assertEqual(session.summary()["final_net_position"], 0)
+        self.assertEqual(session.handle(ClockEvent(session._now + 5)), [])
 
     def test_ctp_error_26_confirms_terminal_order_without_risk_hold(self) -> None:
         """撤单错误26=委托已全成交或已撤销：是终态证明，不再升级 RISK_HOLD。"""
