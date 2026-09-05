@@ -121,6 +121,12 @@ function relativeTime(at) {
   return "审计 +" + Math.floor(elapsed/60).toString().padStart(2,"0") + ":" + (elapsed%60).toString().padStart(2,"0");
 }
 function mapped(value, mapping) { return mapping[value] || (value == null ? "未提供" : "未识别（" + value + "）"); }
+function byEventTime(left, right, fallbackKey) {
+  const leftTime = left.exchange_time || "";
+  const rightTime = right.exchange_time || "";
+  if (leftTime && rightTime && leftTime !== rightTime) return leftTime < rightTime ? -1 : 1;
+  return (Number(left[fallbackKey]) || 0) - (Number(right[fallbackKey]) || 0);
+}
 function stageTone(item) { return item.risk || item.state === "RISK_HOLD" ? "risk" : item.state === "FAILED" || item.stage === "安全收口" ? "warn" : item.state === "FINISHED" ? "good" : "blue"; }
 function contractKey(item) { return item.symbol + "@" + item.exchange; }
 function modeText(mode) { return mode === "replay_override" ? "历史行情测试" : "普通行情模式"; }
@@ -186,7 +192,7 @@ function renderRisk(body) {
 }
 function renderOrders(item) {
   const all = $("#order-filter").value === "all";
-  const orders = [...(item.logical_orders || [])].filter((order) => all || order.active).reverse();
+  const orders = [...(item.logical_orders || [])].filter((order) => all || order.active).sort((left, right) => byEventTime(left, right, "first_at"));
   $("#orders-caption").textContent = all ? "最近最多 200 条逻辑委托 · 已聚合重复回报" : "待受理、待成交和撤单确认中的委托";
   const rows = orders.map((order) => {
     const state = order.status_unknown ? "状态未知，待核对" : order.active && order.cancel_requested ? "撤单确认中" : mapped(order.status,statuses);
@@ -197,7 +203,7 @@ function renderOrders(item) {
   setHTML("#orders-table",table([["方向"],["开平"],["类型"],["委托价","num"],["委托量","num"],["已成交","num"],["状态 / 详情"]],rows,all ? "暂无委托记录" : "当前没有活动委托；可切换查看最近全部委托。"));
 }
 function renderTrades(item) {
-  const rows = [...(item.trades || [])].reverse().map((trade,index) => {
+  const rows = [...(item.trades || [])].sort((left, right) => byEventTime(left, right, "at")).map((trade,index) => {
     const key = esc("trade-" + contractKey(item) + "-" + (trade.trade_id || index));
     return '<tr><td>' + esc(trade.exchange_time ? timeText(trade.exchange_time) : relativeTime(trade.at)) + '</td><td class="' + (trade.side === "BUY" ? "buy" : trade.side === "SELL" ? "sell" : "") + '">' + esc(mapped(trade.side,sides)) + '</td><td>' + esc(mapped(trade.offset,offsets)) + '</td><td class="num">' + number(trade.price) + '</td><td class="num">' + esc(units(trade.volume,"手")) + '</td><td><details data-key="' + key + '"><summary data-key="' + key + '">查看编号</summary><p class="muted">成交：' + esc(trade.trade_id) + '<br>委托：' + esc(trade.order_id) + '</p></details></td></tr>';
   });

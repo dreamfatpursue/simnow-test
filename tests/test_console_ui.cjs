@@ -30,6 +30,18 @@ assert.equal(get('#order-count').textContent, '2');
 assert.match(get('#orders-table').innerHTML, /撤单确认中/);
 assert.doesNotMatch(get('#orders-table').innerHTML, /全部成交/);
 assert.match(get('#trades-table').innerHTML, /09\/02 20:01:46/);
+{
+  const tradesHtml = get('#trades-table').innerHTML;
+  assert.ok(tradesHtml.indexOf('09/02 20:01:45') < tradesHtml.indexOf('09/02 20:01:46'), 'trades should follow exchange time');
+  assert.ok(tradesHtml.indexOf('开仓') < tradesHtml.indexOf('平仓'), 'open fill should appear before close fill');
+}
+run('snapshot.contracts[0].trades = snapshot.contracts[0].trades.slice().reverse(); renderOverview(snapshot)');
+{
+  const tradesHtml = get('#trades-table').innerHTML;
+  assert.ok(tradesHtml.indexOf('09/02 20:01:45') < tradesHtml.indexOf('09/02 20:01:46'), 'arrival order must not invert displayed trade time');
+  assert.ok(tradesHtml.indexOf('开仓') < tradesHtml.indexOf('平仓'), 'open fill should appear before close fill after reversed payload');
+}
+run('snapshot.contracts[0].trades = snapshot.contracts[0].trades.slice().reverse(); renderOverview(snapshot)');
 assert.match(get('#contract-facts').innerHTML, /最近核对净仓/);
 assert.match(get('#contract-facts').innerHTML, /CTP 查询快照/);
 assert.match(get('#run-parameters').innerHTML, /重定锚步长 S/);
@@ -48,6 +60,18 @@ run('renderOverview(snapshot)');
 assert.equal(get('#panel-trades').hidden, false);
 assert.equal(get('#order-filter').value, 'all');
 assert.match(get('#orders-table').innerHTML, /全部成交/);
+{
+  const ordersHtml = get('#orders-table').innerHTML;
+  assert.ok(ordersHtml.indexOf('quote-1-buy') < ordersHtml.indexOf('flatten-2'), 'orders should follow first_at');
+  assert.ok(ordersHtml.indexOf('开仓') < ordersHtml.indexOf('平仓'), 'open order should appear before close order');
+}
+run('snapshot.contracts[0].logical_orders = snapshot.contracts[0].logical_orders.slice().reverse(); renderOverview(snapshot)');
+{
+  const ordersHtml = get('#orders-table').innerHTML;
+  assert.ok(ordersHtml.indexOf('quote-1-buy') < ordersHtml.indexOf('flatten-2'), 'arrival order must not invert displayed order time');
+  assert.ok(ordersHtml.indexOf('开仓') < ordersHtml.indexOf('平仓'), 'open order should appear before close order after reversed payload');
+}
+run('snapshot.contracts[0].logical_orders = snapshot.contracts[0].logical_orders.slice().reverse(); renderOverview(snapshot)');
 run('selectedContract = "rb2610@SHFE"; renderOverview(snapshot)');
 assert.match(get('#contract-name').textContent, /rb2610/);
 assert.match(get('#contract-facts').innerHTML, /未核对/);

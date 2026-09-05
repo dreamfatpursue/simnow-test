@@ -159,6 +159,27 @@
             "NOTTRADED"
           ],
           "first_at": 245
+        },
+        {
+          "logical_id": "flatten-1",
+          "order_id": "demo-close",
+          "client_id": "flatten-2",
+          "symbol": "IF2610",
+          "exchange": "CFFEX",
+          "side": "SELL",
+          "offset": "CLOSE",
+          "order_type": "FAK",
+          "price": 4507.8,
+          "volume": 1,
+          "traded": 1,
+          "status": "ALLTRADED",
+          "active": false,
+          "status_path": [
+            "SUBMITTING",
+            "ALLTRADED"
+          ],
+          "first_at": 206,
+          "exchange_time": "2026-09-02T20:01:46+08:00"
         }
       ],
       "trades": [
