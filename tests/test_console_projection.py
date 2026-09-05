@@ -38,6 +38,13 @@ def write_event(path: Path, *, at: float, state: str, event_type: str = "ClockEv
     )
 
 
+def append_records(path: Path, records: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record) + "\n")
+
+
 class AuditProjectorTests(unittest.TestCase):
     def test_projection_maps_mixed_contracts_to_highest_priority_stage(self) -> None:
         with tempfile.TemporaryDirectory() as root:
@@ -341,6 +348,228 @@ class AuditProjectorTests(unittest.TestCase):
             self.assertEqual(item["risk_reason"], "cancel_timeout")
             self.assertEqual([entry["code"] for entry in item["causal_timeline"]], ["round_finished", "risk_hold", "risk_hold"])
             self.assertNotIn("pnl", json.dumps(item).lower())
+
+    def test_projection_keeps_only_this_run_trades_and_does_not_relabel_them_as_close(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            audit_root = Path(root) / "audit" / "run-1"
+            event_path = audit_root / "rb2601@SHFE" / "events.jsonl"
+            append_records(
+                event_path,
+                [
+                    {
+                        "at": 1,
+                        "event": {
+                            "type": "OrderEvent",
+                            "data": {
+                                "order_id": "1_old_11",
+                                "symbol": "rb2601",
+                                "exchange": "SHFE",
+                                "side": "BUY",
+                                "offset": "OPEN",
+                                "status": "ALLTRADED",
+                                "volume": 1,
+                                "traded": 1,
+                                "price": 100,
+                            },
+                        },
+                        "state_before": "WAITING_FOR_ZERO_POSITION",
+                        "state_after": "WAITING_FOR_ZERO_POSITION",
+                        "actions": [],
+                    },
+                    {
+                        "at": 2,
+                        "event": {
+                            "type": "OrderEvent",
+                            "data": {
+                                "order_id": "1_old_13",
+                                "symbol": "rb2601",
+                                "exchange": "SHFE",
+                                "side": "SELL",
+                                "offset": "CLOSE",
+                                "status": "ALLTRADED",
+                                "volume": 1,
+                                "traded": 1,
+                                "price": 99,
+                            },
+                        },
+                        "state_before": "WAITING_FOR_ZERO_POSITION",
+                        "state_after": "WAITING_FOR_ZERO_POSITION",
+                        "actions": [],
+                    },
+                    {
+                        "at": 3,
+                        "event": {
+                            "type": "TradeEvent",
+                            "data": {
+                                "order_id": "1_old_11",
+                                "symbol": "rb2601",
+                                "exchange": "SHFE",
+                                "side": "BUY",
+                                "volume": 1,
+                                "price": 100,
+                                "trade_id": "prior-open",
+                                "exchange_time": "2026-09-03T21:23:42+08:00",
+                            },
+                        },
+                        "state_before": "WAITING_FOR_ZERO_POSITION",
+                        "state_after": "WAITING_FOR_ZERO_POSITION",
+                        "actions": [],
+                    },
+                    {
+                        "at": 4,
+                        "event": {
+                            "type": "TradeEvent",
+                            "data": {
+                                "order_id": "1_old_13",
+                                "symbol": "rb2601",
+                                "exchange": "SHFE",
+                                "side": "SELL",
+                                "volume": 1,
+                                "price": 99,
+                                "trade_id": "prior-close",
+                                "exchange_time": "2026-09-03T21:23:43+08:00",
+                            },
+                        },
+                        "state_before": "WAITING_FOR_ZERO_POSITION",
+                        "state_after": "WAITING_FOR_ZERO_POSITION",
+                        "actions": [],
+                    },
+                    {
+                        "at": 5,
+                        "event": {"type": "ClockEvent", "data": {"at": 5}},
+                        "state_before": "QUOTING",
+                        "state_after": "QUOTING",
+                        "actions": [
+                            {
+                                "type": "Action",
+                                "data": {
+                                    "kind": "submit_order",
+                                    "payload": {
+                                        "client_id": "quote-1-buy",
+                                        "symbol": "rb2601",
+                                        "exchange": "SHFE",
+                                        "side": "BUY",
+                                        "offset": "OPEN",
+                                        "order_type": "LIMIT",
+                                        "volume": 1,
+                                        "price": 101,
+                                    },
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "at": 6,
+                        "event": {
+                            "type": "OrderEvent",
+                            "data": {
+                                "order_id": "ex-this",
+                                "client_id": "quote-1-buy",
+                                "symbol": "rb2601",
+                                "exchange": "SHFE",
+                                "side": "BUY",
+                                "offset": "OPEN",
+                                "status": "ALLTRADED",
+                                "volume": 1,
+                                "traded": 1,
+                                "price": 101,
+                            },
+                        },
+                        "state_before": "QUOTING",
+                        "state_after": "CLOSING_WAIT",
+                        "actions": [],
+                    },
+                    {
+                        "at": 7,
+                        "event": {
+                            "type": "TradeEvent",
+                            "data": {
+                                "order_id": "ex-this",
+                                "client_id": "quote-1-buy",
+                                "symbol": "rb2601",
+                                "exchange": "SHFE",
+                                "side": "BUY",
+                                "volume": 1,
+                                "price": 101,
+                                "trade_id": "this-open",
+                                "exchange_time": "2026-09-03T21:42:02+08:00",
+                            },
+                        },
+                        "state_before": "CLOSING_WAIT",
+                        "state_after": "CLOSING_WAIT",
+                        "actions": [],
+                    },
+                    {
+                        "at": 8,
+                        "event": {"type": "ClockEvent", "data": {"at": 8}},
+                        "state_before": "FLATTENING",
+                        "state_after": "FLATTENING",
+                        "actions": [
+                            {
+                                "type": "Action",
+                                "data": {
+                                    "kind": "submit_order",
+                                    "payload": {
+                                        "client_id": "flatten-2",
+                                        "symbol": "rb2601",
+                                        "exchange": "SHFE",
+                                        "side": "SELL",
+                                        "offset": "CLOSE",
+                                        "order_type": "FAK",
+                                        "volume": 1,
+                                        "price": 98,
+                                    },
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "at": 9,
+                        "event": {
+                            "type": "OrderEvent",
+                            "data": {
+                                "order_id": "ex-flat",
+                                "client_id": "flatten-2",
+                                "symbol": "rb2601",
+                                "exchange": "SHFE",
+                                "side": "SELL",
+                                "offset": "CLOSE",
+                                "status": "ALLTRADED",
+                                "volume": 1,
+                                "traded": 1,
+                                "price": 98,
+                            },
+                        },
+                        "state_before": "FLATTENING",
+                        "state_after": "FLATTENING",
+                        "actions": [],
+                    },
+                    {
+                        "at": 10,
+                        "event": {
+                            "type": "TradeEvent",
+                            "data": {
+                                "order_id": "ex-flat",
+                                "client_id": "flatten-2",
+                                "symbol": "rb2601",
+                                "exchange": "SHFE",
+                                "side": "SELL",
+                                "volume": 1,
+                                "price": 98,
+                                "trade_id": "this-close",
+                                "exchange_time": "2026-09-03T21:42:04+08:00",
+                            },
+                        },
+                        "state_before": "FLATTENING",
+                        "state_after": "FLATTENING",
+                        "actions": [],
+                    },
+                ],
+            )
+            item = AuditProjector(run_identity(audit_root, ("rb2601@SHFE",))).refresh(now=10)["contracts"][0]
+            self.assertEqual([trade["trade_id"] for trade in item["trades"]], ["this-open", "this-close"])
+            self.assertEqual([trade["offset"] for trade in item["trades"]], ["OPEN", "CLOSE"])
+            self.assertEqual([trade["client_id"] for trade in item["trades"]], ["quote-1-buy", "flatten-2"])
 
 
 class CurrentOverviewTests(unittest.TestCase):

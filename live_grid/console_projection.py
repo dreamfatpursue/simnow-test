@@ -292,16 +292,21 @@ class AuditProjector:
         orders = list(self._order_maps[name].values())
         for order in orders:
             order["active"] = bool(order.get("status_unknown")) or order.get("status") not in _TERMINAL_ORDER_STATUSES
+            order_id = str(order.get("order_id") or "").strip()
+            client_id = str(order.get("client_id") or "").strip()
             for trade in self._contracts[name]["trades"]:
-                if (
-                    trade.get("order_id") == order.get("order_id")
-                    or trade.get("client_id") == order.get("client_id")
-                ):
+                same_order = bool(order_id) and order_id == str(trade.get("order_id") or "").strip()
+                same_client = bool(client_id) and client_id == str(trade.get("client_id") or "").strip()
+                if same_order or same_client:
                     trade["offset"] = order.get("offset")
         self._contracts[name]["logical_orders"] = orders
         self._contracts[name]["active_order_count"] = sum(1 for order in orders if order["active"])
 
     def _record_trade(self, name: str, data: dict[str, Any], at: Any) -> None:
+        order = self._find_order(name, data)
+        client_id = str(data.get("client_id") or "").strip() or str((order or {}).get("client_id") or "").strip()
+        if not client_id:
+            return
         trade_id = str(data.get("trade_id") or "").strip()
         if trade_id:
             key = "trade:" + trade_id
@@ -312,11 +317,10 @@ class AuditProjector:
         if key in self._trade_keys[name]:
             return
         self._trade_keys[name].add(key)
-        order = self._find_order(name, data)
         trade = {
             "trade_id": trade_id or None,
             "order_id": data.get("order_id"),
-            "client_id": data.get("client_id") or (order or {}).get("client_id"),
+            "client_id": client_id or (order or {}).get("client_id"),
             "symbol": data.get("symbol"),
             "exchange": data.get("exchange"),
             "side": data.get("side"),
