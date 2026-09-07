@@ -65,8 +65,8 @@ A credential-free document containing one entry per target contract with its ide
 _Avoid_: 凭证文件、硬编码策略参数、每合约一份参数文件、全局策略参数覆盖
 
 **策略文件预览**:
-A read-only, normalized view of one existing credential-free strategy file before launch. The console never edits or saves it; the operator changes the source JSON outside the console and previews again. Confirmation applies only while the selected file's effective hash, environment, and market-data mode remain unchanged.
-_Avoid_: 运行草稿、控制台配置编辑器、另存为、修改文件后沿用旧预览
+A normalized view of one existing credential-free strategy file before launch. While no trading run is active, the console may edit that file's parameters, validate the complete result, atomically save it back to the same source file, and create a new preview; contract identity, credentials, file creation, rename, and save-as remain unavailable. Confirmation applies only while the selected file's effective hash, environment, and market-data mode remain unchanged.
+_Avoid_: 运行草稿、未校验的局部保存、另存为、修改文件后沿用旧预览、运行中热更新
 
 **多合约运行**:
 One SimNow test run quoting one or more target contracts, each driven by an independently configured session with its own state, limits, and completed-round count. The run ends only after every contract's session reaches a terminal state.

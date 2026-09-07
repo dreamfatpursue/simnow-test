@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from live_grid.activity import ActivityIdentity, ActivityLock
+from live_grid.config import StrategyConfigError
 from trading_console import ConsoleInputError, ConsoleState, TradingConsoleServer
 
 
@@ -52,6 +53,72 @@ def ready_environment():
 
 
 class TradingConsoleStateTests(unittest.TestCase):
+    def test_save_permanently_replaces_previewed_strategy_and_renews_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            path = write_strategy(root)
+            state = ConsoleState(root)
+            before = state.preview("strategy.json", "first")
+            edited = json.loads(json.dumps(before["effective"]))
+            edited["contracts"][0].update(w_ticks=24, d_ticks=8, s_ticks=6, max_round_trips=3)
+
+            saved = state.save_strategy(
+                "strategy.json", before["sha256"], edited, "first"
+            )
+
+            persisted = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(persisted, saved["effective"])
+            self.assertEqual(saved["effective"]["contracts"][0]["w_ticks"], 24)
+            self.assertEqual(saved["effective"]["contracts"][0]["max_round_trips"], 3)
+            self.assertNotEqual(saved["sha256"], before["sha256"])
+            self.assertNotEqual(saved["confirmation"], before["confirmation"])
+
+            with ready_environment(), patch("trading_console.subprocess.Popen", return_value=SimpleNamespace(pid=9876, poll=lambda: None)) as popen:
+                state.start(saved["confirmation"])
+            self.assertIn(str(path.resolve()), popen.call_args.args[0])
+
+    def test_save_rejects_invalid_or_changed_source_without_overwriting_file(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            path = write_strategy(root)
+            state = ConsoleState(root)
+            preview = state.preview("strategy.json", "first")
+            invalid = json.loads(json.dumps(preview["effective"]))
+            invalid["contracts"][0].update(w_ticks=2, s_ticks=3)
+            before = path.read_text(encoding="utf-8")
+
+            with self.assertRaisesRegex(StrategyConfigError, "s_ticks 不得大于 w_ticks"):
+                state.save_strategy("strategy.json", preview["sha256"], invalid, "first")
+            self.assertEqual(path.read_text(encoding="utf-8"), before)
+
+            write_strategy(root, stable_market_seconds=7)
+            with self.assertRaisesRegex(ConsoleInputError, "文件已变化"):
+                state.save_strategy("strategy.json", preview["sha256"], preview["effective"], "first")
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["contracts"][0]["stable_market_seconds"], 7)
+
+    def test_save_rejects_contract_identity_changes_and_active_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            write_strategy(root)
+            lock_path = Path(root) / "activity.lock"
+            state = ConsoleState(root, activity_lock_path=lock_path)
+            preview = state.preview("strategy.json", "first")
+            changed_identity = json.loads(json.dumps(preview["effective"]))
+            changed_identity["contracts"][0]["symbol"] = "rb2610"
+            with self.assertRaisesRegex(ConsoleInputError, "合约标识"):
+                state.save_strategy("strategy.json", preview["sha256"], changed_identity, "first")
+
+            held, _ = ActivityLock.try_acquire(
+                lock_path,
+                ActivityIdentity(
+                    run_id="existing-run", pid=1234, started_at="2026-09-04T01:02:03+00:00",
+                    environment="first", market_data_mode="normal", strategy_hash="hash",
+                    contracts=("rb2601@SHFE",), audit_dir="audit/existing-run",
+                ),
+            )
+            try:
+                with self.assertRaisesRegex(ConsoleInputError, "已有活动运行"):
+                    state.save_strategy("strategy.json", preview["sha256"], preview["effective"], "first")
+            finally:
+                held.release()
+
     def test_list_and_preview_are_read_only_and_hide_environment_values(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             write_strategy(root)
@@ -236,7 +303,20 @@ class TradingConsoleHttpTests(unittest.TestCase):
                 connection.request("POST", "/api/preview", body=body, headers=headers)
                 response = connection.getresponse()
                 self.assertEqual(response.status, 200)
-                self.assertEqual(json.loads(response.read())["contracts"], ["rb2601@SHFE"])
+                preview = json.loads(response.read())
+                self.assertEqual(preview["contracts"], ["rb2601@SHFE"])
+
+                edited = json.loads(json.dumps(preview["effective"]))
+                edited["contracts"][0]["w_ticks"] = 24
+                connection.request(
+                    "POST",
+                    "/api/strategy/save",
+                    body=json.dumps({"strategy": "strategy.json", "environment": "first", "expected_sha256": preview["sha256"], "effective": edited}),
+                    headers=headers,
+                )
+                response = connection.getresponse()
+                self.assertEqual(response.status, 200)
+                self.assertEqual(json.loads(response.read())["effective"]["contracts"][0]["w_ticks"], 24)
 
                 connection.request("POST", "/api/preview", body=body, headers={**headers, "Origin": "http://evil.example"})
                 response = connection.getresponse()

@@ -284,8 +284,9 @@ class RunLiveGridTests(unittest.TestCase):
             held.release()
 
     def test_startup_failure_writes_complete_run_summary(self) -> None:
-        with tempfile.TemporaryDirectory() as config_root, tempfile.TemporaryDirectory() as audit_root:
+        with tempfile.TemporaryDirectory() as config_root, tempfile.TemporaryDirectory() as audit_root, tempfile.TemporaryDirectory() as lock_root:
             config_path = write_config(config_root, multi_strategy_doc())
+            lock_path = Path(lock_root) / "activity.lock"
             argv = [
                 "run_live_grid.py",
                 "--config",
@@ -296,7 +297,7 @@ class RunLiveGridTests(unittest.TestCase):
                 "--audit-dir",
                 audit_root,
             ]
-            with patch.object(sys, "argv", argv), patch.object(
+            with patch.object(sys, "argv", argv), patch.object(run_live_grid, "ACTIVITY_LOCK_PATH", lock_path), patch.object(
                 run_live_grid,
                 "load_settings",
                 side_effect=RuntimeError("missing credentials"),
@@ -405,8 +406,9 @@ class RunLiveGridTests(unittest.TestCase):
                 raise KeyboardInterrupt()
             threading.Event().wait(seconds)
 
-        with tempfile.TemporaryDirectory() as config_root, tempfile.TemporaryDirectory() as audit_root:
+        with tempfile.TemporaryDirectory() as config_root, tempfile.TemporaryDirectory() as audit_root, tempfile.TemporaryDirectory() as lock_root:
             config_path = write_config(config_root, multi_strategy_doc())
+            lock_path = Path(lock_root) / "activity.lock"
             argv = [
                 "run_live_grid.py",
                 "--config",
@@ -416,7 +418,7 @@ class RunLiveGridTests(unittest.TestCase):
                 audit_root,
             ]
             settings = SimpleNamespace(gateway_setting=lambda: {})
-            with patch.object(sys, "argv", argv), patch.object(
+            with patch.object(sys, "argv", argv), patch.object(run_live_grid, "ACTIVITY_LOCK_PATH", lock_path), patch.object(
                 run_live_grid,
                 "load_settings",
                 return_value=settings,

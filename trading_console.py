@@ -9,6 +9,7 @@ import secrets
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -131,7 +132,8 @@ class ConsoleState:
             )
         return result
 
-    def preview(self, strategy_name: str, environment: str, allow_replay_market_data: bool = False) -> dict[str, Any]:
+    @staticmethod
+    def _validate_preview_options(environment: str, allow_replay_market_data: bool) -> None:
         if environment not in SETTING_ENV_BY_PROFILE:
             raise ConsoleInputError(f"不支持的仿真环境: {environment}")
         if not isinstance(allow_replay_market_data, bool):
@@ -139,11 +141,13 @@ class ConsoleState:
         if allow_replay_market_data and environment != "7x24":
             raise ConsoleInputError("历史行情许可仅允许 7x24 环境")
 
-        path = self._safe_strategy_path(strategy_name)
-        try:
-            config = MultiContractConfig.from_json_file(path)
-        except StrategyConfigError:
-            raise
+    def _preview_response(
+        self,
+        strategy_name: str,
+        environment: str,
+        allow_replay_market_data: bool,
+        config: MultiContractConfig,
+    ) -> dict[str, Any]:
         mode = "replay_override" if allow_replay_market_data else "normal"
         confirmation = PreviewConfirmation(
             token=secrets.token_urlsafe(24),
@@ -152,8 +156,7 @@ class ConsoleState:
             market_data_mode=mode,
             strategy_hash=config.sha256,
         )
-        with self._start_guard:
-            self._confirmation = confirmation
+        self._confirmation = confirmation
         return {
             "strategy": strategy_name,
             "environment": environment,
@@ -164,6 +167,59 @@ class ConsoleState:
             "environment_status": environment_status(environment),
             "confirmation": confirmation.token,
         }
+
+    def preview(self, strategy_name: str, environment: str, allow_replay_market_data: bool = False) -> dict[str, Any]:
+        self._validate_preview_options(environment, allow_replay_market_data)
+        config = MultiContractConfig.from_json_file(self._safe_strategy_path(strategy_name))
+        with self._start_guard:
+            return self._preview_response(strategy_name, environment, allow_replay_market_data, config)
+
+    @staticmethod
+    def _write_strategy(path: Path, effective: dict[str, Any]) -> None:
+        temporary: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False
+            ) as handle:
+                temporary = Path(handle.name)
+                json.dump(effective, handle, ensure_ascii=False, indent=2)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(temporary, path.stat().st_mode & 0o777)
+            temporary.replace(path)
+        except OSError as exc:
+            raise ConsoleInputError(f"策略文件保存失败: {exc}") from exc
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def save_strategy(
+        self,
+        strategy_name: str,
+        expected_sha256: Any,
+        effective: Any,
+        environment: str,
+        allow_replay_market_data: bool = False,
+    ) -> dict[str, Any]:
+        """Validate and atomically persist parameters for the already-previewed strategy."""
+        self._validate_preview_options(environment, allow_replay_market_data)
+        if not isinstance(expected_sha256, str) or not expected_sha256:
+            raise ConsoleInputError("保存请求缺少预览策略指纹")
+        if not isinstance(effective, dict):
+            raise StrategyConfigError("保存参数必须是 JSON 对象")
+        path = self._safe_strategy_path(strategy_name)
+        with self._start_guard:
+            if ActivityLock.read_active(self.activity_lock_path) is not None or self._launching_status() is not None:
+                raise ConsoleInputError("已有活动运行，不能修改策略参数")
+            current = MultiContractConfig.from_json_file(path)
+            if current.sha256 != expected_sha256:
+                raise ConsoleInputError("策略文件已变化，请重新预览后再保存")
+            replacement = MultiContractConfig.from_mapping(effective)
+            if self._contract_names(replacement) != self._contract_names(current):
+                raise ConsoleInputError("只能修改参数，不能修改合约标识或合约顺序")
+            self._write_strategy(path, replacement.effective)
+            return self._preview_response(strategy_name, environment, allow_replay_market_data, replacement)
 
     def _launching_status(self) -> dict[str, Any] | None:
         process = self._launching_process
@@ -409,6 +465,16 @@ class TradingConsoleHandler(BaseHTTPRequestHandler):
             if path == "/api/preview":
                 result = self.console_state.preview(
                     payload.get("strategy"),
+                    payload.get("environment"),
+                    payload.get("allow_replay_market_data", False),
+                )
+                self._send_json(200, result)
+                return
+            if path == "/api/strategy/save":
+                result = self.console_state.save_strategy(
+                    payload.get("strategy"),
+                    payload.get("expected_sha256"),
+                    payload.get("effective"),
                     payload.get("environment"),
                     payload.get("allow_replay_market_data", False),
                 )

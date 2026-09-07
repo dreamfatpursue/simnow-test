@@ -8,7 +8,7 @@
 :root{color-scheme:light;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172b43;background:#f3f6fa;font-size:16px}
 *{box-sizing:border-box}[hidden]{display:none!important}details:not([open])>:not(summary){display:none}body{margin:0}main{max-width:1240px;margin:auto;padding:28px 28px 48px}
 h1{font-size:1.65rem;margin:0;letter-spacing:-.04em}h2{font-size:1.15rem;margin:0}h3{font-size:1rem;margin:0 0 12px}p{line-height:1.6}
-button,select,input{font:inherit}button,select{min-height:40px;border:1px solid #cad5e3;border-radius:7px;padding:8px 13px;background:white;color:inherit}
+button,select,input{font:inherit}button,select,input:not([type="checkbox"]){min-height:40px;border:1px solid #cad5e3;border-radius:7px;padding:8px 13px;background:white;color:inherit}
 button,summary{cursor:pointer}button:hover{background:#eef4fc}button:disabled{cursor:not-allowed;opacity:.55}
 button.primary{background:#205dcc;color:white;border-color:#205dcc}button.danger{color:#ae2432;border-color:#e3b4bb;background:#fff8f8}
 button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visible{outline:3px solid #7aa8f5;outline-offset:3px}
@@ -21,7 +21,7 @@ button:focus-visible,select:focus-visible,summary:focus-visible,input:focus-visi
 .message.error{color:#9e2233;background:#fff0f2}.message.risk{border-left:4px solid #cb354a;background:#fff0f2;color:#921d2b;font-weight:600}.message.warn{border-left:4px solid #c68816;background:#fff7e4;color:#825405}
 .form-row{display:flex;flex-wrap:wrap;gap:16px;align-items:end;margin-top:18px}label{display:flex;flex-direction:column;gap:7px;font-size:.875rem;font-weight:600}
 select{max-width:100%}.strategy-field{flex:1;min-width:220px}.checkbox{flex-direction:row;align-items:center;min-height:40px}.checkbox input{width:17px;height:17px}
-summary{font-size:.875rem;line-height:1.7}#launch-panel>summary{font-size:1rem;font-weight:650}.preview{margin-top:20px;border-top:1px solid #e3e9f1;padding-top:20px}.preview .primary{margin-top:18px}
+summary{font-size:.875rem;line-height:1.7}#launch-panel>summary{font-size:1rem;font-weight:650}.preview{margin-top:20px;border-top:1px solid #e3e9f1;padding-top:20px}.preview-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}.preview-actions .primary{margin:0}
 .connection-strip{display:flex;flex-wrap:wrap;gap:12px 22px;border-top:1px solid #edf0f5;padding-top:14px;margin-top:16px;font-size:.875rem}
 .contract-switcher{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:18px}.contract-switcher button{text-align:left;min-width:190px;flex:1}
 .contract-switcher button[aria-pressed="true"]{border-color:#205dcc;background:#f0f5ff;box-shadow:inset 0 0 0 1px #205dcc}
@@ -40,6 +40,7 @@ th,td{padding:13px 12px;border-bottom:1px solid #e7edf4;vertical-align:top}td{li
 .timeline li::before{content:"";position:absolute;width:8px;height:8px;border-radius:50%;background:#6a8fc8;left:-5px;top:8px}.timeline p{font-size:.875rem;margin:6px 0}.timeline .inline{justify-content:space-between}
 .params{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 24px;margin:0 0 18px}.params>div{padding:12px 0;border-bottom:1px solid #e7edf4;min-width:0}
 .params dt{color:#586b82;font-size:.875rem}.params dd{margin:6px 0 0;font-size:.95rem;overflow-wrap:anywhere}.config-contract{margin-bottom:18px}.metadata{margin-top:20px}.metadata dl{margin-top:8px}
+.edit-contract{border:1px solid #dbe4f0;border-radius:9px;padding:16px;margin-bottom:16px}.edit-contract h3{margin-bottom:6px}.edit-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 16px;margin:14px 0}.edit-grid label{min-width:0}.edit-grid input{width:100%;min-width:0}.windows-edit{border:0;border-top:1px solid #e7edf4;padding:14px 0 0;margin:14px 0 0}.windows-edit legend{font-size:.875rem;font-weight:650;padding:0}.window-row{display:flex;align-items:end;gap:8px;margin-top:10px}.window-row label{flex:1}.window-row button{min-height:40px}.window-add{margin-top:10px}.readonly-contract{font-size:.875rem;color:#586b82}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto;background:#f4f6fa;color:#3c4d62;padding:14px;border-radius:8px;font-size:.8rem}
 footer{margin-top:22px;font-size:.8rem;color:#586b82}
 @media(max-width:700px){main{padding:20px 14px 36px}.card{padding:17px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.metric{padding:15px}.metric:nth-child(3){border-left:0}.metric:nth-child(n+3){border-top:1px solid #e0e7f0}.metric dd{font-size:1.5rem}.params{grid-template-columns:repeat(2,minmax(0,1fr))}.tabs button{padding:8px 10px}}
@@ -69,10 +70,10 @@ footer{margin-top:22px;font-size:.8rem;color:#586b82}
   <details class="metadata" data-key="metadata"><summary>运行标识与排障数据</summary><div id="run-metadata"></div><details data-key="run-raw"><summary>原始审计投影 JSON</summary><pre id="run-raw"></pre></details></details>
 </section>
 <details id="launch-panel" class="card" open>
-  <summary id="launch-title">启动一次运行</summary><p class="muted">读取现有策略文件；参数需要调整时，请修改原文件后重新预览。</p>
+  <summary id="launch-title">启动一次运行</summary><p class="muted">预览后可编辑并永久保存当前策略文件；保存成功后，请核对最新参数再启动。</p>
   <div class="form-row"><label class="strategy-field">策略文件<select id="strategy"></select></label><label>仿真环境<select id="environment"><option value="first">SimNow · first</option><option value="7x24">SimNow · 7×24</option><option value="guangfa">广发仿真 · guangfa</option></select></label><label class="checkbox"><input id="replay" type="checkbox" disabled>允许 7×24 历史行情</label><button id="preview" type="button" class="primary">预览策略</button></div>
   <section id="preview-card" class="preview" hidden><div class="section-header"><h2>本次启动预览</h2><span id="preview-mode" class="badge"></span></div><p id="environment-status" class="message"></p><div id="preview-parameters"></div>
-    <details data-key="preview-metadata"><summary>配置指纹与原始数据</summary><p id="preview-hash" class="muted" style="overflow-wrap:anywhere"></p><pre id="preview-raw"></pre></details><button id="start" type="button" class="primary" disabled>确认并启动</button>
+    <details data-key="preview-metadata"><summary>配置指纹与原始数据</summary><p id="preview-hash" class="muted" style="overflow-wrap:anywhere"></p><pre id="preview-raw"></pre></details><div class="preview-actions"><button id="edit" type="button">编辑参数</button><button id="save" type="button" class="primary" hidden>保存修改</button><button id="cancel-edit" type="button" hidden>取消编辑</button><button id="start" type="button" class="primary" disabled>确认并启动</button></div>
   </section>
 </details>
 <footer>数据来自本次运行审计 · 关闭页面不会停止交易 · 安全停止作用于全部合约</footer>
@@ -93,7 +94,9 @@ const orderTypes = {LIMIT:"限价",FAK:"FAK",FOK:"FOK",MARKET:"市价"};
 const reasons = {process_abnormal_exit:"进程异常退出，当前显示最后已知事实",cancel_timeout:"撤单超时，等待委托核对",flatten_timeout:"平仓超时，等待委托与持仓核对",flatten_rejected:"平仓被拒单",risk_hold:"风险未解除，保持连接并继续核对",trade_disconnected:"交易连接中断",market_disconnected:"行情连接中断",unknown_order:"存在状态未知的委托",interrupted:"已请求安全停止",max_round_trips:"已达到最大完成轮数"};
 const stateNames = {WAITING_FOR_CONTRACT:"连接 CTP／查询合约",WAITING_FOR_ZERO_POSITION:"核对初始持仓",WAITING_FOR_STABLE_QUOTE:"等待稳定行情",PAUSED:"等待下一报价窗口",QUOTE_PENDING:"等待报价回报",QUOTING:"正在报价",REPLACING:"正在撤换报价",CLOSING_WAIT:"等待对侧成交",CLOSING_CANCELS:"正在撤单",CLOSING_RECONCILE:"正在持仓对账",FLATTENING:"正在 FAK 平仓",RISK_HOLD:"等待风险解除与对账",FINISHED:"安全完成",FAILED:"安全失败"};
 const fields = {version:["配置版本",""],w_ticks:["网格半宽 W","tick"],d_ticks:["额外挂单距离 D","tick"],s_ticks:["重定锚步长 S","tick"],max_round_trips:["最大完成轮数","轮"],target_lots:["每侧手数","手"],max_tick_age_seconds:["行情过期阈值","秒"],stable_market_seconds:["稳定行情等待","秒"],closing_wait_seconds:["对侧成交等待窗口","秒"],book_protection_multiple:["盘口保护倍数","倍"],reanchor_confirmation_seconds:["重定锚确认时间","秒"],action_limit_per_minute:["每分钟报撤上限","次"],cancel_timeout_seconds:["撤单超时","秒"],flatten_timeout_seconds:["平仓超时","秒"],flatten_adverse_ticks:["平仓不利价格上限","tick"],quote_ack_timeout_seconds:["报价回报超时","秒"]};
-let consoleToken = "", confirmation = "", previewReady = false, selectionVersion = 0, startPending = false, previewPending = false;
+const editableFields = ["target_lots","w_ticks","d_ticks","s_ticks","max_round_trips","max_tick_age_seconds","stable_market_seconds","closing_wait_seconds","book_protection_multiple","reanchor_confirmation_seconds","action_limit_per_minute","cancel_timeout_seconds","flatten_timeout_seconds","flatten_adverse_ticks","quote_ack_timeout_seconds"];
+const integerFields = new Set(["target_lots","w_ticks","d_ticks","s_ticks","max_round_trips"]);
+let consoleToken = "", confirmation = "", previewReady = false, selectionVersion = 0, startPending = false, previewPending = false, savePending = false, previewEditing = false, previewSha = "", previewEffective = null, editingEffective = null;
 let overview = null, selectedContract = "", lastRunId = "", pendingStopRunId = "", pollPending = false, connectionFailed = false;
 let knownRiskKeys = new Set(), overviewInitialized = false;
 
@@ -152,6 +155,43 @@ function renderParameters(selector, effective, selected = null) {
   html += paramGrid([["配置版本",valueText(version)]]);
   setHTML(selector,html);
 }
+function editNumberInput(contractIndex, key, value) {
+  const label = fields[key]?.[0] || key, unit = fields[key]?.[1];
+  const min = key === "closing_wait_seconds" ? "0" : "0.00000001";
+  return '<label><span>' + esc(label) + (unit ? '（' + esc(unit) + '）' : '') + '</span><input data-edit-param="' + esc(key) + '" data-contract-index="' + contractIndex + '" type="number" min="' + min + '" step="' + (integerFields.has(key) ? '1' : 'any') + '" value="' + esc(value) + '" aria-label="' + esc(label) + '"></label>';
+}
+function renderEditableParameters(selector, effective) {
+  let html = '<h3>编辑本次策略参数</h3><p class="muted">保存本次策略修改会永久写入当前策略文件；合约代码和交易所保持不变。</p>';
+  for (const [contractIndex, item] of (effective.contracts || []).entries()) {
+    const keys = editableFields.filter((key) => key in item);
+    html += '<section class="edit-contract"><h3>' + esc(item.symbol) + ' · ' + esc(exchanges[item.exchange] || item.exchange) + '</h3><p class="readonly-contract">合约代码与交易所不可编辑</p><div class="edit-grid">' + keys.map((key) => editNumberInput(contractIndex, key, item[key])).join('') + '</div>';
+    html += '<fieldset class="windows-edit"><legend>报价窗口（该合约）</legend>' + (item.quote_windows || []).map((window, windowIndex) => '<div class="window-row"><label><span>开始时间</span><input type="time" data-window-part="start" data-contract-index="' + contractIndex + '" data-window-index="' + windowIndex + '" value="' + esc(window.start) + '" aria-label="报价窗口开始时间"></label><label><span>结束时间</span><input type="time" data-window-part="end" data-contract-index="' + contractIndex + '" data-window-index="' + windowIndex + '" value="' + esc(window.end) + '" aria-label="报价窗口结束时间"></label><button type="button" data-remove-window data-contract-index="' + contractIndex + '" data-window-index="' + windowIndex + '">删除</button></div>').join('') + '<button type="button" class="window-add" data-add-window data-contract-index="' + contractIndex + '">添加报价窗口</button></fieldset></section>';
+  }
+  setHTML(selector,html);
+}
+function collectEditedEffective() {
+  if (!editingEffective) throw new Error("没有待保存的参数修改");
+  const effective = structuredClone(editingEffective);
+  for (const input of $("#preview-parameters").querySelectorAll("input[data-edit-param]")) {
+    const value = Number(input.value);
+    if (!input.value.trim() || !Number.isFinite(value)) throw new Error((fields[input.dataset.editParam]?.[0] || input.dataset.editParam) + "必须填写有效数字");
+    effective.contracts[Number(input.dataset.contractIndex)][input.dataset.editParam] = value;
+  }
+  for (const input of $("#preview-parameters").querySelectorAll("input[data-window-part]")) {
+    if (!input.value) throw new Error("报价窗口的开始和结束时间都必须填写");
+    effective.contracts[Number(input.dataset.contractIndex)].quote_windows[Number(input.dataset.windowIndex)][input.dataset.windowPart] = input.value;
+  }
+  return effective;
+}
+function applyPreview(body, message) {
+  confirmation = body.confirmation; previewReady = body.environment_status.ready; previewSha = body.sha256; previewEffective = body.effective; previewEditing = false; editingEffective = null;
+  renderParameters("#preview-parameters",body.effective);
+  setBadge("#preview-mode",envNames[body.environment] + " · " + modeText(body.market_data_mode),body.market_data_mode === "replay_override" ? "warn" : "");
+  const missing = body.environment_status.missing;
+  $("#environment-status").textContent = missing.length ? "环境未就绪，缺少：" + missing.join("、") : "环境配置已就绪；预览不会连接 CTP，也不会显示凭证。";
+  $("#environment-status").classList.toggle("warn",Boolean(missing.length)); $("#preview-hash").textContent = "策略文件：" + body.strategy + " · SHA-256：" + body.sha256;
+  $("#preview-raw").textContent = JSON.stringify(body.effective,null,2); $("#preview-card").hidden = false; showStatus(message);
+}
 async function request(path, options = {}) {
   const response = await fetch(path,{cache:"no-store",signal:AbortSignal.timeout(8000),...options,headers:{"X-Console-Token":consoleToken,...(options.headers || {})}});
   const body = await response.json();
@@ -161,14 +201,18 @@ async function request(path, options = {}) {
 function mutation(path, body) { return request(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); }
 function updateButtons() {
   const running = ["active","starting"].includes(overview?.status);
-  $("#preview").disabled = running || connectionFailed || previewPending || startPending || !$("#strategy").value;
-  $("#start").disabled = running || connectionFailed || startPending || previewPending || !confirmation || !previewReady;
+  $("#preview").disabled = running || connectionFailed || previewPending || savePending || startPending || previewEditing || !$("#strategy").value;
+  $("#edit").hidden = previewEditing; $("#save").hidden = !previewEditing; $("#cancel-edit").hidden = !previewEditing;
+  $("#edit").disabled = running || connectionFailed || previewPending || savePending || startPending || previewEditing || !previewEffective;
+  $("#save").disabled = running || connectionFailed || previewPending || savePending || startPending || !previewEditing;
+  $("#cancel-edit").disabled = savePending;
+  $("#start").disabled = running || connectionFailed || startPending || previewPending || savePending || previewEditing || !confirmation || !previewReady;
   $("#stop").hidden = overview?.status !== "active";
   const stopping = overview?.stop_requested || (overview?.run?.run_id && pendingStopRunId === overview.run.run_id);
   $("#stop").disabled = Boolean(stopping); $("#stop").textContent = stopping ? "正在安全停止…" : "安全停止";
 }
 function invalidatePreview() {
-  selectionVersion++; confirmation = ""; previewReady = false; $("#preview-card").hidden = true;
+  selectionVersion++; confirmation = ""; previewReady = false; previewSha = ""; previewEffective = null; previewEditing = false; editingEffective = null; $("#preview-card").hidden = true;
   $("#replay").disabled = $("#environment").value !== "7x24";
   if ($("#replay").disabled) $("#replay").checked = false;
   updateButtons();
@@ -287,17 +331,44 @@ for (const button of document.querySelectorAll("[data-panel]")) button.addEventL
   for (const tab of document.querySelectorAll("[data-panel]")) { const active = tab === button; tab.setAttribute("aria-pressed",String(active)); $("#panel-"+tab.dataset.panel).hidden = !active; }
 });
 $("#run-raw").parentElement.addEventListener("toggle",() => { if ($("#run-raw").parentElement.open) $("#run-raw").textContent = JSON.stringify(overview,null,2); });
+$("#edit").addEventListener("click",() => {
+  if ($("#edit").disabled || !previewEffective) return;
+  previewEditing = true; editingEffective = structuredClone(previewEffective); renderEditableParameters("#preview-parameters",editingEffective);
+  showStatus("正在编辑参数；保存后会永久修改当前策略文件。"); updateButtons();
+});
+$("#cancel-edit").addEventListener("click",() => {
+  if ($("#cancel-edit").disabled) return;
+  previewEditing = false; editingEffective = null; renderParameters("#preview-parameters",previewEffective);
+  showStatus("已放弃未保存的参数修改。"); updateButtons();
+});
+$("#preview-parameters").addEventListener("click",(event) => {
+  const button = event.target.closest("[data-add-window],[data-remove-window]");
+  if (!button || !previewEditing) return;
+  try {
+    const draft = collectEditedEffective(), contract = draft.contracts[Number(button.dataset.contractIndex)];
+    if (button.hasAttribute("data-add-window")) contract.quote_windows.push({start:"09:00",end:"15:00"});
+    else contract.quote_windows.splice(Number(button.dataset.windowIndex),1);
+    editingEffective = draft; renderEditableParameters("#preview-parameters",editingEffective);
+  } catch (error) { showStatus(error.message,true); }
+});
+$("#save").addEventListener("click",async () => {
+  if ($("#save").disabled) return;
+  let effective;
+  try { effective = collectEditedEffective(); }
+  catch (error) { showStatus(error.message,true); return; }
+  editingEffective = effective; savePending = true; updateButtons();
+  try {
+    const body = await mutation("/api/strategy/save",{strategy:$("#strategy").value,environment:$("#environment").value,allow_replay_market_data:$("#replay").checked,expected_sha256:previewSha,effective});
+    applyPreview(body,"已永久保存到策略文件；请核对最新参数后确认启动。");
+  } catch (error) { showStatus("保存失败：" + error.message + "。请重新预览或继续修改后重试。",true); }
+  finally { savePending = false; updateButtons(); }
+});
 $("#preview").addEventListener("click",async () => {
   invalidatePreview(); const version = selectionVersion; previewPending = true; updateButtons();
   try {
     const body = await mutation("/api/preview",{strategy:$("#strategy").value,environment:$("#environment").value,allow_replay_market_data:$("#replay").checked});
     if (version !== selectionVersion) return;
-    confirmation = body.confirmation; previewReady = body.environment_status.ready; renderParameters("#preview-parameters",body.effective);
-    setBadge("#preview-mode",envNames[body.environment] + " · " + modeText(body.market_data_mode),body.market_data_mode === "replay_override" ? "warn" : "");
-    const missing = body.environment_status.missing;
-    $("#environment-status").textContent = missing.length ? "环境未就绪，缺少：" + missing.join("、") : "环境配置已就绪；预览不会连接 CTP，也不会显示凭证。";
-    $("#environment-status").classList.toggle("warn",Boolean(missing.length)); $("#preview-hash").textContent = "策略文件：" + body.strategy + " · SHA-256：" + body.sha256;
-    $("#preview-raw").textContent = JSON.stringify(body.effective,null,2); $("#preview-card").hidden = false; showStatus("预览完成，请核对参数后确认启动。");
+    applyPreview(body,"预览完成，请核对参数后确认启动。");
   } catch (error) { showStatus(error.message,true); } finally { previewPending = false; updateButtons(); }
 });
 $("#start").addEventListener("click",async () => {
