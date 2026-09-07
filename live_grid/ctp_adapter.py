@@ -33,8 +33,7 @@ GATEWAY_NAME = "CTP"
 # 零仓门槛尚未评估完的会话状态：只要还有会话处在其一，任何会话都不得开始首次报价。
 _PREGATE_STATES = {SessionState.WAITING_FOR_CONTRACT, SessionState.WAITING_FOR_ZERO_POSITION}
 
-# CTP 同一时刻只允许一个在途查询；目标合约回报可能在合约查询响应流的中间到达，
-# 此时新查询发送会被拒，需按定时器每秒重试直到流结束（SimNow 可能持续数十秒）。
+# CTP 同一时刻只允许一个在途查询；目标合约查询完成后才发送启动查委托/成交/持仓。
 POSITION_QUERY_MAX_ATTEMPTS = 60
 # 查询被拒后的重发间隔（秒）：1s→2s→4s，之后固定 5s。
 # 固定每秒一发的节奏会持续踩中 CTP 的秒级流控窗口，形成连续拒发自锁。
@@ -118,6 +117,14 @@ class CtpLiveGridAdapter:
         self._pending_cancel_sent: set[str] = set()
         self._lock = threading.RLock()
 
+    def connect_setting(self) -> dict[str, Any]:
+        setting = dict(self.gateway_setting)
+        setting["查询合约"] = [
+            f"{session.target_symbol}.{session.target_exchange}"
+            for session in self.sessions
+        ]
+        return setting
+
     def start(self) -> Any:
         verify_project_gateway(self.project_root)
         try:
@@ -157,7 +164,7 @@ class CtpLiveGridAdapter:
         engine.register(EVENT_CTP_ORDER_QUERY_COMPLETE, self._on_order_query_complete)
         engine.register(EVENT_CTP_TRADE_QUERY_COMPLETE, self._on_trade_query_complete)
         engine.register(EVENT_TIMER, self._on_timer)
-        self.main_engine.connect(self.gateway_setting, GATEWAY_NAME)
+        self.main_engine.connect(self.connect_setting(), GATEWAY_NAME)
         return self.main_engine
 
     def interrupt(self) -> None:

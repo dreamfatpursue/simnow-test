@@ -195,6 +195,7 @@ class CtpGateway(BaseGateway):
         ):
             md_address = "tcp://" + md_address
 
+        self.td_api.configure_instrument_queries(setting.get("查询合约"))
         self.td_api.connect(td_address, userid, password, brokerid, auth_code, appid)
         self.md_api.connect(md_address, userid, password, brokerid)
 
@@ -468,6 +469,9 @@ class CtpTdApi(TdApi):
         self.trade_queries: dict[int, list[dict]] = {}
         # 最近一次 ReqQry* 发送被拒的原始返回码描述；None 表示最近一次发送成功。
         self.last_query_send_refusal: str | None = None
+        # 空列表表示全市场查询；非空则按目标合约逐个 ReqQryInstrument。
+        self.instrument_filters: list[dict] = []
+        self._pending_instrument_queries: list[dict] | None = None
 
     def onFrontConnected(self) -> None:
         """服务器连接成功回报"""
@@ -580,16 +584,44 @@ class CtpTdApi(TdApi):
     def onRspSettlementInfoConfirm(self, data: dict, error: dict, reqid: int, last: bool) -> None:
         """确认结算单回报"""
         self.gateway.write_log("结算信息确认成功")
+        self._pending_instrument_queries = list(self.instrument_filters) if self.instrument_filters else None
+        self._send_instrument_query()
 
-        # 由于流控，单次查询可能失败，通过while循环持续尝试，直到成功发出请求
+    def configure_instrument_queries(self, items: object) -> None:
+        """报撤入口传入目标合约；只读入口不传则仍查全市场。"""
+        filters: list[dict] = []
+        for item in items or ():
+            symbol, sep, exchange = str(item).partition(".")
+            if sep and symbol and exchange:
+                filters.append({"InstrumentID": symbol, "ExchangeID": exchange})
+        self.instrument_filters = filters
+
+    def _send_instrument_query(self) -> None:
+        if self._pending_instrument_queries is None:
+            req: dict = {}
+        elif self._pending_instrument_queries:
+            req = self._pending_instrument_queries.pop(0)
+        else:
+            return
         while True:
             self.reqid += 1
-            n: int = self.reqQryInstrument({}, self.reqid)
-
+            n: int = self.reqQryInstrument(req, self.reqid)
             if not n:
                 break
-            else:
-                sleep(1)
+            sleep(1)
+
+    def _finish_or_continue_instrument_query(self) -> None:
+        if self._pending_instrument_queries:
+            self._send_instrument_query()
+            return
+        self.contract_inited = True
+        self.gateway.write_log("合约信息查询成功")
+        for data in self.order_data:
+            self.onRtnOrder(data)
+        self.order_data.clear()
+        for data in self.trade_data:
+            self.onRtnTrade(data)
+        self.trade_data.clear()
 
     def onRspQryInvestorPosition(self, data: dict, error: dict, reqid: int, last: bool) -> None:
         """持仓查询回报"""
@@ -709,6 +741,8 @@ class CtpTdApi(TdApi):
         """合约查询回报"""
         if error.get("ErrorID", 0):
             self.gateway.write_error("合约查询失败", error)
+            if last and self._pending_instrument_queries:
+                self._send_instrument_query()
             return
 
         if data:
@@ -746,16 +780,7 @@ class CtpTdApi(TdApi):
                 symbol_contract_map[contract.symbol] = contract
 
         if last:
-            self.contract_inited = True
-            self.gateway.write_log("合约信息查询成功")
-
-            for data in self.order_data:
-                self.onRtnOrder(data)
-            self.order_data.clear()
-
-            for data in self.trade_data:
-                self.onRtnTrade(data)
-            self.trade_data.clear()
+            self._finish_or_continue_instrument_query()
 
     def onRtnOrder(self, data: dict) -> None:
         """委托更新推送"""
@@ -764,7 +789,9 @@ class CtpTdApi(TdApi):
             return
 
         symbol: str = data["InstrumentID"]
-        contract: ContractData = symbol_contract_map[symbol]
+        contract: ContractData = symbol_contract_map.get(symbol)
+        if contract is None:
+            return
 
         frontid: int = data["FrontID"]
         sessionid: int = data["SessionID"]
@@ -815,7 +842,9 @@ class CtpTdApi(TdApi):
             return
 
         symbol: str = data["InstrumentID"]
-        contract: ContractData = symbol_contract_map[symbol]
+        contract: ContractData = symbol_contract_map.get(symbol)
+        if contract is None:
+            return
 
         orderid: str = self.sysid_orderid_map[data["OrderSysID"]]
 

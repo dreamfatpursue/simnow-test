@@ -29,7 +29,7 @@ _STAGE_BY_STATE = {
     "FAILED": "终态",
 }
 _LABEL_BY_STATE = {
-    "WAITING_FOR_CONTRACT": "正在连接 CTP／查询合约信息，SimNow 等待 2～3 分钟属正常",
+    "WAITING_FOR_CONTRACT": "正在连接 CTP／查询目标合约信息",
     "WAITING_FOR_ZERO_POSITION": "合约已就绪／正在核对初始持仓",
     "WAITING_FOR_STABLE_QUOTE": "交易运行／等待稳定行情",
     "PAUSED": "交易运行／等待下一个报价窗口",

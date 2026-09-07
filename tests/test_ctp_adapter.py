@@ -142,6 +142,15 @@ class FakeMainEngine:
 
 
 class CtpAdapterTests(unittest.TestCase):
+    def test_connect_setting_asks_gateway_for_target_instruments_only(self) -> None:
+        adapter, _, _ = make_adapter(("AP701", "CZCE"), ("IF2610", "CFFEX"))
+        adapter.gateway_setting = {"用户名": "demo"}
+
+        setting = adapter.connect_setting()
+
+        self.assertEqual(setting["用户名"], "demo")
+        self.assertEqual(setting["查询合约"], ["AP701.CZCE", "IF2610.CFFEX"])
+
     def test_adapter_routes_two_contract_sessions_independently(self) -> None:
         adapter, sessions, audits = make_adapter(("rb2601", "SHFE"), ("AP610", "CZCE"))
         engine = adapter.main_engine

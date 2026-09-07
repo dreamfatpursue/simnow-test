@@ -292,7 +292,7 @@ adapter 的动作转换只做协议映射，不决定策略逻辑。提交成功
 
 确认通过后，session 从 `WAITING_FOR_CONTRACT` 开始。必须按以下顺序通过：
 
-1. **目标合约元数据**：收到策略目标合约的 `ContractEvent`，且 `pricetick` 为有限正数。`pricetick` 只能来自 CTP 合约回报，不能写死。
+1. **目标合约元数据**：报撤入口把策略目标合约写入网关 `查询合约`，结算确认后按合约逐个 `ReqQryInstrument`，不再拉取 SimNow 全市场期权列表。收到目标合约的 `ContractEvent` 且 `pricetick` 为有限正数后才能继续。只读入口 `run.py` 仍查全市场。`pricetick` 只能来自 CTP 合约回报，不能写死。
 2. **目标合约遗留委托/成交清理**：adapter 先查询目标合约当日委托和成交；活动 `OPEN` 委托全部自动撤销，活动 `CLOSE`、无法识别状态或撤单无法确认进入 `RISK_HOLD`。
 3. **目标合约零仓**：清理完成后再执行持仓查询，只接受相同 request id 的完成事件。非零净仓或查询失败进入 `RISK_HOLD`，不会发送开仓订单。
 4. **有效盘口**：LastPrice、BidPrice1、AskPrice1、涨跌停和 `pricetick` 都必须是有限正数，且 `bid <= ask`。
@@ -488,7 +488,7 @@ adapter 只汇总目标合约：多仓量减空仓量得到净仓。其他合约
 
 ### 12.4 查仓发送重试与关闭时序
 
-CTP 同一时刻只允许一个在途查询。启动/重连按“委托 → 成交 → 持仓”顺序执行；目标合约遗留 `OPEN` 委托自动撤销，`CLOSE` 委托、未知状态或撤单未确认停在 `RISK_HOLD`。每类查询的发送失败都进入待重试队列，随 `EVENT_TIMER` 按退避间隔重发（1s→2s→4s，之后固定 5s，避免持续踩中 CTP 秒级流控），最多 `POSITION_QUERY_MAX_ATTEMPTS = 60` 次；耗尽后发布结构化错误事件，状态机继续保持风险托管而不是关闭连接。网关层（`CtpTdApi.last_query_send_refusal`）会保留最近一次 `ReqQry*` 被拒的原始返回码描述，耗尽事件的 `error_msg` 会携带它（例如“CTP 持仓查询请求未发送（ReqQryInvestorPosition 返回 -3）”），便于区分网络失败与流控拒绝。
+CTP 同一时刻只允许一个在途查询。报撤入口的合约查询只覆盖策略目标，不再占用数分钟拉取全市场期权；只读入口仍查全市场。启动/重连按“委托 → 成交 → 持仓”顺序执行；目标合约遗留 `OPEN` 委托自动撤销，`CLOSE` 委托、未知状态或撤单未确认停在 `RISK_HOLD`。每类查询的发送失败都进入待重试队列，随 `EVENT_TIMER` 按退避间隔重发（1s→2s→4s，之后固定 5s，避免持续踩中 CTP 秒级流控），最多 `POSITION_QUERY_MAX_ATTEMPTS = 60` 次；耗尽后发布结构化错误事件，状态机继续保持风险托管而不是关闭连接。网关层（`CtpTdApi.last_query_send_refusal`）会保留最近一次 `ReqQry*` 被拒的原始返回码描述，耗尽事件的 `error_msg` 会携带它（例如“CTP 持仓查询请求未发送（ReqQryInvestorPosition 返回 -3）”），便于区分网络失败与流控拒绝。
 
 `close()` 的调用时序受锁约束：`EventEngine.stop()` 会 join 事件引擎工作线程，而工作线程可能正阻塞在 adapter 的 `RLock` 回调上。持锁调用 `MainEngine.close()` 会造成互等死锁，表现为终态后进程不退出。正确顺序是：锁内仅把 `main_engine` 换手置空，释放锁后关闭引擎，最后再持锁关闭审计。
 
@@ -631,7 +631,7 @@ python report.py --run-dir audit/<run-id> --out-dir reports
 3. 用最小、明确的 `target_lots` 生成策略配置；
 4. 先运行预览，人工核对 effective 配置和哈希；哈希用于确认审计身份，不是启动门禁；
 5. 只在 SimNow 环境用 `--confirm-simnow` 启动；
-6. 选择远离成交的价格环境，观察元数据、零仓查询、稳定行情和挂单。SimNow 合约回报可能 30 秒到 2 分钟才到，启动查仓被拒发送时还会按 12.4 重试，整个启动等待 2～3 分钟属正常，不要提前 `Ctrl+C`；
+6. 选择远离成交的价格环境，观察元数据、零仓查询、稳定行情和挂单。报撤入口只查询策略目标合约，合约元数据应在数秒内到达；启动查仓若被流控拒绝仍按 12.4 重试，但不应再出现数分钟的全市场合约流等待；
 7. 操作者中断，等待完整撤单/查仓收口；
 8. 从 `summary.json` 确认没有活动订单和残余净仓。
 

@@ -63,6 +63,52 @@ class CtpGatewayCallbackTests(unittest.TestCase):
         self.assertTrue(api.contract_inited)
         self.assertIn("合约信息查询成功", gateway.logs)
 
+    def test_settlement_confirm_queries_only_configured_instruments(self) -> None:
+        gateway = RecordingGateway()
+        api = CtpTdApi(gateway)
+        sent: list[dict] = []
+        api.reqQryInstrument = lambda req, reqid: sent.append(dict(req)) or 0
+        api.configure_instrument_queries(["AP701.CZCE"])
+
+        api.onRspSettlementInfoConfirm({}, {"ErrorID": 0, "ErrorMsg": ""}, 1, True)
+
+        self.assertEqual(sent, [{"InstrumentID": "AP701", "ExchangeID": "CZCE"}])
+        self.assertFalse(api.contract_inited)
+
+    def test_filtered_instrument_queries_complete_after_last_target(self) -> None:
+        gateway = RecordingGateway()
+        api = CtpTdApi(gateway)
+        sent: list[dict] = []
+        api.reqQryInstrument = lambda req, reqid: sent.append(dict(req)) or 0
+        api.configure_instrument_queries(["AP701.CZCE", "IF2610.CFFEX"])
+
+        api.onRspSettlementInfoConfirm({}, {"ErrorID": 0, "ErrorMsg": ""}, 1, True)
+        self.assertEqual(sent, [{"InstrumentID": "AP701", "ExchangeID": "CZCE"}])
+
+        api.onRspQryInstrument({}, {"ErrorID": 0, "ErrorMsg": ""}, 2, True)
+        self.assertFalse(api.contract_inited)
+        self.assertEqual(
+            sent,
+            [
+                {"InstrumentID": "AP701", "ExchangeID": "CZCE"},
+                {"InstrumentID": "IF2610", "ExchangeID": "CFFEX"},
+            ],
+        )
+
+        api.onRspQryInstrument({}, {"ErrorID": 0, "ErrorMsg": ""}, 3, True)
+        self.assertTrue(api.contract_inited)
+        self.assertIn("合约信息查询成功", gateway.logs)
+
+    def test_unfiltered_settlement_confirm_still_queries_all_instruments(self) -> None:
+        gateway = RecordingGateway()
+        api = CtpTdApi(gateway)
+        sent: list[dict] = []
+        api.reqQryInstrument = lambda req, reqid: sent.append(dict(req)) or 0
+
+        api.onRspSettlementInfoConfirm({}, {"ErrorID": 0, "ErrorMsg": ""}, 1, True)
+
+        self.assertEqual(sent, [{}])
+
     def test_ctp_unknown_order_status_is_transient_submitting(self) -> None:
         gateway = RecordingGateway()
         api = CtpTdApi(gateway)
@@ -100,6 +146,34 @@ class CtpGatewayCallbackTests(unittest.TestCase):
         self.assertEqual(len(gateway.orders), 1)
         self.assertEqual(gateway.orders[0].status, Status.SUBMITTING)
         self.assertFalse(gateway.orders[0].ctp_status_unknown)
+
+    def test_unknown_symbol_order_is_ignored_after_filtered_init(self) -> None:
+        gateway = RecordingGateway()
+        api = CtpTdApi(gateway)
+        api.contract_inited = True
+
+        api.onRtnOrder(
+            {
+                "InstrumentID": "cu2609",
+                "FrontID": 1,
+                "SessionID": 2,
+                "OrderRef": "8",
+                "OrderStatus": THOST_FTDC_OST_Unknown,
+                "InsertDate": "20260907",
+                "InsertTime": "13:30:00",
+                "OrderPriceType": THOST_FTDC_OPT_LimitPrice,
+                "TimeCondition": THOST_FTDC_TC_GFD,
+                "VolumeCondition": THOST_FTDC_VC_AV,
+                "Direction": THOST_FTDC_D_Buy,
+                "CombOffsetFlag": THOST_FTDC_OF_Open,
+                "LimitPrice": 80000,
+                "VolumeTotalOriginal": 1,
+                "VolumeTraded": 0,
+                "OrderSysID": "sys-8",
+            }
+        )
+
+        self.assertEqual(gateway.orders, [])
 
 
 if __name__ == "__main__":
