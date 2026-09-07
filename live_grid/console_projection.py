@@ -423,7 +423,8 @@ class AuditProjector:
         )
         updated["quote_windows"] = list(effective_contract.get("quote_windows", ()))
         updated["max_tick_age_seconds"] = effective_contract.get("max_tick_age_seconds")
-        updated["max_round_trips"] = self._effective.get("max_round_trips")
+        # 旧审计把上限放在运行根节点；新运行只读取各合约项。
+        updated["max_round_trips"] = effective_contract.get("max_round_trips", self._effective.get("max_round_trips"))
         updated["current_quote_window"] = self._current_quote_window(
             updated["quote_windows"], updated.get("last_wall_time")
         )

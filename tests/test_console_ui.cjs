@@ -46,12 +46,24 @@ assert.match(get('#contract-facts').innerHTML, /最近核对净仓/);
 assert.match(get('#contract-facts').innerHTML, /CTP 查询快照/);
 assert.match(get('#run-parameters').innerHTML, /重定锚步长 S/);
 assert.doesNotMatch(get('#run-parameters').innerHTML, /<pre>|\[object Object\]/);
+assert.match(get('#run-parameters').innerHTML, /<dt>重定锚步长 S<\/dt><dd>1 tick<\/dd>/);
+assert.doesNotMatch(get('#run-parameters').innerHTML, /rb2610|历史审计|运行共享参数/);
 assert.equal(get('#launch-panel').open, false);
 assert.equal(get('#preview').disabled, true);
 assert.equal(get('#stop').disabled, false);
 assert.equal(run('relativeTime(245)'), '审计 +02:25');
 assert.equal(run('number(null)'), '—');
 assert.equal(run('number(0)'), '0');
+
+// One contract is the same list view with one card, not a separate display mode.
+assert.equal(get('#contract-switcher').hidden, false);
+assert.equal((get('#contract-switcher').innerHTML.match(/data-contract=/g) || []).length, 2);
+run('renderOverview({...snapshot, contracts: snapshot.contracts.slice(0, 1)})');
+assert.equal(get('#contract-switcher').hidden, false);
+assert.equal((get('#contract-switcher').innerHTML.match(/data-contract=/g) || []).length, 1);
+assert.match(get('#contract-switcher').innerHTML, /IF2610@CFFEX/);
+assert.equal(get('#last-price').textContent, '4,509.6');
+run('renderOverview(snapshot)');
 
 // Different contracts, tab and filter selections survive polling.
 tabs[1].listeners.click();
@@ -74,6 +86,8 @@ run('snapshot.contracts[0].logical_orders = snapshot.contracts[0].logical_orders
 run('snapshot.contracts[0].logical_orders = snapshot.contracts[0].logical_orders.slice().reverse(); renderOverview(snapshot)');
 run('selectedContract = "rb2610@SHFE"; renderOverview(snapshot)');
 assert.match(get('#contract-name').textContent, /rb2610/);
+assert.match(get('#run-parameters').innerHTML, /<dt>重定锚步长 S<\/dt><dd>5 tick<\/dd>/);
+assert.doesNotMatch(get('#run-parameters').innerHTML, /IF2610/);
 assert.match(get('#contract-facts').innerHTML, /未核对/);
 assert.equal(get('#last-price').textContent, '—');
 
@@ -98,9 +112,12 @@ run('confirmation="old"; previewReady=true; invalidatePreview()');
 assert.equal(run('confirmation'), '');
 assert.equal(get('#start').disabled, true);
 
-// Normalized preview contains every field, split into shared and per-contract groups.
+// Preview expands each contract's own effective parameters; legacy audits remain readable.
 run('renderParameters("#preview-parameters", snapshot.effective)');
-for (const text of ['运行共享参数', '高级安全参数', 'IF2610', 'rb2610', '报价窗口（该合约）', '每侧手数', '撤单超时']) assert.ok(get('#preview-parameters').innerHTML.includes(text), text);
+for (const text of ['逐合约策略参数', '高级安全参数', 'IF2610', 'rb2610', '报价窗口（该合约）', '每侧手数', '撤单超时']) assert.ok(get('#preview-parameters').innerHTML.includes(text), text);
 assert.match(get('#preview-parameters').innerHTML, /20:00—23:00/);
+run('renderParameters("#preview-parameters", {version:2, w_ticks:25, max_round_trips:7, contracts:[{symbol:"old",exchange:"SHFE",target_lots:1}]})');
+assert.match(get('#preview-parameters').innerHTML, /历史审计：原公共参数按合约展开/);
+assert.match(get('#preview-parameters').innerHTML, /25 tick/);
 for (const match of html.matchAll(/<pre[^>]*id="([^"]+)"/g)) assert.ok(['run-raw','preview-raw'].includes(match[1]));
 console.log('Console UI renderer checks passed (formatting, tables, missing data, state, selection, escaping, preview).');

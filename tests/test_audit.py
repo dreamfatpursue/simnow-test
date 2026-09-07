@@ -28,11 +28,13 @@ def multi_config() -> MultiContractConfig:
             "contracts": [
                 {
                     "symbol": "rb2601", "exchange": "SHFE", "target_lots": 1,
+                    "w_ticks": 25, "max_round_trips": 3,
                     "max_tick_age_seconds": 60,
                     "quote_windows": [{"start": "00:00", "end": "23:59"}],
                 },
                 {
                     "symbol": "AP610", "exchange": "CZCE", "target_lots": 2,
+                    "w_ticks": 30, "max_round_trips": 5,
                     "max_tick_age_seconds": 60,
                     "quote_windows": [{"start": "00:00", "end": "23:59"}],
                 },
@@ -112,8 +114,14 @@ class MultiContractAuditTests(unittest.TestCase):
             run_effective = json.loads((run_audit.directory / "effective_strategy.json").read_text())
             self.assertEqual(run_effective["sha256"], strategy.sha256)
             self.assertEqual(len(run_effective["effective"]["contracts"]), 2)
+            self.assertNotIn("w_ticks", run_effective["effective"])
+            self.assertEqual([c["w_ticks"] for c in run_effective["effective"]["contracts"]], [25, 30])
 
             for writer, contract in zip(run_audit.writers, strategy.contracts):
+                self.assertEqual(
+                    json.loads((writer.directory / "effective_strategy.json").read_text())["effective"],
+                    contract.effective,
+                )
                 writer.record(ClockEvent(1), [Action("audit", {"value": "ok"})], "WAITING_FOR_CONTRACT", 1)
                 writer.finish(
                     {

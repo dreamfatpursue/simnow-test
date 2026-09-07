@@ -16,7 +16,7 @@
 
 系统已从单合约扩展为多合约并发（[ADR 0002](adr/0002-multi-contract-per-session.md)）：
 
-- 策略配置升级为 `version: 2`：顶层公共网格/安全参数 + `contracts` 数组（每条 `symbol`/`exchange`/`target_lots`、`max_tick_age_seconds`、`quote_windows`）；整份配置一个 SHA-256。旧单合约扁平格式被拒绝并提示迁移。
+- 策略配置使用 `version: 2`：顶层仅有 `version` 和 `contracts` 数组，每个条目独立包含合约身份、手数、W/D/S、轮数上限与全部会话级时序/安全参数；整份配置一个 SHA-256。旧单合约扁平格式、顶层公共策略参数均被拒绝并提示迁移；历史审计仍可读取，不重写。
 - 每个合约一个独立的 `LiveGridSession`（状态机本身未变）；适配层按 `(symbol, exchange)` 路由合约/行情/委托/成交事件，订阅全部目标合约。
 - 启动/重连先查询目标委托和成交，再撤销目标合约遗留开仓单，最后执行账户级持仓查询；遗留平仓单、非零仓、未知订单状态或查询异常进入 `RISK_HOLD`，不发任何新委托。
 - 报撤限额、首次成交收口、失败与超时均按会话独立；操作员中断广播至全部会话；运行在全部会话终态后结束。
@@ -170,9 +170,11 @@ confirm-simnow = true
 
 ### 4.1 字段
 
+顶层只接受 `version: 2` 和非空 `contracts`。下表除 `version` 外的字段均放在各 `contracts` 条目内，缺省值也按合约独立填充，不会继承其他合约的值。预览展示每个合约的完整生效值；相同数值只是配置相同，不表示共享状态或计数。
+
 | 字段 | 必填/默认 | 校验与含义 |
 | --- | --- | --- |
-| `version` | 必填 | 正整数，配置版本 |
+| `version` | 顶层必填 | 固定为 `2`，配置版本 |
 | `symbol` | 必填 | 非空目标合约代码，来自策略配置 |
 | `exchange` | 必填 | 自动转大写，支持 `CFFEX`、`SHFE`、`CZCE`、`DCE`、`INE`、`GFEX` |
 | `target_lots` | 必填 | 每一侧开仓手数，正整数；当前没有额外绝对上限 |
@@ -187,7 +189,7 @@ confirm-simnow = true
 | `cancel_timeout_seconds` | `10` | 收口撤单等待终态的上限 |
 | `flatten_timeout_seconds` | `3` | 一次受限 FAK 收口的时间上限 |
 | `flatten_adverse_ticks` | `10` | FAK 允许相对初始可执行价的不利方向最大偏移 |
-| `max_round_trips` | `10` | 单次运行完成的往返轮数上限 |
+| `max_round_trips` | `10` | 本合约会话完成的往返轮数上限；达到后不影响其他合约 |
 | `quote_windows` | 每个合约必填 | 按顺序排列的 `[{"start":"HH:MM","end":"HH:MM"}]` 报价窗口；支持相邻窗口跨午夜，不允许重叠；每段结束前 5 秒撤单 |
 | `closing_wait_seconds` | `1` | 非负数，价差窗口时长；首次成交后对侧报价继续挂满该时长，0 表示不留窗口直接平仓 |
 | `quote_ack_timeout_seconds` | `5` | 双边开仓单发送后等待两侧有效受理回报的上限；超时先用 `QryOrder` 对账，再决定是否撤单 |
@@ -198,16 +200,18 @@ confirm-simnow = true
 
 ### 4.2 规范化和哈希
 
-[`StrategyConfig.from_mapping`](../live_grid/config.py) 的处理顺序是：
+[`MultiContractConfig.from_mapping`](../live_grid/config.py) 校验根节点后，逐合约复用 `StrategyConfig.from_mapping`：
 
 1. 拒绝凭证字段；
-2. 检查四个必填字段；
-3. 合并默认值并把交易所转成大写；
+2. 检查合约身份、手数、行情过期阈值和报价窗口等必填字段；
+3. 对每个合约独立合并默认值并把交易所转成大写；
 4. 校验正数、正整数和未知字段；
-5. 用排序 key、无空格分隔符生成 canonical JSON；
+5. 将每个合约的完整生效值放回合约列表，用排序 key、无空格分隔符生成运行级 canonical JSON；
 6. 对 canonical JSON 做 SHA-256，作为本次运行的策略身份。
 
 审计里的 `effective_strategy.json` 保存的是合并默认值后的配置和哈希，不是原始 JSON 文本。交接或复盘时应优先看这个文件。
+
+旧公共参数配置需把原公共值复制到每个合约条目再删除根节点对应字段，不要直接删掉导致回落默认值。现有策略文件已按原生效值迁移；结构变化会改变哈希，必须重新预览确认。旧审计中的根节点公共参数仅供历史展示和报告兼容，不作为新运行配置接受。
 
 ## 5. 状态机总览
 

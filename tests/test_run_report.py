@@ -465,11 +465,13 @@ class RunReportTests(unittest.TestCase):
                     "contracts": [
                         {
                             "symbol": "rb2601", "exchange": "SHFE", "target_lots": 1,
+                            "w_ticks": 25, "d_ticks": 20, "s_ticks": 10, "max_round_trips": 3,
                             "max_tick_age_seconds": 60,
                             "quote_windows": [{"start": "00:00", "end": "23:59"}],
                         },
                         {
                             "symbol": "AP610", "exchange": "CZCE", "target_lots": 1,
+                            "w_ticks": 30, "d_ticks": 12, "s_ticks": 5, "max_round_trips": 5,
                             "max_tick_age_seconds": 60,
                             "quote_windows": [{"start": "00:00", "end": "23:59"}],
                         },
@@ -534,6 +536,24 @@ class RunReportTests(unittest.TestCase):
             self.assertIn("交易所：CZCE", html)
             self.assertIn("品种代码：rb", html)
             self.assertIn("准确合约：rb2601", html)
+            self.assertIn("<td>rb2601@SHFE</td><td>25</td><td>20</td><td>10</td><td>3</td>", html)
+            self.assertIn("<td>AP610@CZCE</td><td>30</td><td>12</td><td>5</td><td>5</td>", html)
+
+    def test_historical_shared_parameters_remain_readable_without_current_defaults(self) -> None:
+        single = strategy_doc()["effective"]
+        local_keys = {"symbol", "exchange", "target_lots", "max_tick_age_seconds", "quote_windows"}
+        common = {k: v for k, v in single.items() if k not in local_keys}
+        common.update(version=2, w_ticks=27, max_round_trips=7)
+        local = {k: single[k] for k in local_keys}
+        effective = {**common, "contracts": [local, {**local, "symbol": "rb2610"}]}
+        path = Path("historical/effective_strategy.json")
+        self.assertIs(report._validate_effective_payload(effective, path, run_level=True), effective)
+        html = report._render_run_parameters(effective)
+        self.assertEqual(html.count("<td>27</td><td>20</td><td>10</td><td>7</td>"), 2)
+        self.assertIn("<details><summary>完整生效配置", html)
+        del effective["w_ticks"]
+        with self.assertRaisesRegex(report.RunReportError, "缺少字段 w_ticks"):
+            report._validate_effective_payload(effective, path, run_level=True)
 
     def test_fak_cancelled_without_strategy_cancel_explains_exchange_kill(self) -> None:
         order = report.RunOrder(

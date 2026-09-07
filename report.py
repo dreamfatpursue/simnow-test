@@ -215,7 +215,7 @@ def _validate_effective_payload(effective: Any, path: Path, *, run_level: bool) 
         "target_lots",
     }
     if run_level and "contracts" in effective:
-        required -= {"symbol", "exchange", "target_lots"} | _CONTRACT_EFFECTIVE_KEYS
+        required = {"version"}
         contracts = effective.get("contracts")
         if not isinstance(contracts, list) or not contracts:
             raise RunReportError(f"run 生效策略缺少完整合约列表: {path}")
@@ -232,6 +232,8 @@ def _validate_effective_payload(effective: Any, path: Path, *, run_level: bool) 
                 ))
             ):
                 raise RunReportError(f"run 生效策略包含不完整合约项: {path}")
+            # 仅历史读取兼容根节点公共参数；新记录的参数已全部在合约内。
+            _validate_effective_payload({**effective, **entry}, path, run_level=False)
     missing = sorted(required - effective.keys())
     if missing:
         raise RunReportError(f"生效策略缺少字段 {', '.join(missing)}: {path}")
@@ -1395,6 +1397,22 @@ def _render_run_funds(model: RunReport) -> list[str]:
     return rows
 
 
+def _render_run_parameters(effective: dict[str, Any]) -> str:
+    rows = ["<table><tr><th>合约</th><th>网格半宽 W（tick）</th><th>额外挂单距离 D（tick）</th>"
+            "<th>重定锚步长 S（tick）</th><th>最大完成轮数</th><th>每侧手数</th></tr>"]
+    for entry in effective.get("contracts", [effective]):
+        config = {**effective, **entry}  # 兼容历史根节点公共参数，不使用当前代码默认值。
+        rows.append(
+            "<tr><td>" + escape(f"{config['symbol']}@{config['exchange']}") + "</td>"
+            + "".join(f"<td>{escape(str(config.get(key, '—')))}</td>"
+                      for key in ("w_ticks", "d_ticks", "s_ticks", "max_round_trips", "target_lots"))
+            + "</tr>"
+        )
+    rows.append("</table><details><summary>完整生效配置（审计原文）</summary>"
+                f"<pre>{escape(json.dumps(effective, ensure_ascii=False, indent=2, sort_keys=True))}</pre></details>")
+    return "".join(rows)
+
+
 def render_run_html(model: RunReport) -> str:
     sections = [
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">",
@@ -1411,7 +1429,7 @@ def render_run_html(model: RunReport) -> str:
         f"<h1>单 run 委托成交报告 · {escape(model.directory)}</h1>",
         "<h2>运行参数</h2>",
         f"<p>策略哈希：<code>{escape(str(model.strategy_hash or '—'))}</code></p>",
-        f"<pre>{escape(json.dumps(model.effective, ensure_ascii=False, indent=2, sort_keys=True))}</pre>",
+        _render_run_parameters(model.effective),
         *_render_run_funds(model),
         "<h2>run 总览</h2>",
         "<table><tr><th>合约</th><th>终态</th><th>轮数</th><th>停止原因</th><th>失败原因</th>"

@@ -34,16 +34,17 @@ def valid_multi_contract_config() -> dict:
         "contracts": [
             {
                 "symbol": "rb2601", "exchange": "shfe", "target_lots": 1,
+                "w_ticks": 25, "d_ticks": 20, "s_ticks": 10, "max_round_trips": 3,
                 "max_tick_age_seconds": 10,
                 "quote_windows": [{"start": "09:00", "end": "15:00"}],
             },
             {
                 "symbol": "AP610", "exchange": "CZCE", "target_lots": 2,
+                "w_ticks": 30, "d_ticks": 12, "s_ticks": 5, "max_round_trips": 5,
                 "max_tick_age_seconds": 30,
                 "quote_windows": [{"start": "09:00", "end": "15:00"}],
             },
         ],
-        "w_ticks": 25,
     }
 
 
@@ -116,8 +117,10 @@ class StrategyConfigTests(unittest.TestCase):
         boundary = StrategyConfig.from_mapping(valid_config() | {"w_ticks": 2, "s_ticks": 2})
         self.assertEqual(boundary.effective["s_ticks"], 2)
 
+        doc = valid_multi_contract_config()
+        doc["contracts"][0].update(w_ticks=2, s_ticks=10)
         with self.assertRaisesRegex(StrategyConfigError, r"contracts\[0\]: s_ticks 不得大于 w_ticks"):
-            MultiContractConfig.from_mapping(valid_multi_contract_config() | {"w_ticks": 2, "s_ticks": 10})
+            MultiContractConfig.from_mapping(doc)
 
     def test_quote_windows_validate_overlap_and_allow_cross_midnight_order(self) -> None:
         overnight = StrategyConfig.from_mapping(
@@ -169,8 +172,13 @@ class MultiContractConfigTests(unittest.TestCase):
         self.assertEqual(second.effective["target_lots"], 2)
 
         self.assertEqual(first.effective["w_ticks"], 25)
-        self.assertEqual(second.effective["w_ticks"], 25)
-        self.assertEqual(second.effective["d_ticks"], 20)
+        self.assertEqual(second.effective["w_ticks"], 30)
+        self.assertEqual(second.effective["d_ticks"], 12)
+        self.assertEqual(second.effective["s_ticks"], 5)
+        self.assertEqual([c.effective["max_round_trips"] for c in config.contracts], [3, 5])
+        self.assertEqual(set(config.effective), {"version", "contracts"})
+        for entry, contract in zip(config.effective["contracts"], config.contracts):
+            self.assertEqual(entry, {k: v for k, v in contract.effective.items() if k != "version"})
 
         self.assertEqual(len(config.sha256), 64)
         self.assertEqual(config.sha256, first.sha256)
@@ -281,13 +289,13 @@ class MultiContractConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(StrategyConfigError, "未知策略字段: hedge_symbol"):
             MultiContractConfig.from_mapping(valid_multi_contract_config() | {"hedge_symbol": "AP610"})
 
-        with self.assertRaisesRegex(StrategyConfigError, "^w_ticks 必须是正整数$"):
+        with self.assertRaisesRegex(StrategyConfigError, "必须移入各 contracts 合约项: w_ticks"):
             MultiContractConfig.from_mapping(valid_multi_contract_config() | {"w_ticks": 0})
 
-        with self.assertRaisesRegex(StrategyConfigError, "flatten_timeout_seconds 必须是正数"):
-            MultiContractConfig.from_mapping(
-                valid_multi_contract_config() | {"flatten_timeout_seconds": math.inf}
-            )
+        doc = valid_multi_contract_config()
+        doc["contracts"][1]["flatten_timeout_seconds"] = math.inf
+        with self.assertRaisesRegex(StrategyConfigError, r"contracts\[1\]: flatten_timeout_seconds 必须是正数"):
+            MultiContractConfig.from_mapping(doc)
 
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "strategy.json"
@@ -303,12 +311,12 @@ class MultiContractConfigTests(unittest.TestCase):
     def test_multi_contract_config_keeps_schedule_per_contract_and_rejects_global_schedule(self) -> None:
         doc = valid_multi_contract_config()
         config = MultiContractConfig.from_mapping(doc)
-        self.assertEqual(config.effective["max_round_trips"], 10)
+        self.assertNotIn("max_round_trips", config.effective)
         self.assertEqual(config.contracts[0].effective["max_tick_age_seconds"], 10)
         self.assertEqual(config.contracts[1].effective["max_tick_age_seconds"], 30)
 
-        config = MultiContractConfig.from_mapping(doc | {"max_round_trips": 3})
-        self.assertEqual(config.effective["max_round_trips"], 3)
+        with self.assertRaisesRegex(StrategyConfigError, "必须移入各 contracts 合约项: max_round_trips"):
+            MultiContractConfig.from_mapping(doc | {"max_round_trips": 3})
 
         with self.assertRaisesRegex(StrategyConfigError, "session_end_time"):
             MultiContractConfig.from_mapping(doc | {"session_end_time": "23:00"})
@@ -316,8 +324,24 @@ class MultiContractConfigTests(unittest.TestCase):
             MultiContractConfig.from_mapping(
                 doc | {"contracts": [{"symbol": "rb2601", "exchange": "SHFE", "target_lots": 1}]}
             )
-        with self.assertRaisesRegex(StrategyConfigError, "max_round_trips 必须是正整数"):
-            MultiContractConfig.from_mapping(doc | {"max_round_trips": 0})
+        doc["contracts"][1]["max_round_trips"] = 0
+        with self.assertRaisesRegex(StrategyConfigError, r"contracts\[1\]: max_round_trips 必须是正整数"):
+            MultiContractConfig.from_mapping(doc)
+
+    def test_defaults_do_not_inherit_other_contract_and_hash_covers_all_parameters(self) -> None:
+        doc = valid_multi_contract_config()
+        doc["contracts"][0].update(stable_market_seconds=7, cancel_timeout_seconds=15)
+        config = MultiContractConfig.from_mapping(doc)
+        self.assertEqual(config.contracts[1].effective["stable_market_seconds"], 2)
+        self.assertEqual(config.contracts[1].effective["cancel_timeout_seconds"], 10)
+        doc["contracts"][1]["d_ticks"] = 13
+        changed = MultiContractConfig.from_mapping(doc)
+        self.assertNotEqual(config.sha256, changed.sha256)
+        self.assertTrue(all(c.sha256 == changed.sha256 for c in changed.contracts))
+        self.assertEqual(config.contracts[1].effective["d_ticks"], 12)
+        doc["contracts"][1]["password"] = "secret"
+        with self.assertRaisesRegex(StrategyConfigError, "凭证"):
+            MultiContractConfig.from_mapping(doc)
 
 
 if __name__ == "__main__":

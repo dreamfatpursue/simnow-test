@@ -46,6 +46,21 @@ def append_records(path: Path, records: list[dict]) -> None:
 
 
 class AuditProjectorTests(unittest.TestCase):
+    def test_each_contract_uses_its_own_round_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            audit_root = Path(root)
+            entries = [
+                {"symbol": "rb2601", "exchange": "SHFE", "max_round_trips": 3},
+                {"symbol": "AP610", "exchange": "CZCE", "max_round_trips": 5},
+            ]
+            Path(root, "effective_strategy.json").write_text(
+                json.dumps({"effective": {"version": 2, "contracts": entries}}), encoding="utf-8"
+            )
+            snapshot = AuditProjector(run_identity(audit_root)).refresh(now=12)
+            self.assertEqual({c["symbol"]: c["max_round_trips"] for c in snapshot["contracts"]},
+                             {"rb2601": 3, "AP610": 5})
+            self.assertEqual(snapshot["effective"]["contracts"], entries)
+
     def test_projection_maps_mixed_contracts_to_highest_priority_stage(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             audit_root = Path(root) / "audit" / "run-1"

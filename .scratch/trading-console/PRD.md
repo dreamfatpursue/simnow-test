@@ -39,7 +39,7 @@ Status: done
 15. 作为本机操作者，我希望预览完全离线且不建立 CTP 连接，从而查看配置不会产生交易副作用。
 16. 作为本机操作者，我希望预览显示规范化后的完整配置和 SHA-256，从而知道交易进程最终会采用什么参数。
 17. 作为本机操作者，我希望预览显示所有目标合约、交易所、每侧手数和报价窗口，从而可以在启动前确认交易范围。
-18. 作为本机操作者，我希望预览明确区分运行共享参数和每合约参数，从而不会误解 W/D/S 与 `quote_windows` 的作用域。
+18. 作为本机操作者，我希望预览按合约展示全部独立生效参数，包括 W/D/S、轮数上限、安全阈值与 `quote_windows`，不同合约可以使用不同值。
 19. 作为本机操作者，我希望高级安全参数可以折叠查看，从而主页面保持清晰，同时所有限制仍可核对。
 20. 作为本机操作者，我希望预览只显示缺少的环境变量名称而不显示其值，从而确认环境就绪状态时不泄露凭证。
 21. 作为本机操作者，我希望预览完成后获得一次性启动确认，从而启动动作明确对应我刚刚检查的配置和环境。
@@ -126,8 +126,10 @@ Status: done
 
   | 归属 | 字段 |
   | --- | --- |
-  | 整次运行共享 | `version`、`w_ticks`、`d_ticks`、`s_ticks`、`book_protection_multiple`、`reanchor_confirmation_seconds`、`stable_market_seconds`、`action_limit_per_minute`、`cancel_timeout_seconds`、`flatten_timeout_seconds`、`flatten_adverse_ticks`、`max_round_trips`、`closing_wait_seconds`、`quote_ack_timeout_seconds` |
-  | 每个合约独立 | `symbol`、`exchange`、`target_lots`、`max_tick_age_seconds`、`quote_windows` |
+  | 运行根节点 | `version: 2`、`contracts` 合约列表 |
+  | 每个合约独立 | `symbol`、`exchange`、`target_lots`、`w_ticks`、`d_ticks`、`s_ticks`、`book_protection_multiple`、`reanchor_confirmation_seconds`、`stable_market_seconds`、`action_limit_per_minute`、`cancel_timeout_seconds`、`flatten_timeout_seconds`、`flatten_adverse_ticks`、`max_round_trips`、`closing_wait_seconds`、`quote_ack_timeout_seconds`、`max_tick_age_seconds`、`quote_windows` |
+
+- 顶层策略参数一律拒绝并提示移入合约项，不保留全局值加局部覆盖的优先级；可选默认值逐合约独立填充。现有文件迁移保留原生效数值，历史审计不改写，仅展示/报告兼容旧根节点公共参数。
 
 - 预览不连接 CTP，也不产生审计目录。环境检查只返回就绪状态或缺少的变量名，不返回任何值。
 - 环境必须显式选择 `first`、`7x24` 或 `guangfa`。历史行情许可只允许 `7x24`，默认关闭；启用后在选择、预览和运行页面持续展示 `replay_override`。

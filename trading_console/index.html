@@ -140,15 +140,16 @@ function windowsText(windows) { return windows?.length ? windows.map((w) => w.st
 function parameterEntries(config, keys) { return keys.map((key) => [fields[key]?.[0] || key, fields[key]?.[1] ? units(config[key],fields[key][1]) : valueText(config[key])]); }
 function renderParameters(selector, effective, selected = null) {
   if (!effective || !Object.keys(effective).length) { setHTML(selector,'<div class="empty">本次审计尚未提供配置参数。</div>'); return; }
-  const shared = Object.keys(effective).filter((key) => key !== "contracts");
-  const primary = ["w_ticks","d_ticks","s_ticks","max_round_trips","stable_market_seconds","closing_wait_seconds"];
-  const advanced = shared.filter((key) => !primary.includes(key));
-  let html = '<h3>运行共享参数</h3>' + paramGrid(parameterEntries(effective,primary.filter((key) => key in effective)));
+  const primary = ["w_ticks","d_ticks","s_ticks","max_round_trips","target_lots","max_tick_age_seconds","stable_market_seconds","closing_wait_seconds"];
+  const {contracts,version,...legacy} = effective;
+  let html = '<h3>逐合约策略参数</h3>' + (Object.keys(legacy).length ? '<p class="note">历史审计：原公共参数按合约展开。</p>' : '');
   for (const item of (effective.contracts || []).filter((item) => !selected || contractKey(item) === selected)) {
-    const keys = Object.keys(item).filter((key) => !["symbol","exchange","quote_windows"].includes(key));
-    html += '<div class="config-contract"><h3>' + esc(item.symbol) + " · " + esc(exchanges[item.exchange] || item.exchange) + '</h3>' + paramGrid([...parameterEntries(item,keys),["报价窗口（该合约）",windowsText(item.quote_windows)]]) + '</div>';
+    const config = {...legacy,...item};
+    const advanced = Object.keys(config).filter((key) => ![...primary,"symbol","exchange","quote_windows"].includes(key));
+    html += '<div class="config-contract"><h3>' + esc(item.symbol) + " · " + esc(exchanges[item.exchange] || item.exchange) + '</h3>' + paramGrid([...parameterEntries(config,primary.filter((key) => key in config)),["报价窗口（该合约）",windowsText(config.quote_windows)]]);
+    html += '<details data-key="advanced-' + esc(contractKey(item)) + '"><summary>该合约高级安全参数（' + advanced.length + ' 项）</summary>' + paramGrid(parameterEntries(config,advanced)) + '</details></div>';
   }
-  html += '<details data-key="advanced"><summary>高级安全参数与配置版本（' + advanced.length + ' 项）</summary>' + paramGrid(parameterEntries(effective,advanced)) + '</details>';
+  html += paramGrid([["配置版本",valueText(version)]]);
   setHTML(selector,html);
 }
 async function request(path, options = {}) {
@@ -236,7 +237,7 @@ function renderContract() {
   if (!contracts.length) return;
   if (!contracts.some((item) => contractKey(item) === selectedContract)) selectedContract = contractKey(contracts.find((item) => item.risk) || contracts[0]);
   const item = contracts.find((item) => contractKey(item) === selectedContract);
-  $("#contract-switcher").hidden = contracts.length < 2;
+  $("#contract-switcher").hidden = false;
   setHTML("#contract-switcher",contracts.map((c) => '<button type="button" data-contract="' + esc(contractKey(c)) + '" data-key="' + esc(contractKey(c)) + '" aria-pressed="' + (c === item) + '"><strong>' + esc(c.symbol) + " · " + esc(exchanges[c.exchange] || c.exchange) + '</strong>' + badge(stateNames[c.state] || c.state_label,stageTone(c)) + '<small>已完成 ' + number(c.round_trips) + " / " + number(c.max_round_trips) + " 轮 · 活动委托 " + number(c.active_order_count) + ' 笔</small></button>').join(""));
   $("#contract-name").textContent = item.symbol + " · " + (exchanges[item.exchange] || item.exchange);
   setBadge("#contract-state",stateNames[item.state] || item.state_label || "等待会话事实",stageTone(item));

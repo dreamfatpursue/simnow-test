@@ -16,9 +16,9 @@ from trading_console import ConsoleInputError, ConsoleState, TradingConsoleServe
 def strategy_document(*, stable_market_seconds: float = 2) -> dict:
     return {
         "version": 2,
-        "stable_market_seconds": stable_market_seconds,
         "contracts": [
             {
+                "stable_market_seconds": stable_market_seconds,
                 "symbol": "rb2601",
                 "exchange": "SHFE",
                 "target_lots": 1,
@@ -119,13 +119,21 @@ class TradingConsoleStateTests(unittest.TestCase):
 
     def test_changed_source_requires_a_new_preview(self) -> None:
         with tempfile.TemporaryDirectory() as root:
-            write_strategy(root)
+            doc = strategy_document()
+            doc["contracts"].append({**doc["contracts"][0], "symbol": "rb2610", "w_ticks": 30, "max_round_trips": 3})
+            path = Path(root, "strategy.json")
+            path.write_text(json.dumps(doc), encoding="utf-8")
             state = ConsoleState(root)
             with ready_environment():
                 preview = state.preview("strategy.json", "first")
-                write_strategy(root, stable_market_seconds=3)
-                with self.assertRaisesRegex(ConsoleInputError, "文件已变化"):
-                    state.start(preview["confirmation"])
+                self.assertEqual([c["w_ticks"] for c in preview["effective"]["contracts"]], [20, 30])
+                self.assertEqual([c["max_round_trips"] for c in preview["effective"]["contracts"]], [10, 3])
+                doc["contracts"][1]["w_ticks"] = 31
+                path.write_text(json.dumps(doc), encoding="utf-8")
+                with patch("trading_console.subprocess.Popen") as popen:
+                    with self.assertRaisesRegex(ConsoleInputError, "文件已变化"):
+                        state.start(preview["confirmation"])
+                    popen.assert_not_called()
 
     def test_console_restart_invalidates_in_memory_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as root:

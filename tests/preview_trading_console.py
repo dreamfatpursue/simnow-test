@@ -16,8 +16,6 @@ class PreviewHandler(BaseHTTPRequestHandler):
             return
         scenario = parse_qs(urlsplit(self.path).query).get("state", ["active"])[0]
         data = json.loads((ROOT / "tests/console_ui_fixture.json").read_text())
-        if scenario != "multi":
-            data["contracts"] = data["contracts"][:1]
         if scenario == "idle":
             data["status"] = "idle"
         elif scenario == "starting":
@@ -27,16 +25,23 @@ class PreviewHandler(BaseHTTPRequestHandler):
         elif scenario == "stopping":
             data["stop_requested"] = True
             data["overall_stage"] = "安全收口"
-            data["contracts"][0].update(state="CLOSING_CANCELS", stage="安全收口")
+            for contract in data["contracts"]:
+                contract.update(state="CLOSING_CANCELS" if contract["active_order_count"] else "CLOSING_RECONCILE", stage="安全收口")
         elif scenario == "risk":
             data["overall_stage"] = "风险"
             data["contracts"][0].update(state="RISK_HOLD", stage="风险", risk=True,
                                          risk_reason="cancel_timeout", risk_key="demo-risk")
         elif scenario == "terminal":
             data.update(status="terminal", overall_stage="终态", data_stale=True)
-            data["contracts"][0].update(state="FINISHED", stage="终态", round_trips=5, active_order_count=0)
-            for order in data["contracts"][0]["logical_orders"]:
-                order.update(active=False, status="CANCELLED")
+            for contract in data["contracts"]:
+                contract.update(state="FINISHED", stage="终态", round_trips=contract["max_round_trips"], active_order_count=0)
+                contract["confirmed_position"] = {
+                    "net_position": 0, "confirmed_at": data["last_event_at"],
+                    "confirmed_wall_time": contract["last_wall_time"], "source": "CTP position query",
+                }
+                for order in contract["logical_orders"]:
+                    if order["active"]:
+                        order.update(active=False, status="CANCELLED")
         elif scenario == "abnormal":
             data.update(status="process_abnormal_exit", run_risk={"key": "demo-crash", "reason": "process_abnormal_exit"})
         effective = json.loads((ROOT / "tests/console_ui_fixture.json").read_text())["effective"]
@@ -57,7 +62,7 @@ class PreviewHandler(BaseHTTPRequestHandler):
         };
         </script>""".replace("SNAPSHOT", json.dumps(data).replace("<", "\\u003c")).replace("EFFECTIVE", json.dumps(effective))
         links = " · ".join(f'<a href="/?state={key}">{label}</a>' for key, label in [
-            ("active", "单合约"), ("multi", "多合约"), ("idle", "启动预览"),
+            ("active", "交易运行"), ("idle", "启动预览"),
             ("starting", "启动中"), ("risk", "风险"), ("stale", "断更"),
             ("stopping", "收口"), ("terminal", "结束"), ("abnormal", "异常退出")])
         page = (ROOT / "trading_console/index.html").read_text()

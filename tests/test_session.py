@@ -1,7 +1,7 @@
 import time
 import unittest
 
-from live_grid.config import StrategyConfig
+from live_grid.config import MultiContractConfig, StrategyConfig
 from live_grid.session import (
     ClockEvent,
     ConnectionEvent,
@@ -1081,6 +1081,33 @@ def complete_interrupted_round(session: LiveGridSession, tag: str, filled_side: 
 
 
 class ContinuousQuotingTests(unittest.TestCase):
+    def test_multi_contract_parameters_drive_distinct_quotes_and_independent_stops(self) -> None:
+        first = {k: v for k, v in make_config(max_round_trips=1).effective.items() if k != "version"}
+        second = {**first, "symbol": "rb2610", "w_ticks": 10, "d_ticks": 5,
+                  "s_ticks": 5, "max_round_trips": 2, "closing_wait_seconds": 3}
+        config = MultiContractConfig.from_mapping({"version": 2, "contracts": [first, second]})
+        sessions = [start_session(c) for c in config.contracts]
+        for session, expected in zip(sessions, ([60, 140], [85, 115])):
+            symbol = session.config.effective["symbol"]
+            submitted = qualify_market(session, symbol=symbol)
+            self.assertEqual(sorted(a.payload["price"] for a in submitted), expected)
+            # Complete both sides inside the spread window, then reconcile a zero position.
+            for action in submitted:
+                p = action.payload
+                session.handle(OrderEvent(p["client_id"], symbol, "SHFE", p["side"], "ALLTRADED",
+                                          1, traded=1, price=p["price"], client_id=p["client_id"]))
+                session.handle(TradeEvent(p["client_id"], symbol, "SHFE", p["side"],
+                                          1, p["price"], p["client_id"] + "-fill", client_id=p["client_id"]))
+            query = next(a for a in reversed(session.actions) if a.kind == "query_position")
+            session.handle(PositionQueryCompleteEvent(query.payload["request_id"], symbol, "SHFE", 0))
+            self.assertEqual(session.summary()["round_trips"], 1)
+        self.assertEqual(sessions[0].state, SessionState.FINISHED)
+        self.assertEqual(sessions[0].stop_reason, "max_round_trips")
+        self.assertEqual(sessions[1].state, SessionState.WAITING_FOR_STABLE_QUOTE)
+        self.assertIsNone(sessions[1].stop_reason)
+        self.assertEqual([a.payload["price"] for a in qualify_market(sessions[1], symbol="rb2610", start=5)],
+                         [85, 115])
+
     def test_completed_round_resumes_quoting_until_max_round_trips(self) -> None:
         session = start_session(make_config(max_round_trips=2))
         submitted = qualify_market(session)

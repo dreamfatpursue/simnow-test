@@ -18,16 +18,18 @@ from live_grid.ctp_adapter import CtpLiveGridAdapter
 def multi_strategy_doc() -> dict:
     return {
         "version": 2,
-        "stable_market_seconds": 0.05,
-        "max_round_trips": 1,
         "contracts": [
             {
+                "stable_market_seconds": 0.05,
+                "max_round_trips": 1,
                 "symbol": "rb2601", "exchange": "SHFE", "target_lots": 1,
                 "max_tick_age_seconds": 60,
                 "quote_windows": [{"start": "00:00", "end": "23:59"}],
             },
             {
                 "symbol": "AP610", "exchange": "CZCE", "target_lots": 1,
+                "stable_market_seconds": 0.05,
+                "max_round_trips": 1,
                 "max_tick_age_seconds": 60,
                 "quote_windows": [{"start": "00:00", "end": "23:59"}],
             },

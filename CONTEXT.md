@@ -61,15 +61,15 @@ The selected closing method for the single-contract SimNow test: after order rec
 _Avoid_: 无限追价、静默忽略未平仓位、市价收口
 
 **策略配置**:
-A versionable JSON document containing the grid and safety parameters shared by every target contract, plus one entry per contract with its symbol, exchange, and per-side lots. It excludes CTP credentials. The effective configuration is retained with that run's audit log.
-_Avoid_: 凭证文件、硬编码策略参数、每合约一份参数文件
+A credential-free document containing one entry per target contract with its identity, quantity, grid, timing, and safety parameters. Each contract owns its values independently; omitting an optional value uses that parameter's default, never another contract's setting.
+_Avoid_: 凭证文件、硬编码策略参数、每合约一份参数文件、全局策略参数覆盖
 
 **策略文件预览**:
 A read-only, normalized view of one existing credential-free strategy file before launch. The console never edits or saves it; the operator changes the source JSON outside the console and previews again. Confirmation applies only while the selected file's effective hash, environment, and market-data mode remain unchanged.
 _Avoid_: 运行草稿、控制台配置编辑器、另存为、修改文件后沿用旧预览
 
 **多合约运行**:
-One SimNow test run quoting several target contracts concurrently, each driven by an independent single-contract session. The run ends only after every contract's session reaches a terminal state.
+One SimNow test run quoting one or more target contracts, each driven by an independently configured session with its own state, limits, and completed-round count. The run ends only after every contract's session reaches a terminal state.
 _Avoid_: 共享网格状态、跨合约对冲、任一合约终态即结束
 
 **交易控制台**:
@@ -117,7 +117,7 @@ The test may submit its first quote only after CTP position data confirms the ta
 _Avoid_: 管理既有仓位、带仓启动、剔除持仓合约后部分启动
 
 **首轮报撤限额**:
-The maximum number of quote submissions and cancellation requests in a rolling minute for one contract's session: 60, counted per contract independently. Reaching it pauses that session's quoting and never bypasses a necessary safety cancellation.
+The configured maximum number of quote submissions and cancellation requests in a rolling minute for one contract's session (default 60), configured and counted per contract independently. Reaching it pauses that session's quoting and never bypasses a necessary safety cancellation.
 _Avoid_: 无上限报撤、把风险撤单计入静默失败、跨合约共享限额池
 
 **合约元数据门槛**:
@@ -129,7 +129,7 @@ A symbol and exchange named as one entry in the strategy configuration's contrac
 _Avoid_: 从环境变量隐式继承下单合约、只读订阅合约
 
 **盘口保护**:
-The first test may quote only when valid bid, ask, and last prices exist and `W + D` is strictly greater than twice the observed bid-ask spread in ticks. An invalid or too-wide book cancels test quotes and pauses quoting.
+The session may quote only when valid bid, ask, and last prices exist and its `W + D` is strictly greater than its configured protection multiple (default 2) times the observed bid-ask spread in ticks. An invalid or too-wide book cancels that contract's test quotes and pauses quoting.
 _Avoid_: 薄盘口继续挂单、忽略无效行情
 
 **轮内成交触发**:
@@ -137,7 +137,7 @@ The first CTP-reported partial or complete fill for either quote of the current 
 _Avoid_: 等待全额成交、成交即撤销对侧报价
 
 **撤单终态上限**:
-The test waits at most ten seconds after entering the closing sequence for every test order to reach a terminal CTP status. On timeout it queries the target position, closes any net position with bounded FAK, and ends as a failure.
+The session waits at most its configured cancellation timeout (default ten seconds) after entering the closing sequence for every test order to reach a terminal CTP status. On timeout it queries the target position, closes any net position with bounded FAK, and ends as a failure.
 _Avoid_: 无限等待撤单回报、超时后恢复报价
 
 **当日平仓偏移**:
@@ -161,7 +161,7 @@ The product code, exact contract symbol, exchange, contract multiplier, and mini
 _Avoid_: 报告自行补充品种名称、只写中文简称、用当前合约信息覆盖历史审计事实
 
 **运行参数**:
-The complete effective strategy and its hash retained by one audit run, including shared grid and safety settings plus each contract's configured quantity. It is loaded once from the selected source file when the confirmed process starts and remains the historical configuration actually used by that run, not the source file's later contents or current defaults.
+The complete effective strategy and its run-level hash retained by one audit run, including each contract's own grid, safety, timing, quantity, and stopping limits. It is loaded once when the confirmed process starts and remains the historical configuration actually used by that run, not the source file's later contents or current defaults.
 _Avoid_: 当前策略文件、代码默认值、实际委托价格、运行中热更新参数
 
 **委托参数**:

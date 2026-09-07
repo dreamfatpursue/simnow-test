@@ -280,16 +280,15 @@ class MultiContractConfig:
         if not isinstance(entries, list) or not entries:
             raise StrategyConfigError("contracts 必须是非空数组")
 
-        allowed = {"version", "contracts"} | set(_DEFAULTS)
+        misplaced = set(raw) & set(_DEFAULTS)
+        if misplaced:
+            raise StrategyConfigError(
+                "策略参数必须移入各 contracts 合约项: " + ", ".join(sorted(misplaced))
+            )
+        allowed = {"version", "contracts"}
         unknown = set(raw) - allowed
         if unknown:
             raise StrategyConfigError("未知策略字段: " + ", ".join(sorted(unknown)))
-
-        common = dict(_DEFAULTS)
-        common.update({name: raw[name] for name in _DEFAULTS if name in raw})
-        _require_positive_integers(common, _POSITIVE_INTEGER_FIELDS - {"target_lots"})
-        _require_positive(common, _POSITIVE_FIELDS - {"max_tick_age_seconds"})
-        _require_non_negative(common, _NON_NEGATIVE_FIELDS)
 
         per_contract: list[StrategyConfig] = []
         seen: set[tuple[str, str]] = set()
@@ -299,11 +298,12 @@ class MultiContractConfig:
             missing = _MULTI_ENTRY_REQUIRED - entry.keys()
             if missing:
                 raise StrategyConfigError(f"contracts[{index}] 缺少字段: " + ", ".join(sorted(missing)))
-            unknown_keys = set(entry) - _MULTI_ENTRY_REQUIRED
+            _reject_credentials(entry)
+            unknown_keys = set(entry) - (_MULTI_ENTRY_REQUIRED | set(_DEFAULTS))
             if unknown_keys:
                 raise StrategyConfigError(f"contracts[{index}] 未知字段: " + ", ".join(sorted(unknown_keys)))
             try:
-                config = StrategyConfig.from_mapping({"version": 2, **common, **entry})
+                config = StrategyConfig.from_mapping({"version": 2, **entry})
             except StrategyConfigError as exc:
                 raise StrategyConfigError(f"contracts[{index}]: {exc}") from exc
             key = (config.effective["symbol"], config.effective["exchange"])
@@ -314,15 +314,8 @@ class MultiContractConfig:
 
         effective = {
             "version": 2,
-            **common,
             "contracts": [
-                {
-                    "symbol": config.effective["symbol"],
-                    "exchange": config.effective["exchange"],
-                    "target_lots": config.effective["target_lots"],
-                    "max_tick_age_seconds": config.effective["max_tick_age_seconds"],
-                    "quote_windows": config.effective["quote_windows"],
-                }
+                {key: value for key, value in config.effective.items() if key != "version"}
                 for config in per_contract
             ],
         }

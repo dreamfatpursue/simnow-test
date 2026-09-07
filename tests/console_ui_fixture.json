@@ -16,19 +16,6 @@
   },
   "effective": {
     "version": 2,
-    "w_ticks": 2,
-    "d_ticks": 2,
-    "s_ticks": 1,
-    "max_round_trips": 5,
-    "stable_market_seconds": 2,
-    "closing_wait_seconds": 1,
-    "book_protection_multiple": 2,
-    "reanchor_confirmation_seconds": 1,
-    "action_limit_per_minute": 60,
-    "cancel_timeout_seconds": 10,
-    "flatten_timeout_seconds": 3,
-    "flatten_adverse_ticks": 10,
-    "quote_ack_timeout_seconds": 5,
     "contracts": [
       {
         "symbol": "IF2610",
@@ -40,7 +27,20 @@
             "start": "20:00",
             "end": "23:00"
           }
-        ]
+        ],
+        "w_ticks": 2,
+        "d_ticks": 2,
+        "s_ticks": 1,
+        "max_round_trips": 5,
+        "stable_market_seconds": 2,
+        "closing_wait_seconds": 1,
+        "book_protection_multiple": 2,
+        "reanchor_confirmation_seconds": 1,
+        "action_limit_per_minute": 60,
+        "cancel_timeout_seconds": 10,
+        "flatten_timeout_seconds": 3,
+        "flatten_adverse_ticks": 10,
+        "quote_ack_timeout_seconds": 5
       },
       {
         "symbol": "rb2610",
@@ -52,7 +52,20 @@
             "start": "21:00",
             "end": "23:00"
           }
-        ]
+        ],
+        "w_ticks": 20,
+        "d_ticks": 10,
+        "s_ticks": 5,
+        "max_round_trips": 3,
+        "stable_market_seconds": 2,
+        "closing_wait_seconds": 1,
+        "book_protection_multiple": 2,
+        "reanchor_confirmation_seconds": 1,
+        "action_limit_per_minute": 60,
+        "cancel_timeout_seconds": 10,
+        "flatten_timeout_seconds": 3,
+        "flatten_adverse_ticks": 10,
+        "quote_ack_timeout_seconds": 5
       }
     ]
   },
@@ -286,7 +299,7 @@
       "tick_age_seconds": null,
       "tick_stale": null,
       "round_trips": 0,
-      "max_round_trips": 5,
+      "max_round_trips": 3,
       "active_order_count": 0,
       "confirmed_position": null,
       "current_quote_window": null,
