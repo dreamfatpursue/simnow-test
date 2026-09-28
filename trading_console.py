@@ -86,6 +86,7 @@ class ConsoleState:
         self._confirmation: PreviewConfirmation | None = None
         self._launching_process: Any | None = None
         self._projectors: dict[str, AuditProjector] = {}
+        self._projection_guard = threading.Lock()
         self._stop_requested: set[str] = set()
         self._start_guard = threading.Lock()
 
@@ -340,6 +341,33 @@ class ConsoleState:
                 "run": active.as_dict(),
             }
 
+    def flatten(self, run_id: str, contract: str) -> dict[str, Any]:
+        with self._start_guard:
+            active = self.current_activity()
+            if active is None or run_id != active.run_id:
+                raise ConsoleInputError("运行身份已变化，请刷新当前运行页面")
+            if not isinstance(contract, str) or contract not in active.contracts:
+                raise ConsoleInputError("合约不属于当前运行")
+            if self._stop_was_requested(active):
+                raise ConsoleInputError("安全停止已请求，不能恢复报价")
+            directory = Path(active.audit_dir) / contract
+            if not (directory / ".manual-flatten-supported").is_file():
+                raise ConsoleInputError("当前交易进程尚未加载一键平仓功能；新版本运行才支持此操作")
+            snapshot = self.current_overview()
+            item = next((item for item in snapshot.get("contracts", [])
+                         if f"{item['symbol']}@{item['exchange']}" == contract), None)
+            if item is None or item.get("state") != "RISK_HOLD":
+                raise ConsoleInputError("仅支持对风险托管中的当前合约请求平仓")
+            if item.get("manual_flatten_pending"):
+                return {"status": "pending", "message": "本合约已有平仓核对请求，正在等待 CTP 回报"}
+            marker = directory / ".manual-flatten-requested"
+            try:
+                with marker.open("x"):
+                    pass
+            except FileExistsError:
+                pass
+            return {"status": "requested", "message": "平仓请求已受理，等待委托、成交和持仓核对；确认零仓后等待 5 秒再检查稳定行情"}
+
     def current_overview(self) -> dict[str, Any]:
         active = self.current_activity()
         if active is not None:
@@ -354,9 +382,14 @@ class ConsoleState:
                 return {"status": "idle"}
             status = "terminal" if (Path(identity.audit_dir) / "summary.json").exists() else "process_abnormal_exit"
         projector = self._projectors.setdefault(identity.run_id, AuditProjector(identity))
-        snapshot = projector.refresh(status=status)
+        with self._projection_guard:
+            snapshot = projector.refresh(status=status)
         if status == "active":
             snapshot["stop_requested"] = self._stop_was_requested(identity)
+            for item in snapshot.get("contracts", []):
+                directory = Path(identity.audit_dir) / f"{item['symbol']}@{item['exchange']}"
+                item["manual_flatten_supported"] = (directory / ".manual-flatten-supported").is_file()
+                item["manual_flatten_pending"] = (directory / ".manual-flatten-requested").exists() or bool(item.get("manual_flatten_inflight"))
         elif status == "process_abnormal_exit":
             snapshot["run_risk"] = {
                 "key": f"{identity.run_id}:process_abnormal_exit",
@@ -483,6 +516,10 @@ class TradingConsoleHandler(BaseHTTPRequestHandler):
             if path == "/api/run/start":
                 result = self.console_state.start(payload.get("confirmation"))
                 self._send_json(202 if result["status"] == "starting" else 200, result)
+                return
+            if path == "/api/run/flatten":
+                result = self.console_state.flatten(payload.get("run_id"), payload.get("contract"))
+                self._send_json(202, result)
                 return
             if path == "/api/run/stop":
                 result = self.console_state.stop(payload.get("run_id"))

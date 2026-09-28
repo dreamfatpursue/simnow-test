@@ -1,0 +1,28 @@
+{
+  "run_id": "20260914T023923-d967dea81f",
+  "files": 16,
+  "rows": 50,
+  "ticks_by_symbol": {
+    "FG611": 6,
+    "FG701": 1,
+    "FG703": 1,
+    "SA611": 11,
+    "SA701": 11,
+    "SA703": 10,
+    "ag2610": 2,
+    "ag2612": 1,
+    "ag2702": 1,
+    "jm2610": 1,
+    "jm2611": 1,
+    "jm2701": 1,
+    "lc2611": 1,
+    "lc2701": 1,
+    "lc2705": 1
+  },
+  "state": "COMPLETED",
+  "readback_pass": true,
+  "diagnosis": [
+    "sandbox network restriction",
+    "AG/JM/LC case mismatch"
+  ]
+}

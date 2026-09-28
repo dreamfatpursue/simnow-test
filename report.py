@@ -1050,6 +1050,11 @@ def _trace_label(code: str | None) -> str:
         "late_flatten_fill": "迟到平仓成交",
         "cancel_timeout": "撤单超时",
         "flatten_timeout": "平仓超时",
+        "manual_flatten_requested": "人工一键平仓：重新核对委托、成交和持仓",
+        "manual_flatten_rejected": "人工平仓请求未开始",
+        "manual_flatten_query_failed": "人工平仓核对失败，保留风险托管",
+        "manual_flatten_complete": "人工平仓已确认零仓，等待 5 秒再检查稳定行情",
+        "risk_hold_flatten_retry": "风险托管后按最新盘口重试平仓",
         "interrupt": "操作员中断",
         "session_end": "到达会话结束时间",
     }.get(code or "", code or "因果记录")
@@ -1091,13 +1096,16 @@ _ORDER_TYPE_ZH = {"LIMIT": "限价", "FAK": "FAK", "FOK": "FOK", "MARKET": "市�
 _TERMINAL_STATE_ZH = {"FINISHED": "正常结束", "FAILED": "失败", "CRASHED": "异常退出"}
 _ACTION_KIND_ZH = {"submit_order": "提交委托", "cancel_order": "撤单"}
 _REASON_ZH = {
+    "manual_flatten_pending": "已有平仓核对请求，正在等待 CTP 回报",
+    "manual_flatten_unavailable": "当前状态不允许人工平仓",
     "max_round_trips": "达到配置的最大完成轮数后正常停止",
     "quote_window_end": "到达当前报价窗口结束时刻，收市前安全收口",
     "session_end": "到达会话结束时间，按中断链路收口",
     "interrupted": "操作员手动中断本 run",
     "nonzero_startup_position": "启动查仓发现目标合约非零仓，拒绝开报",
+    "dual_side_position": "同一合约多空两边仍有持仓，等待人工核对",
     "flatten_rejected": "受限 FAK 平仓被拒单，收口失败",
-    "flatten_timeout": "受限 FAK 平仓超时未终态，收口失败",
+    "flatten_timeout": "受限 FAK 单次平仓超时，进入风险托管后按最新盘口重试",
     "cancel_timeout": "撤单超过时限仍未收到终态回报",
     "interrupted_before_zero_position": "操作员中断时净仓尚未归零",
     "late_opening_fill_after_finish": "终态后仍收到迟到开仓成交，触发风险收口",

@@ -115,7 +115,7 @@ assert.equal(get('#start').disabled, true);
 // Preview expands each contract's own effective parameters; legacy audits remain readable.
 run('renderParameters("#preview-parameters", snapshot.effective)');
 for (const text of ['逐合约策略参数', '高级安全参数', 'IF2610', 'rb2610', '报价窗口（该合约）', '每侧手数', '撤单超时']) assert.ok(get('#preview-parameters').innerHTML.includes(text), text);
-assert.match(get('#preview-parameters').innerHTML, /20:00—23:00/);
+assert.match(get('#preview-parameters').innerHTML, /20:00—23:00；每段结束前 5 秒撤单/);
 run('renderEditableParameters("#preview-parameters", snapshot.effective)');
 for (const text of ['保存本次策略修改', 'data-edit-param="w_ticks"', 'type="number"', 'type="time"', '添加报价窗口', '删除']) assert.ok(get('#preview-parameters').innerHTML.includes(text), text);
 assert.doesNotMatch(get('#preview-parameters').innerHTML, /<pre>|\[object Object\]/);
@@ -124,3 +124,26 @@ assert.match(get('#preview-parameters').innerHTML, /历史审计：原公共参�
 assert.match(get('#preview-parameters').innerHTML, /25 tick/);
 for (const match of html.matchAll(/<pre[^>]*id="([^"]+)"/g)) assert.ok(['run-raw','preview-raw'].includes(match[1]));
 console.log('Console UI renderer checks passed (formatting, tables, missing data, state, selection, escaping, preview).');
+
+// Manual close is scoped to the selected active risk-held contract.
+run('snapshot.status="active"; snapshot.stop_requested=false; pendingStopRunId=""; selectedContract="IF2610@CFFEX"; snapshot.contracts[0].state="RISK_HOLD"; snapshot.contracts[0].manual_flatten_supported=true; renderOverview(snapshot)');
+assert.equal(get('#flatten').hidden, false);
+assert.equal(get('#flatten').disabled, false);
+run('snapshot.contracts[0].confirmed_position={net_position:0,gross_position:2}; renderOverview(snapshot)');
+assert.equal(get('#flatten').disabled, true);
+assert.match(get('#contract-facts').innerHTML, /持仓总量：<strong>2 手<\/strong>/);
+assert.match(get('#flatten-status').textContent, /多空两边仍有持仓/);
+run('snapshot.contracts[0].confirmed_position={net_position:1,gross_position:1}; renderOverview(snapshot)');
+assert.equal(get('#flatten').disabled, false);
+run('snapshot.contracts[0].manual_flatten_pending=true; renderOverview(snapshot)');
+assert.equal(get('#flatten').disabled, true);
+assert.match(get('#flatten-status').textContent, /正在等待 CTP/);
+assert.equal(get('#flatten').textContent, '等待平仓核对…');
+assert.match(get('#latest-event').textContent, /仍在等待 CTP 回报/);
+run('snapshot.contracts[0].manual_flatten_pending=false; snapshot.contracts[0].state="FLATTENING"; renderOverview(snapshot)');
+assert.equal(get('#flatten').disabled, true);
+run('snapshot.contracts[0].state="WAITING_FOR_STABLE_QUOTE"; snapshot.contracts[0].resume_wait_seconds=4.2; renderOverview(snapshot)');
+assert.match(get('#flatten-status').textContent, /剩余 5 秒/);
+run('snapshot.contracts[0].state="RISK_HOLD"; snapshot.contracts[0].manual_flatten_supported=false; snapshot.contracts[0].resume_wait_seconds=0; renderOverview(snapshot)');
+assert.equal(get('#flatten').disabled, true);
+assert.match(get('#flatten-status').textContent, /未加载/);

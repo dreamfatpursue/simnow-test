@@ -247,7 +247,9 @@ stateDiagram-v2
     FLATTENING --> FLATTENING: FAK 终态后仍有残仓
     FLATTENING --> FINISHED: 收尾对账确认净仓为零
     RISK_HOLD --> WAITING_FOR_STABLE_QUOTE: 重连后订单终态且净仓确认归零
-    RISK_HOLD --> RISK_HOLD: 继续查询/重试，Ctrl+C 不关闭连接
+    RISK_HOLD --> FLATTENING: 本轮残仓已确认且盘口可执行
+    RISK_HOLD --> RISK_HOLD: 继续查询；Ctrl+C 不关闭连接
+    RISK_HOLD --> FINISHED: 中断后查仓确认零仓
     CLOSING_RECONCILE --> FAILED: 已确认无订单、无仓但本轮算法无法继续
     FLATTENING --> RISK_HOLD: 拒单、3 秒超时或仍有残仓
 ```
@@ -422,8 +424,8 @@ adapter 维护两层 request id：CTP gateway 使用递增数字 id，session �
 - 数量是 `abs(final_net_position)`；
 - 从当前对手方一档可执行价开始；
 - 单次 flatten 流程最多持续 `flatten_timeout_seconds`，默认 3 秒；
-- 后续重试的价格相对第一次可执行价最多向不利方向移动 `flatten_adverse_ticks`，默认 10 个 tick；
-- 没有有效可执行盘口、收到拒单、超时或最终仍有残仓，都进入 `FAILED`，不改成市价单，也不无限追价。
+- 后续重试的价格相对这一次的初始可执行价最多向不利方向移动 `flatten_adverse_ticks`，默认 10 个 tick；
+- 没有有效可执行盘口、收到拒单、超时或最终仍有残仓，进入 `RISK_HOLD` 并保持连接，不改成市价单。若残仓由本轮开仓产生，活动委托终态后一旦有可执行盘口，用当前对手价重新起一次受限 FAK（重新计算不利价上限）；拒单后至少等待一个 `flatten_timeout_seconds` 再试。启动时发现的既有仓位不得走这条路径。
 
 如果 FAK 只成交一部分，等待该平仓订单终态后，按剩余确认净仓再发下一次受限 FAK。即使最终净仓已经归零，也要等所有 flatten 订单终态后才可 `FINISHED`。平仓完成后又收到会使仓位非零的晚到回报，状态会转为 `FAILED`，并保留失败原因。
 
@@ -437,6 +439,7 @@ adapter 的 `interrupt()` 只向 session 注入 `InterruptEvent`，不会立即�
 - `CLOSING_WAIT`：窗口期间中断，立即结束窗口并撤全部委托，走查仓、必要时 FAK 的人工结束收口；
 - `QUOTING` / `REPLACING`：进入与首次成交相同的撤单、查仓、必要时 FAK 平仓路径；
 - 已在 closing/flattening：继续等待已有收口链路；
+- `RISK_HOLD`：记录 `stop_reason=interrupted`，保持连接；若本轮仍有残仓，按最新盘口继续受限 FAK，零仓后才能结束；
 - 终态：不重复处理。
 
 主入口会等待 `FINISHED` 或 `FAILED` 后再关闭 adapter。交接人遇到“Ctrl+C 后程序没有立即退出”时，先区分两个阶段：终态打印之前的等待是撤单、查仓和平仓回报的保护逻辑，不是死循环；终态打印之后进程仍不退出则属关闭死锁（已在 12.4 描述的时序中修复），应视为缺陷上报。
@@ -563,7 +566,7 @@ state_transitions
 failure_reason
 ```
 
-风险未清时 `terminal_state=RISK_HOLD` 不是安全结束；只有 `active_order_count=0` 且 `final_net_position=0` 才允许关闭 CTP。普通 `Ctrl+C` 在该状态只记录告警并继续查询/重试。
+风险未清时 `terminal_state=RISK_HOLD` 不是安全结束；只有 `active_order_count=0` 且 `final_net_position=0`、`final_gross_position=0` 都由查仓确认后才允许关闭 CTP。普通 `Ctrl+C` 在该状态只记录告警并保持连接；若残仓来自本轮开仓，随后按最新盘口重试受限 FAK。
 
 判断结果时不能只看 `terminal_state`：
 
@@ -669,10 +672,10 @@ python report.py --run-dir audit/<run-id> --out-dir reports
 2. FAK 方向是否与净仓相反；
 3. SHFE/INE 是否使用 `CLOSETODAY`；
 4. 当前 Bid/Ask 是否可执行；
-5. 是否已达到 3 秒或 10 tick 不利价格边界；
+5. 是否已达到单次 3 秒或 10 tick 不利价格边界；若已进入 `RISK_HOLD`，是否在最新盘口上重新发出本轮残仓的 FAK；
 6. `final_net_position` 和 `active_orders` 是否仍然非零。
 
-不要通过删除 audit 文件、重启进程或修改 offset 来“清理”未完成收口；本功能没有跨进程订单恢复能力，残余风险必须显式交给操作者处理。
+不要通过删除 audit 文件、重启进程或修改 offset 来“清理”未完成收口；启动前仓位不会被接管。本轮开仓形成的残仓会在风险托管中按最新盘口重试受限 FAK。
 
 ## 16. 维护规则
 
@@ -682,3 +685,13 @@ python report.py --run-dir audit/<run-id> --out-dir reports
 - 不要把行情 crossing 写成成交逻辑；只能由 CTP order/trade callback 推进成交状态；
 - 修改 `vnpy_ctp` 时保持 `vendor/vnpy_ctp` 可追踪、可编辑，并补充 position-query-complete 的确定性测试；
 - 发布或交接前至少运行完整 unittest、compileall，并保留最后一次本地验证结果；真实 SimNow 验收必须单独标注为已执行或 pending。
+
+### 风险托管合约的一键平仓
+
+交易面板在当前合约区域提供“一键平仓”。仅活动运行中处于 `RISK_HOLD` 的合约可用，且会话必须有本次运行开仓记录；已请求安全停止时不可用于恢复报价。控制服务通过该合约审计目录的请求标记传递操作，交易进程在事件线程中消费并审计 `ManualFlattenEvent`，其他合约不受影响。旧交易进程没有功能能力标记，按钮禁用，不热加载或重启带残仓的运行。
+
+请求先撤销已知活动委托，并重新查询委托、成交、持仓。委托查询终态回写本地本轮订单，修复丢失撤单回报后永久卡住的问题；有未知/活动委托、查仓失败或盘口过期时，不强行发送 FAK。核对后按最新可执行买一/卖一重新设置价格基准，沿用配置的平仓超时、不利 tick 上限、数量及平仓偏移。
+
+只有订单终态且查仓确认持仓总量为零后，才开始固定 5 秒等待；这 5 秒内行情不计入稳定窗口。之后重新通过稳定行情与报价时段门槛，再挂下一轮。同一合约多空两边同时有仓时，即使净仓为零，也保持 `RISK_HOLD`，不按净仓发 FAK 或恢复挂单，等待人工核对。已达到轮数上限、已停止或报价时段结束时，沿用停止/暂停规则。请求受理不代表平仓成功，失败仍保留风险状态及残仓事实。
+
+交易前置连通不等于交易端完成授权登录。恢复查询发出后若 30 秒没有回报，或交易连接中断，适配器将这次查询作为失败审计并丢弃迟到回报；人工请求解除“核对中”，但保持 `RISK_HOLD`，不依据旧持仓快照下平仓单。控制台在查询未完成期间禁用重复请求，显示等待 CTP 回报，不把重复点击当作新的平仓尝试。

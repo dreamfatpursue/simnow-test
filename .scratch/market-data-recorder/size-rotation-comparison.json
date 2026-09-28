@@ -1,0 +1,43 @@
+{
+  "original_run_id": "20260914T025254-382ac215eb",
+  "raw_fields_identical": true,
+  "rows": 519,
+  "rows_by_contract": {
+    "SA701": 139,
+    "SA611": 146,
+    "SA703": 142,
+    "FG701": 5,
+    "FG611": 25,
+    "FG703": 1,
+    "ag2610": 10,
+    "ag2702": 12,
+    "ag2612": 17,
+    "jm2701": 16,
+    "jm2610": 1,
+    "jm2611": 1,
+    "lc2701": 2,
+    "lc2611": 1,
+    "lc2705": 1
+  },
+  "old_files": 218,
+  "new_files": 4,
+  "old_parquet_bytes": 3744942,
+  "new_parquet_bytes": 84617,
+  "staging_database_bytes": 28672,
+  "new_row_groups": 4,
+  "query_contract": "SA701",
+  "query_rows": 139,
+  "query_columns": [
+    "InstrumentID",
+    "LastPrice",
+    "Volume",
+    "BidPrice1",
+    "AskPrice1",
+    "seq_no"
+  ],
+  "old_query_median_ms": 31.36304102372378,
+  "new_query_median_ms": 0.9312500478699803,
+  "repetitions": 7,
+  "caveat": "Local warm-cache small-sample timing, not a production performance guarantee",
+  "original_files_unchanged": true
+}

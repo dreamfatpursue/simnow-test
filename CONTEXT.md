@@ -57,8 +57,8 @@ A dedicated command for the single-contract SimNow test. It can submit orders on
 _Avoid_: 在只读入口中隐藏下单模式、无确认启动
 
 **受限 FAK 收口**:
-The selected closing method for the single-contract SimNow test: after order reconciliation, submit an executable FAK close and reprice for at most three seconds and ten adverse ticks. Stop with the remaining position explicit if it cannot complete.
-_Avoid_: 无限追价、静默忽略未平仓位、市价收口
+The selected closing method for the single-contract SimNow test: after order reconciliation, submit an executable FAK close and reprice for at most the configured timeout and adverse ticks. If that attempt cannot complete, the session holds the connection with the residual explicit and retries the same bounded FAK from the latest executable book, rebasing the adverse-tick cap each attempt. A leftover position discovered at startup is never taken over.
+_Avoid_: 无限追价、静默忽略未平仓位、市价收口、接管启动前仓位
 
 **策略配置**:
 A credential-free document containing one entry per target contract with its identity, quantity, grid, timing, and safety parameters. Each contract owns its values independently; omitting an optional value uses that parameter's default, never another contract's setting.
@@ -73,8 +73,8 @@ One SimNow test run quoting one or more target contracts, each driven by an inde
 _Avoid_: 共享网格状态、跨合约对冲、任一合约终态即结束
 
 **交易控制台**:
-The operator-facing workspace for selecting a strategy, starting a simulation run, observing its live state, and deliberately requesting whole-run safe termination. It does not provide discretionary orders, individual-order cancellation, single-contract intervention, production-environment selection, or credential editing. A control request is not proof that an order was cancelled, a position was closed, or the run reached a terminal state; those outcomes still require authoritative CTP callbacks and reconciliation.
-_Avoid_: 只读运行监控面板、手工下单终端、单合约干预、把按钮受理当作 CTP 执行成功
+The operator-facing workspace for selecting a strategy, starting a simulation run, observing its live state, and deliberately requesting whole-run safe termination. A risk-held contract can also request a fresh reconciliation and bounded FAK close for its own run-created residual; confirmed zero position starts a five-second cooldown before market requalification, while stop and round limits remain effective. It does not provide discretionary orders, individual-order cancellation, production-environment selection, or credential editing. A control request is not proof that an order was cancelled, a position was closed, or the run reached a terminal state; those outcomes still require authoritative CTP callbacks and reconciliation.
+_Avoid_: 只读运行监控面板、手工下单终端、绕过对账的单合约干预、把按钮受理当作 CTP 执行成功
 
 **交易启动确认**:
 A per-run operator approval granted only after reviewing the selected simulation environment and the complete effective strategy, including its hash, contracts, quantities, quote windows, and stopping limits. It authorizes that exact preview once and has no clock-based expiry; configuration changes, use, or control-service restart invalidate it.
@@ -109,8 +109,8 @@ The rule that a contract's first-fill closing, failure, or timeout stops and fla
 _Avoid_: 任一成交全停、跨合约收口链路
 
 **人工结束收口**:
-The whole-run termination path requested by either a command-line interrupt or the trading console's safe-stop control. It broadcasts to every contract session, cancels every test order, waits for terminal order callbacks, reconciles each position, and uses the same bounded FAK close if a fill occurred; the request is not complete until every session reaches a safe terminal outcome. Its availability depends on identifying the active trading process, not on the freshness of the console's displayed market or audit projection.
-_Avoid_: 直接退出、单合约停止、遗留活动委托、把停止按钮受理当作收口完成、因页面数据过期拒绝停止
+The whole-run termination path requested by either a command-line interrupt or the trading console's safe-stop control. It broadcasts to every contract session, cancels every test order, waits for terminal order callbacks, reconciles each position, and uses the same bounded FAK close if a fill occurred; if the session is already in risk hold with a residual from this run, it keeps the connection and retries that FAK from the latest book. The request is not complete until every session reaches a safe terminal outcome. Its availability depends on identifying the active trading process, not on the freshness of the console's displayed market or audit projection.
+_Avoid_: 直接退出、单合约停止、遗留活动委托、把停止按钮受理当作收口完成、因页面数据过期拒绝停止、风险托管后不再平仓
 
 **零仓启动门槛**:
 The test may submit its first quote only after CTP position data confirms the target contract has zero net position. Any nonzero position on any target contract rejects the whole run without sending an order.

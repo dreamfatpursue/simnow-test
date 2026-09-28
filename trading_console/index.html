@@ -59,6 +59,7 @@ footer{margin-top:22px;font-size:.8rem;color:#586b82}
   <div id="contract-switcher" class="contract-switcher" aria-label="选择合约" hidden></div>
   <div class="section-header"><div class="inline"><h2 id="contract-name"></h2><span id="contract-state" class="badge blue"></span></div><span id="rounds" class="muted"></span></div>
   <dl class="metrics"><div class="metric"><dt>最新价</dt><dd id="last-price">—</dd></div><div class="metric"><dt>买一价</dt><dd id="bid-price">—</dd></div><div class="metric"><dt>卖一价</dt><dd id="ask-price">—</dd></div><div class="metric"><dt>活动委托</dt><dd><span id="order-count">—</span><small>笔</small></dd></div></dl>
+  <button id="flatten" type="button" hidden>一键平仓</button><p id="flatten-status" class="muted"></p>
   <div id="contract-facts" class="facts"></div><p id="latest-event" class="message"></p>
 </section>
 <section id="detail-card" class="card" hidden>
@@ -91,7 +92,7 @@ const statuses = {SUBMITTING:"提交中",NOTTRADED:"等待成交",PARTTRADED:"�
 const sides = {BUY:"买入",SELL:"卖出"};
 const offsets = {OPEN:"开仓",CLOSE:"平仓",CLOSETODAY:"平今",CLOSEYESTERDAY:"平昨"};
 const orderTypes = {LIMIT:"限价",FAK:"FAK",FOK:"FOK",MARKET:"市价"};
-const reasons = {process_abnormal_exit:"进程异常退出，当前显示最后已知事实",cancel_timeout:"撤单超时，等待委托核对",flatten_timeout:"平仓超时，等待委托与持仓核对",flatten_rejected:"平仓被拒单",risk_hold:"风险未解除，保持连接并继续核对",trade_disconnected:"交易连接中断",market_disconnected:"行情连接中断",unknown_order:"存在状态未知的委托",interrupted:"已请求安全停止",max_round_trips:"已达到最大完成轮数"};
+const reasons = {manual_flatten_pending:"已有平仓核对请求，正在等待 CTP 回报",manual_flatten_unavailable:"当前状态不允许人工平仓",dual_side_position:"同一合约多空两边仍有持仓，等待人工核对",process_abnormal_exit:"进程异常退出，当前显示最后已知事实",cancel_timeout:"撤单超时，等待委托核对",flatten_timeout:"平仓超时，保持连接并按最新盘口重试",flatten_rejected:"平仓被拒单",risk_hold:"风险未解除，保持连接并继续核对",risk_hold_flatten_retry:"风险托管后按最新盘口重试平仓",trade_disconnected:"交易连接中断",market_disconnected:"行情连接中断",unknown_order:"存在状态未知的委托",interrupted:"已请求安全停止",max_round_trips:"已达到最大完成轮数"};
 const stateNames = {WAITING_FOR_CONTRACT:"连接 CTP／查询合约",WAITING_FOR_ZERO_POSITION:"核对初始持仓",WAITING_FOR_STABLE_QUOTE:"等待稳定行情",PAUSED:"等待下一报价窗口",QUOTE_PENDING:"等待报价回报",QUOTING:"正在报价",REPLACING:"正在撤换报价",CLOSING_WAIT:"等待对侧成交",CLOSING_CANCELS:"正在撤单",CLOSING_RECONCILE:"正在持仓对账",FLATTENING:"正在 FAK 平仓",RISK_HOLD:"等待风险解除与对账",FINISHED:"安全完成",FAILED:"安全失败"};
 const fields = {version:["配置版本",""],w_ticks:["网格半宽 W","tick"],d_ticks:["额外挂单距离 D","tick"],s_ticks:["重定锚步长 S","tick"],max_round_trips:["最大完成轮数","轮"],target_lots:["每侧手数","手"],max_tick_age_seconds:["行情过期阈值","秒"],stable_market_seconds:["稳定行情等待","秒"],closing_wait_seconds:["对侧成交等待窗口","秒"],book_protection_multiple:["盘口保护倍数","倍"],reanchor_confirmation_seconds:["重定锚确认时间","秒"],action_limit_per_minute:["每分钟报撤上限","次"],cancel_timeout_seconds:["撤单超时","秒"],flatten_timeout_seconds:["平仓超时","秒"],flatten_adverse_ticks:["平仓不利价格上限","tick"],quote_ack_timeout_seconds:["报价回报超时","秒"]};
 const editableFields = ["target_lots","w_ticks","d_ticks","s_ticks","max_round_trips","max_tick_age_seconds","stable_market_seconds","closing_wait_seconds","book_protection_multiple","reanchor_confirmation_seconds","action_limit_per_minute","cancel_timeout_seconds","flatten_timeout_seconds","flatten_adverse_ticks","quote_ack_timeout_seconds"];
@@ -149,7 +150,8 @@ function renderParameters(selector, effective, selected = null) {
   for (const item of (effective.contracts || []).filter((item) => !selected || contractKey(item) === selected)) {
     const config = {...legacy,...item};
     const advanced = Object.keys(config).filter((key) => ![...primary,"symbol","exchange","quote_windows"].includes(key));
-    html += '<div class="config-contract"><h3>' + esc(item.symbol) + " · " + esc(exchanges[item.exchange] || item.exchange) + '</h3>' + paramGrid([...parameterEntries(config,primary.filter((key) => key in config)),["报价窗口（该合约）",windowsText(config.quote_windows)]]);
+    const windowText = windowsText(config.quote_windows);
+    html += '<div class="config-contract"><h3>' + esc(item.symbol) + " · " + esc(exchanges[item.exchange] || item.exchange) + '</h3>' + paramGrid([...parameterEntries(config,primary.filter((key) => key in config)),["报价窗口（该合约）", windowText === "未提供" ? windowText : windowText + "；每段结束前 5 秒撤单"]]);
     html += '<details data-key="advanced-' + esc(contractKey(item)) + '"><summary>该合约高级安全参数（' + advanced.length + ' 项）</summary>' + paramGrid(parameterEntries(config,advanced)) + '</details></div>';
   }
   html += paramGrid([["配置版本",valueText(version)]]);
@@ -274,7 +276,7 @@ function renderTimeline(item) {
     const key = esc("event-" + contractKey(item) + "-" + entry.at + "-" + entry.code + "-" + JSON.stringify(entry.client_ids || []));
     return '<li><div class="inline"><strong>' + esc(traceTitle(entry)) + '</strong><small>' + esc(relativeTime(entry.at)) + '</small></div><p>' + esc(traceDescription(entry)) + '</p><details data-key="' + key + '"><summary data-key="' + key + '">计算依据与关联委托</summary>' + paramGrid(readableFacts(entry.calculation)) + paramGrid(readableFacts(entry.market)) + '<p class="muted">关联委托：' + esc((entry.client_ids || []).join("、") || "未提供") + '<br>原因代码：' + esc(entry.code) + '<br>状态：' + esc(entry.state_before) + " → " + esc(entry.state_after) + '</p>' + (entry.replacement ? paramGrid(readableFacts(entry.replacement)) : "") + '</details></li>';
   }).join("") + '</ol>' : '<div class="empty">尚无关键事件，等待会话审计。</div>');
-  $("#latest-event").textContent = entries.length ? "最近动态 · " + traceTitle(entries[0]) + "：" + traceDescription(entries[0]) : "等待首条关键会话事件。";
+  $("#latest-event").textContent = item.manual_flatten_pending ? "最近动态 · 平仓核对请求仍在等待 CTP 回报。" : entries.length ? "最近动态 · " + traceTitle(entries[0]) + "：" + traceDescription(entries[0]) : "等待首条关键会话事件。";
 }
 function renderContract() {
   const contracts = overview?.contracts || [];
@@ -283,6 +285,12 @@ function renderContract() {
   const item = contracts.find((item) => contractKey(item) === selectedContract);
   $("#contract-switcher").hidden = false;
   setHTML("#contract-switcher",contracts.map((c) => '<button type="button" data-contract="' + esc(contractKey(c)) + '" data-key="' + esc(contractKey(c)) + '" aria-pressed="' + (c === item) + '"><strong>' + esc(c.symbol) + " · " + esc(exchanges[c.exchange] || c.exchange) + '</strong>' + badge(stateNames[c.state] || c.state_label,stageTone(c)) + '<small>已完成 ' + number(c.round_trips) + " / " + number(c.max_round_trips) + " 轮 · 活动委托 " + number(c.active_order_count) + ' 笔</small></button>').join(""));
+  const flattenPending = item.manual_flatten_pending || flattenSubmitting;
+  const dualSidePosition = item.confirmed_position?.gross_position > Math.abs(item.confirmed_position?.net_position);
+  $("#flatten").hidden = overview.status !== "active";
+  $("#flatten").disabled = !item.manual_flatten_supported || item.state !== "RISK_HOLD" || overview.stop_requested || Boolean(pendingStopRunId) || flattenPending || dualSidePosition;
+  $("#flatten").textContent = flattenPending ? "等待平仓核对…" : "一键平仓";
+  $("#flatten-status").textContent = dualSidePosition ? "本合约多空两边仍有持仓，不能按净仓一键平仓；请先人工核对持仓。" : item.resume_wait_seconds > 0 ? "已确认零仓，恢复等待剩余 " + Math.ceil(item.resume_wait_seconds) + " 秒，之后重新等待稳定行情。" : flattenPending ? "请求已受理，正在等待 CTP 委托、成交和持仓查询回报；当前持仓尚未重新确认。" : !item.manual_flatten_supported && overview.status === "active" ? "当前交易进程未加载一键平仓功能，新版本运行才支持。" : "仅对本合约风险托管残仓重新核对并发送受限 FAK；确认零仓后等待 5 秒再检查稳定行情。";
   $("#contract-name").textContent = item.symbol + " · " + (exchanges[item.exchange] || item.exchange);
   setBadge("#contract-state",stateNames[item.state] || item.state_label || "等待会话事实",stageTone(item));
   $("#rounds").textContent = "已完成 " + number(item.round_trips) + " / " + number(item.max_round_trips) + " 轮";
@@ -290,7 +298,7 @@ function renderContract() {
   const position = item.confirmed_position, frozen = overview.status !== "active" || overview.data_stale || connectionFailed;
   const queryTime = position?.confirmed_wall_time ? "最近时钟 " + timeText(position.confirmed_wall_time) + " · " + relativeTime(position.confirmed_at) : relativeTime(position?.confirmed_at);
   const windowStatus = !item.last_wall_time ? "待确认" : item.current_quote_window ? windowsText([item.current_quote_window]) : "不在报价窗口内";
-  setHTML("#contract-facts",'<div>最近核对净仓：<strong>' + esc(position ? units(position.net_position,"手") : "未核对") + '</strong><br><small>' + esc(position ? "CTP 查询快照 · " + queryTime : "等待首次成功持仓查询，不以成交累加推算") + '</small>' + (item.last_position_query_error ? '<br>' + badge("持仓查询曾失败，请结合最近成功核对时间查看","warn") : "") + '</div><div>' + (frozen ? "最后记录报价窗口" : "当前报价窗口") + '：<strong>' + esc(windowStatus) + '</strong><br><small>行情时间：' + esc(timeText(item.latest_tick?.exchange_time)) + " · " + (frozen ? "最后记录" : item.tick_stale ? "行情已过期" : item.latest_tick ? "行情有效" : "未收到行情") + '</small></div>');
+  setHTML("#contract-facts",'<div>最近核对净仓：<strong>' + esc(position ? units(position.net_position,"手") : "未核对") + '</strong>' + (position && position.gross_position != null ? ' · 持仓总量：<strong>' + esc(units(position.gross_position,"手")) + '</strong>' : '') + '<br><small>' + esc(position ? "CTP 查询快照 · " + queryTime : "等待首次成功持仓查询，不以成交累加推算") + '</small>' + (item.last_position_query_error ? '<br>' + badge("持仓查询曾失败，请结合最近成功核对时间查看","warn") : "") + '</div><div>' + (frozen ? "最后记录报价窗口" : "当前报价窗口") + '：<strong>' + esc(windowStatus) + '</strong><br><small>行情时间：' + esc(timeText(item.latest_tick?.exchange_time)) + " · " + (frozen ? "最后记录" : item.tick_stale ? "行情已过期" : item.latest_tick ? "行情有效" : "未收到行情") + '</small></div>');
   const connected = (value) => value == null ? badge("待确认") : badge(value ? "已连接" : "已断开",value ? "good" : "risk");
   setHTML("#connection-strip",'<span>' + (frozen ? "最后记录 · " : "") + "交易连接 " + connected(item.trade_connected) + '</span><span>' + (frozen ? "最后记录 · " : "") + "行情连接 " + connected(item.market_connected) + '</span><span>审计时钟：' + esc(timeText(item.last_wall_time)) + '</span><span>' + (frozen ? "快照视图" : "行情年龄：" + esc(units(item.tick_age_seconds,"秒"))) + '</span>');
   renderOrders(item); renderTrades(item); renderTimeline(item); renderParameters("#run-parameters",overview.effective,selectedContract);
@@ -379,6 +387,17 @@ $("#start").addEventListener("click",async () => {
     if (body.status === "starting") renderOverview(body);
     $("#launch-panel").open = false; showStatus(body.status === "already_started" ? "已有活动运行，已切换到该运行。" : "启动请求已受理。"); await pollOverview();
   } catch (error) { invalidatePreview(); showStatus(error.message + "；请重新预览后核对运行状态。",true); } finally { startPending = false; updateButtons(); }
+});
+let flattenSubmitting = false;
+$("#flatten").addEventListener("click",async () => {
+  if ($("#flatten").disabled) return;
+  const runId = overview?.run?.run_id, contract = selectedContract;
+  flattenSubmitting = true; renderContract();
+  try {
+    const body = await mutation("/api/run/flatten",{run_id:runId,contract});
+    showStatus(body.message); await pollOverview();
+  } catch (error) { showStatus("平仓请求尚未确认：" + error.message,true); }
+  finally { flattenSubmitting = false; renderContract(); }
 });
 $("#stop").addEventListener("click",async () => {
   if ($("#stop").disabled) return; const expectedRunId = overview?.run?.run_id;

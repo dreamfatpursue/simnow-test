@@ -82,6 +82,24 @@ def expire_window(session: LiveGridSession):
     return session.handle(ClockEvent(session._now + wait + 0.1))
 
 
+def enter_flatten_timeout_hold(session: LiveGridSession) -> str:
+    """买开成交后 FAK 超时进入 RISK_HOLD，并把活动委托打到 CANCELLED。"""
+    submitted = qualify_market(session)
+    buy = next(action for action in submitted if action.payload["side"] == "BUY")
+    sell = next(action for action in submitted if action.payload["side"] == "SELL")
+    session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
+    session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
+    session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
+    open_window(session, "buy-1", "BUY", traded=1)
+    flatten = expire_window(session)[0]
+    client_id = flatten.payload["client_id"]
+    session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=client_id))
+    session.handle(ClockEvent(session._now + session.config.effective["flatten_timeout_seconds"] + 0.1))
+    session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1, client_id=client_id))
+    session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
+    return client_id
+
+
 def drive_to_final_reconcile(session: LiveGridSession, *, filled: str = "buy-1", side: str = "BUY", exchange: str = "SHFE", opposite_id: str = "sell-1", opposite_side: str = "SELL") -> str:
     """首成交 → 窗口超时 → FAK 平仓 → 撤对侧；返回收尾对账的 request_id。"""
     open_window(session, filled, side, traded=1, exchange=exchange)
@@ -349,6 +367,25 @@ class LiveGridSessionTests(unittest.TestCase):
         query2 = next(action for action in final if action.kind == "query_position").payload["request_id"]
         session.handle(PositionQueryCompleteEvent(query2, "rb2601", "SHFE", 0))
         self.assertEqual(session.state, SessionState.FINISHED)
+
+    def test_closing_query_with_opposing_positions_stays_in_risk_hold(self) -> None:
+        session = start_session(make_config(max_round_trips=1))
+        submitted = qualify_market(session)
+        buy = next(action for action in submitted if action.payload["side"] == "BUY")
+        sell = next(action for action in submitted if action.payload["side"] == "SELL")
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
+        session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
+        session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
+        open_window(session, "buy-1", "BUY", traded=1)
+        query_actions = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "ALLTRADED", 1, traded=1))
+        self.assertEqual(session.state, SessionState.CLOSING_RECONCILE)
+
+        actions = session.handle(PositionQueryCompleteEvent(
+            query_actions[0].payload["request_id"], "rb2601", "SHFE", 0, gross_position=2))
+        self.assertEqual(session.state, SessionState.RISK_HOLD)
+        self.assertEqual(session.failure_reason, "dual_side_position")
+        self.assertEqual(session.summary()["final_gross_position"], 2)
+        self.assertFalse(any(action.kind == "submit_order" for action in actions))
 
     def test_zero_window_flattens_immediately_after_first_fill(self) -> None:
         session = start_session(make_config(closing_wait_seconds=0, max_round_trips=1))
@@ -994,6 +1031,80 @@ class LiveGridSessionTests(unittest.TestCase):
         session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "REJECTED", 1, client_id=flatten.payload["client_id"]))
         self.assertEqual(session.state, SessionState.RISK_HOLD)
         self.assertEqual(session.failure_reason, "flatten_rejected")
+
+    def test_flatten_rejection_waits_timeout_before_risk_hold_retry(self) -> None:
+        """平仓拒单后不得在每笔行情上立刻重发；要等到本轮 flatten 时限过后才用新盘口再试。"""
+        session = start_session()
+        submitted = qualify_market(session)
+        buy = next(action for action in submitted if action.payload["side"] == "BUY")
+        sell = next(action for action in submitted if action.payload["side"] == "SELL")
+        session.handle(OrderEvent("buy-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id=buy.payload["client_id"]))
+        session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "NOTTRADED", 1, client_id=sell.payload["client_id"]))
+        session.handle(TradeEvent("buy-1", "rb2601", "SHFE", "BUY", 1, 60, "trade-1"))
+        open_window(session, "buy-1", "BUY", traded=1)
+        flatten = expire_window(session)[0]
+        session.handle(OrderEvent("flatten-1", "rb2601", "SHFE", "SELL", "REJECTED", 1, client_id=flatten.payload["client_id"]))
+        session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
+        immediate = session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, session._now))
+        self.assertEqual(session.state, SessionState.RISK_HOLD)
+        self.assertEqual([action.kind for action in immediate if action.kind == "submit_order"], [])
+        session.handle(ClockEvent(session._now + session.config.effective["flatten_timeout_seconds"] + 0.1))
+        retry = session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, session._now))
+        self.assertEqual(retry[0].kind, "submit_order")
+        self.assertEqual(retry[0].payload["order_type"], "FAK")
+
+    def test_risk_hold_retries_flatten_at_latest_book_after_timeout(self) -> None:
+        """本轮 FAK 超时后，最新可执行盘口会重新起一次受限平仓，而不是沿用旧的不利价上限。"""
+        session = start_session()
+        enter_flatten_timeout_hold(session)
+        self.assertEqual(session.state, SessionState.RISK_HOLD)
+        self.assertEqual(session.failure_reason, "flatten_timeout")
+
+        actions = session.handle(TickEvent("rb2601", "SHFE", 80, 80, 81, session._now))
+        flatten = next(action for action in actions if action.kind == "submit_order")
+        self.assertEqual(session.state, SessionState.FLATTENING)
+        self.assertEqual(flatten.payload["order_type"], "FAK")
+        self.assertEqual(flatten.payload["side"], "SELL")
+        self.assertEqual(flatten.payload["price"], 80)
+
+    def test_risk_hold_flatten_retry_finishes_after_interrupt_when_residual_closes(self) -> None:
+        """安全停止落在 RISK_HOLD 时仍会重试平仓；残仓归零后按中断意图结束，不续挂。"""
+        session = start_session()
+        enter_flatten_timeout_hold(session)
+        session.handle(InterruptEvent())
+        self.assertEqual(session.stop_reason, "interrupted")
+
+        flatten = next(
+            action
+            for action in session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, session._now))
+            if action.kind == "submit_order"
+        )
+        client_id = flatten.payload["client_id"]
+        closing = session.handle(OrderEvent("flatten-retry", "rb2601", "SHFE", "SELL", "ALLTRADED", 1, traded=1, client_id=client_id))
+        session.handle(TradeEvent("flatten-retry", "rb2601", "SHFE", "SELL", 1, 99, "retry-trade", client_id=client_id))
+        if closing and closing[0].kind == "cancel_order":
+            closing = session.handle(OrderEvent("sell-1", "rb2601", "SHFE", "SELL", "CANCELLED", 1))
+        query_id = next(action for action in closing if action.kind == "query_position").payload["request_id"]
+        session.handle(PositionQueryCompleteEvent(query_id, "rb2601", "SHFE", 0))
+        self.assertEqual(session.state, SessionState.FINISHED)
+        self.assertEqual(session.stop_reason, "interrupted")
+        self.assertEqual(session.final_net_position, 0)
+        self.assertIsNone(session.failure_reason)
+
+    def test_startup_nonzero_risk_hold_does_not_flatten(self) -> None:
+        """启动即发现非零仓不得接管平仓，即使后续查仓和盘口都有效。"""
+        config = make_config()
+        session = LiveGridSession(config, simnow_confirmed=True)
+        query = session.handle(ContractEvent("rb2601", "SHFE", 1.0))[0]
+        session.handle(PositionQueryCompleteEvent(query.payload["request_id"], "rb2601", "SHFE", 1))
+        self.assertEqual(session.state, SessionState.RISK_HOLD)
+        session.handle(TickEvent("rb2601", "SHFE", 100, 99, 101, 0))
+        recovery = session.handle(ClockEvent(2))
+        query_action = next(action for action in recovery if action.kind == "query_position")
+        actions = session.handle(PositionQueryCompleteEvent(query_action.payload["request_id"], "rb2601", "SHFE", 1))
+        self.assertEqual(session.state, SessionState.RISK_HOLD)
+        self.assertEqual([action.kind for action in actions], [])
+        self.assertFalse(any(action.kind == "submit_order" for action in session.actions))
 
     def test_flatten_trade_waits_for_terminal_order_callback_before_finishing(self) -> None:
         session = start_session(make_config(max_round_trips=1))

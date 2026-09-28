@@ -7,3 +7,7 @@ __pycache__/
 *.log
 audit/
 /vnpy_ctp/
+.venv-recorder/
+.recorder-runtime/
+ctp-data/
+.scratch/market-data-recorder/baseline-hashes.json

@@ -1,0 +1,92 @@
+[
+  {
+    "module": "test_activity.py",
+    "exit_code": 0,
+    "summary": "Ran 2 tests in 0.001s\nOK"
+  },
+  {
+    "module": "test_audit.py",
+    "exit_code": 0,
+    "summary": "Ran 6 tests in 0.006s\nOK"
+  },
+  {
+    "module": "test_causal_audit.py",
+    "exit_code": 0,
+    "summary": "Ran 7 tests in 0.002s\nOK"
+  },
+  {
+    "module": "test_console_preview.py",
+    "exit_code": 0,
+    "summary": "Ran 2 tests in 0.004s\nOK"
+  },
+  {
+    "module": "test_console_projection.py",
+    "exit_code": 0,
+    "summary": "Ran 6 tests in 0.005s\nOK"
+  },
+  {
+    "module": "test_ctp_adapter.py",
+    "exit_code": 0,
+    "summary": "Ran 18 tests in 0.295s\nOK"
+  },
+  {
+    "module": "test_ctp_gateway.py",
+    "exit_code": 0,
+    "summary": "Ran 8 tests in 0.000s\nOK"
+  },
+  {
+    "module": "test_ctp_native.py",
+    "exit_code": 0,
+    "summary": "Ran 4 tests in 0.007s\nOK"
+  },
+  {
+    "module": "test_live_grid_p0.py",
+    "exit_code": 0,
+    "summary": "Ran 8 tests in 0.176s\nOK"
+  },
+  {
+    "module": "test_manual_flatten.py",
+    "exit_code": 0,
+    "summary": "Ran 5 tests in 0.175s\nOK"
+  },
+  {
+    "module": "test_market_data_recorder.py",
+    "exit_code": 0,
+    "summary": "Ran 1 test in 0.000s\nOK (skipped=1)"
+  },
+  {
+    "module": "test_report.py",
+    "exit_code": 0,
+    "summary": "Ran 24 tests in 0.029s\nOK"
+  },
+  {
+    "module": "test_run.py",
+    "exit_code": 0,
+    "summary": "Ran 5 tests in 0.006s\nOK"
+  },
+  {
+    "module": "test_run_live_grid.py",
+    "exit_code": 0,
+    "summary": "Ran 5 tests in 6.482s\nOK"
+  },
+  {
+    "module": "test_run_report.py",
+    "exit_code": 0,
+    "summary": "Ran 7 tests in 0.011s\nOK"
+  },
+  {
+    "module": "test_session.py",
+    "exit_code": 0,
+    "summary": "Ran 72 tests in 0.011s\nOK"
+  },
+  {
+    "module": "test_strategy_config.py",
+    "exit_code": 0,
+    "summary": "Ran 13 tests in 0.002s\nOK"
+  },
+  {
+    "module": "test_trading_console.py",
+    "exit_code": 0,
+    "summary": "Ran 11 tests in 0.537s\nOK"
+  }
+]

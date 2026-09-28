@@ -1,0 +1,27 @@
+{
+  "contracts": [
+    {"symbol": "SA701", "exchange": "CZCE"},
+    {"symbol": "SA611", "exchange": "CZCE"},
+    {"symbol": "SA703", "exchange": "CZCE"},
+    {"symbol": "FG701", "exchange": "CZCE"},
+    {"symbol": "FG611", "exchange": "CZCE"},
+    {"symbol": "FG703", "exchange": "CZCE"},
+    {"symbol": "ag2610", "exchange": "SHFE"},
+    {"symbol": "ag2702", "exchange": "SHFE"},
+    {"symbol": "ag2612", "exchange": "SHFE"},
+    {"symbol": "jm2701", "exchange": "DCE"},
+    {"symbol": "jm2610", "exchange": "DCE"},
+    {"symbol": "jm2611", "exchange": "DCE"},
+    {"symbol": "lc2701", "exchange": "GFEX"},
+    {"symbol": "lc2611", "exchange": "GFEX"},
+    {"symbol": "lc2705", "exchange": "GFEX"}
+  ],
+  "queue_size": 10000,
+  "target_file_mib": 64,
+  "flush_seconds": 10,
+  "min_free_gib": 10,
+  "min_free_ratio": 0.1,
+  "max_rss_mib": 512,
+  "writer_timeout_seconds": 30,
+  "stop_timeout_seconds": 10
+}

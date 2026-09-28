@@ -1,0 +1,39 @@
+{
+  "run_id": "20260913T143449-1a10492176",
+  "environment": "7x24",
+  "duration_seconds": 1800,
+  "state": "COMPLETED",
+  "orderly": true,
+  "child_returncode": 0,
+  "received_total": 4031,
+  "committed_total": 4031,
+  "dropped_total": 0,
+  "uncommitted_total": 0,
+  "disconnects": 0,
+  "queue_depth": 0,
+  "subscriptions_confirmed": [
+    "AP610",
+    "IF2610",
+    "cu2609"
+  ],
+  "ticks_by_symbol": {
+    "AP610": 339,
+    "IF2610": 3004,
+    "cu2609": 688
+  },
+  "parquet_files": 483,
+  "parquet_rows": 4031,
+  "rows_by_instrument": {
+    "IF2610": 3004,
+    "AP610": 339,
+    "cu2609": 688
+  },
+  "schema_column_count": 55,
+  "schema_consistent": true,
+  "all_files_readable": true,
+  "bad_files": [],
+  "local_key_unique": true,
+  "seq_no_contiguous": true,
+  "temporary_files": [],
+  "overall_pass": true
+}

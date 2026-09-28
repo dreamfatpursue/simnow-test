@@ -88,6 +88,6 @@ state_transitions 含 QUOTING → CLOSING_CANCELS → CLOSING_RECONCILE → FLAT
 
 ### 失败处置
 
-- `flatten_rejected` / `flatten_timeout` / 残仓非零：按运行文档第 15 节"平仓没有结束"顺序排查，人工接管平仓，保留审计目录；
+- `flatten_rejected` / `flatten_timeout` / 残仓非零：先确认风险托管是否已按最新盘口重试 FAK；仍无法归零再按运行文档第 15 节排查并人工接管，保留审计目录；
 - 任何失败都不删 audit、不重启进程、不改 offset 来"清理"收口；
 - 保留独立审计目录，不用终端输出代替证据。

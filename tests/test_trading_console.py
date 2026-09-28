@@ -337,6 +337,12 @@ class TradingConsoleHttpTests(unittest.TestCase):
                 response = connection.getresponse()
                 self.assertEqual(response.status, 409)
                 self.assertIn("没有活动运行", json.loads(response.read())["error"])
+                with patch.object(state, "flatten", return_value={"status": "requested"}) as flatten:
+                    connection.request("POST", "/api/run/flatten", body=json.dumps({"run_id": "run-test", "contract": "rb2601@SHFE"}), headers=headers)
+                    response = connection.getresponse()
+                    self.assertEqual(response.status, 202)
+                    self.assertEqual(json.loads(response.read())["status"], "requested")
+                    flatten.assert_called_once_with("run-test", "rb2601@SHFE")
                 connection.close()
             finally:
                 server.shutdown()

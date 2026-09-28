@@ -249,6 +249,22 @@ class CtpAdapterTests(unittest.TestCase):
         self.assertEqual(engine.sent, [])
         self.assertEqual(engine.cancelled, [])
 
+    def test_opposing_positions_do_not_pass_zero_position_gate(self) -> None:
+        adapter, sessions, audits = make_adapter(("IF2610", "CFFEX"))
+        session = sessions[0]
+        adapter._on_contract(contract_event("IF2610", "CFFEX"))
+        adapter._on_position_query_complete(position_result(41, (
+            held_position("IF2610", "CFFEX", "多", 1),
+            held_position("IF2610", "CFFEX", "空", 1),
+        )))
+
+        self.assertEqual(session.state.value, "RISK_HOLD")
+        self.assertEqual(session.failure_reason, "dual_side_position")
+        self.assertEqual(session.summary()["final_net_position"], 0)
+        self.assertEqual(session.summary()["final_gross_position"], 2)
+        self.assertEqual(audits[0].events[-1][0].gross_position, 2)
+        self.assertFalse(adapter.main_engine.sent)
+
     def test_sessions_cannot_quote_until_every_contract_passed_the_zero_gate(self) -> None:
         adapter, sessions, audits = make_adapter(
             ("rb2601", "SHFE"),

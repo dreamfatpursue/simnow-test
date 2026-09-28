@@ -7,6 +7,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from .audit import AuditWriter, MultiContractAuditWriter
@@ -17,6 +18,7 @@ from .session import (
     ContractEvent,
     InterruptEvent,
     LiveGridSession,
+    ManualFlattenEvent,
     OrderActionErrorEvent,
     OrderEvent,
     OrderQueryCompleteEvent,
@@ -35,6 +37,7 @@ _PREGATE_STATES = {SessionState.WAITING_FOR_CONTRACT, SessionState.WAITING_FOR_Z
 
 # CTP 同一时刻只允许一个在途查询；目标合约查询完成后才发送启动查委托/成交/持仓。
 POSITION_QUERY_MAX_ATTEMPTS = 60
+QUERY_RESPONSE_TIMEOUT_SECONDS = 30.0
 # 查询被拒后的重发间隔（秒）：1s→2s→4s，之后固定 5s。
 # 固定每秒一发的节奏会持续踩中 CTP 的秒级流控窗口，形成连续拒发自锁。
 QUERY_SEND_BACKOFF_SECONDS = (1.0, 2.0, 4.0, 5.0)
@@ -94,6 +97,7 @@ class CtpLiveGridAdapter:
         self._inflight_position_queries: set[int] = set()
         self._inflight_order_queries: set[int] = set()
         self._inflight_trade_queries: set[int] = set()
+        self._query_sent_at: dict[tuple[str, int], float] = {}
         self._startup_position_pending: dict[tuple[str, str], str] = {}
         self._closing_position_pending: dict[tuple[str, str], str] = {}
         self._recovery_position_pending: dict[tuple[str, str], str] = {}
@@ -164,6 +168,8 @@ class CtpLiveGridAdapter:
         engine.register(EVENT_CTP_ORDER_QUERY_COMPLETE, self._on_order_query_complete)
         engine.register(EVENT_CTP_TRADE_QUERY_COMPLETE, self._on_trade_query_complete)
         engine.register(EVENT_TIMER, self._on_timer)
+        for audit in self.audits:
+            (audit.directory / ".manual-flatten-supported").touch()
         self.main_engine.connect(self.connect_setting(), GATEWAY_NAME)
         return self.main_engine
 
@@ -181,11 +187,12 @@ class CtpLiveGridAdapter:
             engine.close()
 
     def safe_to_close(self) -> bool:
-        """Closing is safe only after every session proves no order and no net position."""
+        """Closing is safe only after every session proves no order and no position."""
         return all(
             session.state in {SessionState.FINISHED, SessionState.FAILED}
             and session.summary()["active_order_count"] == 0
             and session.summary()["final_net_position"] == 0
+            and session.summary()["final_gross_position"] == 0
             for session in self.sessions
         )
 
@@ -335,6 +342,10 @@ class CtpLiveGridAdapter:
                     ),
                     session,
                 )
+            if data.kind == "trade" and not data.connected:
+                self._expire_stalled_queries(force=True)
+                # 断线前等待孤儿开仓单撤销的查询链不能再占用恢复请求。
+                self._trade_position_after_query.clear()
 
     def _on_order_action_error(self, event: Any) -> None:
         with self._lock:
@@ -367,6 +378,7 @@ class CtpLiveGridAdapter:
             if result.request_id not in self._inflight_order_queries:
                 return
             self._inflight_order_queries.discard(result.request_id)
+            self._query_sent_at.pop(("order", result.request_id), None)
             quote_pending = self._quote_ack_order_pending.pop(result.request_id, None)
             if quote_pending is not None:
                 key, logical_id = quote_pending
@@ -421,6 +433,7 @@ class CtpLiveGridAdapter:
                     session,
                 )
                 if result.error_id:
+                    self._trade_position_after_query.pop(key, None)
                     continue
                 if not active_orphans[key]:
                     self._start_trade_or_position(key, logical_id=logical_id)
@@ -431,6 +444,7 @@ class CtpLiveGridAdapter:
             if result.request_id not in self._inflight_trade_queries:
                 return
             self._inflight_trade_queries.discard(result.request_id)
+            self._query_sent_at.pop(("trade", result.request_id), None)
             pending = {**self._startup_trade_pending, **self._recovery_trade_pending}
             self._startup_trade_pending = {}
             self._recovery_trade_pending = {}
@@ -516,15 +530,19 @@ class CtpLiveGridAdapter:
         if result.request_id not in self._inflight_position_queries:
             return
         self._inflight_position_queries.discard(result.request_id)
+        self._query_sent_at.pop(("position", result.request_id), None)
         nets: dict[tuple[str, str], int] = {key: 0 for key in self._session_map}
+        grosses: dict[tuple[str, str], int] = {key: 0 for key in self._session_map}
         for position in result.positions:
             key = (position.symbol, position.exchange.value)
             if key not in nets:
                 continue
             if position.direction.value == "多":
                 nets[key] += int(position.volume)
+                grosses[key] += int(position.volume)
             elif position.direction.value == "空":
                 nets[key] -= int(position.volume)
+                grosses[key] += int(position.volume)
         startup = self._startup_position_pending
         closing = self._closing_position_pending
         recovery = self._recovery_position_pending
@@ -534,17 +552,17 @@ class CtpLiveGridAdapter:
         self._position_query_attempts = 0
         for key, logical_id in startup.items():
             self._consume(
-                self._position_event(key, logical_id, nets[key], result.error_id, result.error_msg),
+                self._position_event(key, logical_id, nets[key], result.error_id, result.error_msg, grosses[key]),
                 self._session_map[key],
             )
         for key, logical_id in closing.items():
             self._consume(
-                self._position_event(key, logical_id, nets[key], result.error_id, result.error_msg),
+                self._position_event(key, logical_id, nets[key], result.error_id, result.error_msg, grosses[key]),
                 self._session_map[key],
             )
         for key, logical_id in recovery.items():
             self._consume(
-                self._position_event(key, logical_id, nets[key], result.error_id, result.error_msg),
+                self._position_event(key, logical_id, nets[key], result.error_id, result.error_msg, grosses[key]),
                 self._session_map[key],
             )
 
@@ -589,6 +607,7 @@ class CtpLiveGridAdapter:
         net_position: int,
         error_id: int,
         error_msg: str,
+        gross_position: int,
     ) -> PositionQueryCompleteEvent:
         return PositionQueryCompleteEvent(
             request_id=logical_id,
@@ -597,10 +616,17 @@ class CtpLiveGridAdapter:
             net_position=net_position,
             error_id=error_id,
             error_msg=error_msg,
+            gross_position=gross_position,
         )
 
     def _on_timer(self, event: Any) -> None:
         with self._lock:
+            self._expire_stalled_queries()
+            for session, audit in zip(self.sessions, self.audits) if self.run_audit is not None else ():
+                marker = audit.directory / ".manual-flatten-requested"
+                if marker.exists():
+                    self._consume(ManualFlattenEvent(time.monotonic()), session)
+                    marker.unlink(missing_ok=True)
             states_before = {id(session): session.state for session in self.sessions}
             if (self._startup_order_pending or self._recovery_order_pending) and not self._inflight_order_queries:
                 self._try_send_order_query()
@@ -625,6 +651,24 @@ class CtpLiveGridAdapter:
                     ClockEvent(time.monotonic(), wall_time=datetime.now().astimezone().isoformat(timespec="seconds")),
                     session,
                 )
+
+    def _expire_stalled_queries(self, *, force: bool = False) -> None:
+        now = self._clock()
+        for (kind, request_id), sent_at in list(self._query_sent_at.items()):
+            if not force and now - sent_at < QUERY_RESPONSE_TIMEOUT_SECONDS:
+                continue
+            result = SimpleNamespace(
+                request_id=request_id,
+                orders=(), trades=(), positions=(), error_id=1,
+                error_msg="CTP 查询回报超时或交易连接中断",
+            )
+            event = SimpleNamespace(data=result)
+            if kind == "order":
+                self._on_order_query_complete(event)
+            elif kind == "trade":
+                self._on_trade_query_complete(event)
+            else:
+                self._handle_position_query_complete(event)
 
     def _consume(self, event: object, session: LiveGridSession) -> None:
         with self._lock:
@@ -829,6 +873,7 @@ class CtpLiveGridAdapter:
                 )
             else:
                 self._inflight_order_queries.add(request_id)
+                self._query_sent_at[("order", request_id)] = self._clock()
                 self._quote_ack_order_pending[request_id] = (key, logical_id)
         elif action.kind == "query_position":
             key = (payload["symbol"], payload["exchange"])
@@ -843,14 +888,20 @@ class CtpLiveGridAdapter:
                 elif not self._inflight_position_queries:
                     self._try_send_position_query()
             elif phase == "recovery":
-                self._recovery_position_pending[key] = payload["request_id"]
+                # 一次恢复链完成前，不覆盖请求关联号或重复排入查询。
+                if any(key in pending for pending in (
+                        self._recovery_order_pending, self._recovery_trade_pending,
+                        self._recovery_position_pending, self._trade_position_after_query)):
+                    return
                 gateway = self.main_engine.get_gateway(GATEWAY_NAME)
                 if hasattr(gateway, "query_order"):
                     self._recovery_order_pending[key] = payload["request_id"]
                     if not self._inflight_order_queries:
                         self._try_send_order_query()
-                elif not self._inflight_position_queries:
-                    self._try_send_position_query()
+                else:
+                    self._recovery_position_pending[key] = payload["request_id"]
+                    if not self._inflight_position_queries:
+                        self._try_send_position_query()
             else:
                 self._closing_position_pending[key] = payload["request_id"]
                 if not self._inflight_position_queries:
@@ -879,6 +930,7 @@ class CtpLiveGridAdapter:
         request_id = gateway.query_position() if gateway is not None else None
         if request_id is not None:
             self._inflight_position_queries.add(request_id)
+            self._query_sent_at[("position", request_id)] = now
             self._position_query_attempts = 0
             self._position_next_send_at = 0.0
             return
@@ -918,6 +970,7 @@ class CtpLiveGridAdapter:
         request_id = gateway.query_order() if gateway is not None and hasattr(gateway, "query_order") else None
         if request_id is not None:
             self._inflight_order_queries.add(request_id)
+            self._query_sent_at[("order", request_id)] = now
             self._query_attempts = 0
             self._order_next_send_at = 0.0
             return
@@ -950,6 +1003,7 @@ class CtpLiveGridAdapter:
         request_id = gateway.query_trade() if gateway is not None and hasattr(gateway, "query_trade") else None
         if request_id is not None:
             self._inflight_trade_queries.add(request_id)
+            self._query_sent_at[("trade", request_id)] = now
             self._query_attempts = 0
             self._trade_next_send_at = 0.0
             return

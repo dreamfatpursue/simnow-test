@@ -1,0 +1,33 @@
+{
+  "run_id": "20260914T055111-b2fae248ce",
+  "state": "COMPLETED",
+  "received_total": 52,
+  "committed_total": 52,
+  "dropped_total": 0,
+  "uncommitted_total": 0,
+  "parquet_files": 4,
+  "parquet_rows": 52,
+  "parquet_bytes": 71170,
+  "rows_by_instrument": {
+    "SA701": 14,
+    "SA611": 11,
+    "SA703": 12,
+    "FG701": 1,
+    "FG611": 1,
+    "FG703": 1,
+    "jm2701": 4,
+    "jm2610": 1,
+    "jm2611": 1,
+    "lc2701": 1,
+    "lc2611": 1,
+    "lc2705": 1,
+    "ag2610": 1,
+    "ag2702": 1,
+    "ag2612": 1
+  },
+  "all_files_readable": true,
+  "seq_no_contiguous": true,
+  "unique_local_keys": true,
+  "no_tmp_files": true,
+  "overall_pass": true
+}

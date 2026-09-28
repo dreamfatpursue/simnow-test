@@ -1,0 +1,15 @@
+{
+  "contracts": [
+    {"symbol": "IF2610", "exchange": "CFFEX"},
+    {"symbol": "AP610", "exchange": "CZCE"},
+    {"symbol": "cu2609", "exchange": "SHFE"}
+  ],
+  "queue_size": 10000,
+  "target_file_mib": 64,
+  "flush_seconds": 10,
+  "min_free_gib": 10,
+  "min_free_ratio": 0.1,
+  "max_rss_mib": 512,
+  "writer_timeout_seconds": 30,
+  "stop_timeout_seconds": 10
+}

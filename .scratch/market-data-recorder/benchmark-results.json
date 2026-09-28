@@ -1,0 +1,120 @@
+{
+  "scope": "offline adapter._consume with real AuditWriter disk flush and fake order engine; includes quote, fill, FAK, cancellation and reconciliation; excludes network, native callback and event-queue delay",
+  "passed": true,
+  "results": [
+    {
+      "round": 1,
+      "mode": "baseline",
+      "samples": 6078,
+      "p50_ms": 0.018708,
+      "p95_ms": 0.021875,
+      "p99_ms": 0.036292,
+      "max_ms": 0.126709,
+      "action_state_sha256": "b54907f00f1a0e26b89a471cf5a6999d85d77273c22ca6420af8b1c65c55a706"
+    },
+    {
+      "round": 1,
+      "mode": "normal",
+      "samples": 6078,
+      "p50_ms": 0.019458,
+      "p95_ms": 0.046667,
+      "p99_ms": 0.068417,
+      "max_ms": 0.565958,
+      "action_state_sha256": "b54907f00f1a0e26b89a471cf5a6999d85d77273c22ca6420af8b1c65c55a706",
+      "recorder_committed": 1160,
+      "recorder_dropped": 0,
+      "recorder_uncommitted": 0,
+      "recorder_error": null
+    },
+    {
+      "round": 1,
+      "mode": "slow",
+      "samples": 6078,
+      "p50_ms": 0.019292,
+      "p95_ms": 0.048334,
+      "p99_ms": 0.072417,
+      "max_ms": 0.541958,
+      "action_state_sha256": "b54907f00f1a0e26b89a471cf5a6999d85d77273c22ca6420af8b1c65c55a706",
+      "recorder_committed": 700,
+      "recorder_dropped": 0,
+      "recorder_uncommitted": 460,
+      "recorder_error": "writer_stop_timeout"
+    },
+    {
+      "round": 2,
+      "mode": "baseline",
+      "samples": 6078,
+      "p50_ms": 0.019125,
+      "p95_ms": 0.031875,
+      "p99_ms": 0.052625,
+      "max_ms": 7.459292,
+      "action_state_sha256": "b54907f00f1a0e26b89a471cf5a6999d85d77273c22ca6420af8b1c65c55a706"
+    },
+    {
+      "round": 2,
+      "mode": "normal",
+      "samples": 6078,
+      "p50_ms": 0.019334,
+      "p95_ms": 0.022834,
+      "p99_ms": 0.053834,
+      "max_ms": 0.490917,
+      "action_state_sha256": "b54907f00f1a0e26b89a471cf5a6999d85d77273c22ca6420af8b1c65c55a706",
+      "recorder_committed": 1120,
+      "recorder_dropped": 0,
+      "recorder_uncommitted": 0,
+      "recorder_error": null
+    },
+    {
+      "round": 2,
+      "mode": "slow",
+      "samples": 6078,
+      "p50_ms": 0.01975,
+      "p95_ms": 0.049084,
+      "p99_ms": 0.065708,
+      "max_ms": 0.430667,
+      "action_state_sha256": "b54907f00f1a0e26b89a471cf5a6999d85d77273c22ca6420af8b1c65c55a706",
+      "recorder_committed": 700,
+      "recorder_dropped": 0,
+      "recorder_uncommitted": 480,
+      "recorder_error": "writer_stop_timeout"
+    },
+    {
+      "round": 3,
+      "mode": "baseline",
+      "samples": 6078,
+      "p50_ms": 0.01925,
+      "p95_ms": 0.033333,
+      "p99_ms": 0.046084,
+      "max_ms": 0.168625,
+      "action_state_sha256": "b54907f00f1a0e26b89a471cf5a6999d85d77273c22ca6420af8b1c65c55a706"
+    },
+    {
+      "round": 3,
+      "mode": "normal",
+      "samples": 6078,
+      "p50_ms": 0.019083,
+      "p95_ms": 0.034834,
+      "p99_ms": 0.058875,
+      "max_ms": 0.396041,
+      "action_state_sha256": "b54907f00f1a0e26b89a471cf5a6999d85d77273c22ca6420af8b1c65c55a706",
+      "recorder_committed": 1160,
+      "recorder_dropped": 0,
+      "recorder_uncommitted": 0,
+      "recorder_error": null
+    },
+    {
+      "round": 3,
+      "mode": "slow",
+      "samples": 6078,
+      "p50_ms": 0.019042,
+      "p95_ms": 0.045583,
+      "p99_ms": 0.067417,
+      "max_ms": 0.424917,
+      "action_state_sha256": "b54907f00f1a0e26b89a471cf5a6999d85d77273c22ca6420af8b1c65c55a706",
+      "recorder_committed": 700,
+      "recorder_dropped": 0,
+      "recorder_uncommitted": 460,
+      "recorder_error": "writer_stop_timeout"
+    }
+  ]
+}

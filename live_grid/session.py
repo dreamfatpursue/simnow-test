@@ -120,6 +120,7 @@ class PositionQueryCompleteEvent:
     net_position: int
     error_id: int = 0
     error_msg: str = ""
+    gross_position: int | None = None
 
 
 @dataclass(frozen=True)
@@ -165,6 +166,11 @@ class ClockEvent:
     at: float
     # 适配层提供本地墙钟时间；测试 seam 可以省略，使用逻辑时钟。
     wall_time: str | None = None
+
+
+@dataclass(frozen=True)
+class ManualFlattenEvent:
+    at: float
 
 
 @dataclass(frozen=True)
@@ -221,6 +227,7 @@ class LiveGridSession:
     stop_reason: str | None = field(default=None, init=False)
     first_fill: dict[str, Any] | None = field(default=None, init=False)
     final_net_position: int | None = field(default=None, init=False)
+    final_gross_position: int | None = field(default=None, init=False)
     startup_position_result: str | None = field(default=None, init=False)
     cancellation_terminal: bool | None = field(default=None, init=False)
     flatten_attempts: list[dict[str, Any]] = field(default_factory=list, init=False)
@@ -258,6 +265,9 @@ class LiveGridSession:
     _request_sequence: int = field(default=0, init=False)
     _now: float = field(default=0.0, init=False)
     _closing_started_at: float | None = field(default=None, init=False)
+    _manual_flatten: bool = field(default=False, init=False)
+    _manual_recovery_request_id: str | None = field(default=None, init=False)
+    _resume_quotes_at: float = field(default=0.0, init=False)
     _flatten_started_at: float | None = field(default=None, init=False)
     _flatten_initial_price: float | None = field(default=None, init=False)
     _flatten_client_id: str | None = field(default=None, init=False)
@@ -344,10 +354,19 @@ class LiveGridSession:
             self._on_trade_query_complete(event)
         elif isinstance(event, ClockEvent):
             self._on_clock(event)
+        elif isinstance(event, ManualFlattenEvent):
+            self._on_manual_flatten(event)
         elif isinstance(event, InterruptEvent):
             self._on_interrupt()
         else:
             raise TypeError(f"不支持的实时网格事件: {type(event).__name__}")
+        if (self._manual_flatten and self.final_net_position == 0 and self.final_gross_position == 0
+                and not self._active_orders() and not self._pending_clients
+                and self.state in {SessionState.WAITING_FOR_STABLE_QUOTE, SessionState.PAUSED, SessionState.FINISHED}):
+            self._manual_flatten = False
+            self._resume_quotes_at = self._now + 5
+            self._reset_stable_quote_gate()
+            self._record_trace("manual_flatten_complete", calculation={"resume_quotes_at": self._resume_quotes_at, "wait_seconds": 5})
         new_actions = self.actions[start:]
         if before != self.state:
             self.state_transitions.append({"from": before.value, "to": self.state.value})
@@ -494,6 +513,9 @@ class LiveGridSession:
             self._last_exchange_tick_key = (event.exchange_time or "", event.update_millisec or 0)
 
         if self.state == SessionState.WAITING_FOR_STABLE_QUOTE:
+            if self._now < self._resume_quotes_at:
+                self._reset_stable_quote_gate()
+                return
             if not self._protected_valid(event):
                 self._reset_stable_quote_gate()
                 return
@@ -572,6 +594,10 @@ class LiveGridSession:
                 self._begin_replacement("reanchor", safety=False)
             return
 
+        if self.state == SessionState.RISK_HOLD:
+            self._resume_flatten_from_risk_hold()
+            return
+
         if self.state == SessionState.FLATTENING and self._flatten_client_id is None:
             self._try_flatten()
 
@@ -639,7 +665,7 @@ class LiveGridSession:
                     # 迟到的平仓成交改变了净仓：不得带仓续挂，立即开启新一轮收口。
                     self._enter_closing("late_fill", order=order, volume=traded_delta)
                 return
-            if self.state == SessionState.FINISHED and self.final_net_position != 0:
+            if self.state == SessionState.FINISHED and (self.final_net_position != 0 or self.final_gross_position != 0):
                 self.failure_reason = self.failure_reason or "late_flatten_fill_after_finish"
                 self._record_trace(
                     "late_flatten_fill",
@@ -747,7 +773,7 @@ class LiveGridSession:
                     )
                 return
             current_flatten_terminal = order.client_id == self._flatten_client_id and order.terminal
-            if self.state == SessionState.FINISHED and self.final_net_position != 0:
+            if self.state == SessionState.FINISHED and (self.final_net_position != 0 or self.final_gross_position != 0):
                 self.failure_reason = self.failure_reason or "late_flatten_fill_after_finish"
                 self._record_trace(
                     "late_flatten_fill",
@@ -782,6 +808,8 @@ class LiveGridSession:
     def _on_position_query_complete(self, event: PositionQueryCompleteEvent) -> None:
         if not self._is_target(event.symbol, event.exchange):
             return
+        gross = abs(event.net_position) if event.gross_position is None else event.gross_position
+        dual_side = gross > abs(event.net_position)
         if self.state == SessionState.WAITING_FOR_ZERO_POSITION:
             if event.request_id != self.startup_position_request_id:
                 return
@@ -803,20 +831,23 @@ class LiveGridSession:
                     "request_id": event.request_id,
                     "net_position": event.net_position,
                     "error_id": event.error_id,
-                    "passed": event.net_position == 0,
+                    "gross_position": gross,
+                    "passed": gross == 0,
                 },
             )
-            if event.net_position != 0:
+            if gross != 0:
                 self.startup_position_result = "nonzero"
                 self.final_net_position = event.net_position
+                self.final_gross_position = gross
                 self._record_trace(
                     "startup_position_rejected",
-                    calculation={"request_id": event.request_id, "net_position": event.net_position},
+                    calculation={"request_id": event.request_id, "net_position": event.net_position, "gross_position": gross},
                 )
-                self._risk_hold("nonzero_startup_position")
+                self._risk_hold("dual_side_position" if dual_side else "nonzero_startup_position")
             else:
                 self.startup_position_result = "zero"
                 self.final_net_position = 0
+                self.final_gross_position = 0
                 self.state = SessionState.WAITING_FOR_STABLE_QUOTE
                 self._reset_stable_quote_gate()
                 self._record_trace(
@@ -826,10 +857,29 @@ class LiveGridSession:
             return
 
         if self.state == SessionState.RISK_HOLD:
+            if self._manual_recovery_request_id is not None:
+                if event.request_id != self._manual_recovery_request_id:
+                    return
+                if event.error_id:
+                    self._manual_query_failed("position")
+                else:
+                    self._manual_recovery_request_id = None
             if event.error_id:
                 self.final_net_position = None
+                self.final_gross_position = None
                 return
             self.final_net_position = event.net_position
+            self.final_gross_position = gross
+            if dual_side:
+                self._manual_recovery_request_id = None
+                self._manual_flatten = False
+                if self.failure_reason != "dual_side_position":
+                    self.failure_reason = "dual_side_position"
+                    self._risk_hold("dual_side_position")
+                return
+            if event.net_position != 0:
+                self._resume_flatten_from_risk_hold()
+                return
             if event.net_position == 0 and not self._risk_blocked_order and not self._active_orders() and not self._pending_clients:
                 previous_reason = self.failure_reason
                 self.failure_reason = None
@@ -881,6 +931,7 @@ class LiveGridSession:
             }
             # 查仓失败即净仓未知：不得沿用窗口记账的旧值。
             self.final_net_position = None
+            self.final_gross_position = None
             self._risk_hold("closing_position_query_failed")
             return
         for order in self._orders.values():
@@ -889,20 +940,29 @@ class LiveGridSession:
         self.closing_position_result = {
             "request_id": event.request_id,
             "net_position": event.net_position,
+            "gross_position": gross,
             "error_id": event.error_id,
             "error_msg": event.error_msg,
         }
         self.final_net_position = event.net_position
+        self.final_gross_position = gross
         self._record_trace(
             "closing_position_result",
             calculation={
                 "request_id": event.request_id,
                 "net_position": event.net_position,
                 "error_id": event.error_id,
-                "passed": event.net_position == 0,
+                "gross_position": gross,
+                "passed": gross == 0,
             },
         )
-        if event.net_position == 0:
+        if dual_side:
+            self.failure_reason = "dual_side_position"
+            self._risk_hold("dual_side_position")
+            return
+        if gross == 0:
+            if self.failure_reason in {"flatten_timeout", "flatten_rejected"}:
+                self.failure_reason = None
             if self._resume_after_reconcile:
                 self._resume_after_reconcile = False
                 # 与 RISK_HOLD 恢复同款记账：报价对失败收口期间完成的开平成交
@@ -986,11 +1046,17 @@ class LiveGridSession:
             self._on_quote_ack_query_complete(event)
             return
         if event.error_id:
+            self._manual_query_failed("order")
             self._risk_hold("order_query_failed")
             return
+        if self.state == SessionState.RISK_HOLD:
+            # 查询终态必须回写本轮委托；否则丢失撤单回报后永远被本地活动委托挡住。
+            for queried in event.orders:
+                if self._find_order(queried.order_id, queried.client_id) is not None:
+                    self._on_order(queried)
         unknown = [
             order for order in event.orders
-            if getattr(order, "status", "") not in {"SUBMITTING", "ACCEPTED", "NOTTRADED", "PARTTRADED", "ALLTRADED", "CANCELLED", "REJECTED"}
+            if getattr(order, "status_unknown", False) or getattr(order, "status", "") not in {"SUBMITTING", "ACCEPTED", "NOTTRADED", "PARTTRADED", "ALLTRADED", "CANCELLED", "REJECTED"}
         ]
         if unknown:
             self._risk_blocked_order = True
@@ -1082,6 +1148,7 @@ class LiveGridSession:
 
     def _on_trade_query_complete(self, event: TradeQueryCompleteEvent) -> None:
         if event.error_id:
+            self._manual_query_failed("trade")
             self._risk_hold("trade_query_failed")
 
     def _quote_pair_failed(self, reason: str, order: _Order | None = None) -> None:
@@ -1095,6 +1162,7 @@ class LiveGridSession:
         self._quote_ack_query_started_at = None
         self._resume_after_reconcile = True
         self.final_net_position = None
+        self.final_gross_position = None
         self.state = SessionState.CLOSING_CANCELS
         self._closing_started_at = self._now
         self.cancellation_terminal = None
@@ -1261,7 +1329,7 @@ class LiveGridSession:
             self._cancel_all(safety=True)
             if self._last_recovery_query_at is None or self._now - self._last_recovery_query_at >= 2:
                 self._request_sequence += 1
-                request_id = f"recovery-{self._request_sequence}"
+                request_id = self._manual_recovery_request_id or f"recovery-{self._request_sequence}"
                 self._last_recovery_query_at = self._now
                 self._emit(
                     "query_position",
@@ -1370,6 +1438,8 @@ class LiveGridSession:
             return
 
         if self.state == SessionState.WAITING_FOR_STABLE_QUOTE:
+            if self._now < self._resume_quotes_at:
+                return
             if self._stable_since is None or self._latest_tick is None:
                 return
             max_age = self.config.effective["max_tick_age_seconds"]
@@ -1496,6 +1566,7 @@ class LiveGridSession:
             self._closing_started_at = self._now
             self.cancellation_terminal = None
             self.final_net_position = None
+            self.final_gross_position = None
             self._cancel_all(safety=True)
             self._maybe_reconcile()
             return
@@ -1756,6 +1827,7 @@ class LiveGridSession:
             },
         )
         self.final_net_position = None
+        self.final_gross_position = None
         self._cancel_all(safety=True)
         self._maybe_reconcile()
 
@@ -1783,6 +1855,7 @@ class LiveGridSession:
             "exchange_time": exchange_time,
         }
         self.final_net_position = None
+        self.final_gross_position = None
         self._record_trace(
             "first_fill",
             client_ids=[order.client_id],
@@ -1853,6 +1926,7 @@ class LiveGridSession:
     def _flatten_window_net(self) -> None:
         """窗口超时：按本轮开仓净仓直接受限 FAK，平仓终态后再撤对侧。"""
         self.final_net_position = self._round_open_net
+        self.final_gross_position = None
         self._record_trace(
             "window_timeout",
             client_ids=[order.client_id for order in self._active_orders()],
@@ -1972,8 +2046,70 @@ class LiveGridSession:
             },
         )
 
+    def _session_opened_position(self) -> bool:
+        return self.first_fill is not None or self._round_has_fill or bool(self.flatten_attempts)
+
+    def _manual_query_failed(self, phase: str) -> None:
+        if self._manual_recovery_request_id is not None:
+            self._record_trace("manual_flatten_query_failed", calculation={"phase": phase})
+            self._manual_recovery_request_id = None
+            self._manual_flatten = False
+
+    def _on_manual_flatten(self, event: ManualFlattenEvent) -> None:
+        self._now = max(self._now, event.at)
+        if self._manual_recovery_request_id is not None:
+            self._record_trace("manual_flatten_rejected", calculation={"reason": "manual_flatten_pending"})
+            return
+        if (self.state != SessionState.RISK_HOLD or self.stop_reason is not None
+                or not self.simnow_confirmed or not self._session_opened_position()):
+            self._record_trace("manual_flatten_rejected", calculation={"reason": "manual_flatten_unavailable"})
+            return
+        self._manual_flatten = True
+        self._flatten_started_at = None
+        self.final_net_position = None
+        self.final_gross_position = None
+        self._request_sequence += 1
+        self._manual_recovery_request_id = f"recovery-manual-{self._request_sequence}"
+        self._last_recovery_query_at = self._now
+        self._record_trace("manual_flatten_requested", calculation={"request_id": self._manual_recovery_request_id})
+        self._cancel_all(safety=True)
+        self._emit("query_position", request_id=self._manual_recovery_request_id,
+                   symbol=self.target_symbol, exchange=self.target_exchange, phase="recovery")
+
+    def _resume_flatten_from_risk_hold(self) -> None:
+        """本轮已开仓的残仓：用最新可执行盘口重新起一次受限 FAK，不接管启动前仓位。"""
+        if self.state != SessionState.RISK_HOLD:
+            return
+        if (self.final_net_position in {None, 0} or self.failure_reason == "dual_side_position"
+                or (self.final_gross_position is not None and self.final_gross_position != abs(self.final_net_position))
+                or self._manual_recovery_request_id is not None or self._risk_blocked_order):
+            return
+        if not self._session_opened_position():
+            return
+        if self._active_orders() or self._pending_clients:
+            return
+        timeout = self.config.effective["flatten_timeout_seconds"]
+        if self._flatten_started_at is not None and self._now - self._flatten_started_at < timeout:
+            return
+        if not self._executable_quote(self._latest_tick):
+            return
+        self._flatten_client_id = None
+        self._flatten_initial_price = None
+        self._flatten_started_at = self._now
+        self.state = SessionState.FLATTENING
+        self._record_trace(
+            "risk_hold_flatten_retry",
+            calculation={
+                "net_position": self.final_net_position,
+                "previous_reason": self.failure_reason,
+            },
+        )
+        self._try_flatten()
+
     def _try_flatten(self) -> None:
-        if self.state != SessionState.FLATTENING or self.final_net_position in {None, 0} or self._flatten_client_id is not None:
+        if (self.state != SessionState.FLATTENING or self.final_net_position in {None, 0}
+                or (self.final_gross_position is not None and self.final_gross_position != abs(self.final_net_position))
+                or self._flatten_client_id is not None):
             return
         tick = self._latest_tick
         if not self._executable_quote(tick):
@@ -2119,7 +2255,8 @@ class LiveGridSession:
     def _fail(self, reason: str) -> None:
         if self.state in {SessionState.FINISHED, SessionState.FAILED, SessionState.RISK_HOLD}:
             return
-        if self._active_orders() or self._pending_clients or self.final_net_position is None or self.final_net_position != 0:
+        if (self._active_orders() or self._pending_clients or self.final_net_position != 0
+                or self.final_gross_position != 0):
             self._risk_hold(reason)
             return
         self.failure_reason = self.failure_reason or reason
@@ -2292,6 +2429,7 @@ class LiveGridSession:
         net_before = self.final_net_position
         order.accounted_opening_traded = order.traded
         self.final_net_position += volume if order.side == "BUY" else -volume
+        self.final_gross_position = None
         self._record_trace(
             "late_opening_fill",
             client_ids=[order.client_id],
@@ -2347,6 +2485,7 @@ class LiveGridSession:
             self.final_net_position = (self.final_net_position or 0) + delta
         else:
             self.final_net_position = (self.final_net_position or 0) - delta
+        self.final_gross_position = None
 
     @staticmethod
     def _serialize(value: Any) -> Any:
@@ -2374,6 +2513,7 @@ class LiveGridSession:
             "closing_position_result": self.closing_position_result,
             "flatten_attempts": list(self.flatten_attempts),
             "final_net_position": self.final_net_position,
+            "final_gross_position": self.final_gross_position,
             "active_order_count": len(self._active_orders()) + len(self._pending_clients),
             "active_orders": [
                 {

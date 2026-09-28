@@ -1,0 +1,130 @@
+{
+  "run_id": "20260913T104904-12e1277d15",
+  "environment": "7x24",
+  "symbol": "IF2610",
+  "exchange": "CFFEX",
+  "duration_seconds": 1800,
+  "state": "COMPLETED",
+  "supervisor": {
+    "child_returncode": 0,
+    "ended_epoch_ns": 1789298344903507000,
+    "error": null,
+    "orderly": true,
+    "run_id": "20260913T104904-12e1277d15"
+  },
+  "connection": {
+    "connected": true,
+    "logged_in": true,
+    "connection_id": 1,
+    "disconnects": 0,
+    "subscriptions_confirmed": [
+      "IF2610"
+    ],
+    "ticks_by_symbol": {
+      "IF2610": 3166
+    },
+    "md_error": null
+  },
+  "counts": {
+    "received_total": 3166,
+    "committed_total": 3166,
+    "dropped_total": 0,
+    "uncommitted_total": 0,
+    "queue_depth_at_end": 0,
+    "parquet_rows": 3166,
+    "parquet_files": 179,
+    "parquet_readback_rows_for_trading_day": 3166,
+    "all_7x24_rows_for_same_day_including_previous_runs": 3525
+  },
+  "integrity": {
+    "accounting_equal": true,
+    "sequence_contiguous": true,
+    "unique_local_keys": true,
+    "schema_consistent": true,
+    "parquet_files_readable": true,
+    "bad_files": [],
+    "no_tmp_files": true,
+    "raw_columns": [
+      "schema_version",
+      "source_id",
+      "run_id",
+      "connection_id",
+      "seq_no",
+      "recv_epoch_ns",
+      "recv_monotonic_ns",
+      "TradingDay",
+      "reserve1",
+      "ExchangeID",
+      "reserve2",
+      "UpdateTime",
+      "ActionDay",
+      "InstrumentID",
+      "ExchangeInstID",
+      "LastPrice",
+      "PreSettlementPrice",
+      "PreClosePrice",
+      "PreOpenInterest",
+      "OpenPrice",
+      "HighestPrice",
+      "LowestPrice",
+      "Turnover",
+      "OpenInterest",
+      "ClosePrice",
+      "SettlementPrice",
+      "UpperLimitPrice",
+      "LowerLimitPrice",
+      "PreDelta",
+      "CurrDelta",
+      "AveragePrice",
+      "BandingUpperPrice",
+      "BandingLowerPrice",
+      "BidPrice1",
+      "BidPrice2",
+      "BidPrice3",
+      "BidPrice4",
+      "BidPrice5",
+      "AskPrice1",
+      "AskPrice2",
+      "AskPrice3",
+      "AskPrice4",
+      "AskPrice5",
+      "Volume",
+      "BidVolume1",
+      "BidVolume2",
+      "BidVolume3",
+      "BidVolume4",
+      "BidVolume5",
+      "AskVolume1",
+      "AskVolume2",
+      "AskVolume3",
+      "AskVolume4",
+      "AskVolume5",
+      "UpdateMillisec"
+    ],
+    "column_count": 55,
+    "trading_days": [
+      "20260911"
+    ],
+    "action_days": [
+      "20260910"
+    ],
+    "instrument_ids": [
+      "IF2610"
+    ],
+    "source_ids": [
+      "7x24"
+    ],
+    "parquet_readback_rows_for_run": 3166
+  },
+  "resource": {
+    "rss_high_water_mib": 52.140625,
+    "disk_free_bytes": 255216541696
+  },
+  "caveats": [
+    "序号连续只证明本地采集器入队/落盘账目，不能证明 Python 回调之前无丢失",
+    "TradingDay/ActionDay 保留 CTP 原值，本次为 20260911/20260910",
+    "独立 MD 数据不等于交易进程逐 Tick 观察轨迹",
+    "同一交易日目录还包含此前 7x24 试运行；报告按 run_id 单独扫描，不能用整个交易日目录的总行数与本次 run 比较"
+  ],
+  "overall_pass": true
+}

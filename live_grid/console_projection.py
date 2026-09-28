@@ -99,7 +99,6 @@ class AuditProjector:
     def __init__(self, identity: ActivityIdentity) -> None:
         self.identity = identity
         self._offsets: dict[str, int] = {}
-        self._tails: dict[str, str] = {}
         self._contracts: dict[str, dict[str, Any]] = {
             name: _contract_item(name) for name in identity.contracts
         }
@@ -113,39 +112,6 @@ class AuditProjector:
         self._last_event_at: float | None = None
         self._first_event_at: float | None = None
         self._summary: dict[str, Any] | None = None
-
-    @staticmethod
-    def _read_complete_records(path: Path, offset: int, tail: str) -> tuple[list[dict[str, Any]], int, str]:
-        try:
-            size = path.stat().st_size
-            if size < offset:
-                offset = 0
-                tail = ""
-            with path.open("r", encoding="utf-8") as handle:
-                handle.seek(offset)
-                chunk = handle.read()
-                next_offset = handle.tell()
-        except OSError:
-            return [], offset, tail
-
-        text = tail + chunk
-        if not text:
-            return [], next_offset, ""
-        lines = text.splitlines(keepends=True)
-        complete: list[str] = []
-        remainder = ""
-        if lines and not lines[-1].endswith(("\n", "\r")):
-            remainder = lines.pop()
-        complete.extend(lines)
-        records: list[dict[str, Any]] = []
-        for line in complete:
-            try:
-                value = json.loads(line)
-            except (json.JSONDecodeError, TypeError):
-                continue
-            if isinstance(value, dict):
-                records.append(value)
-        return records, next_offset, remainder
 
     def _apply_record(self, name: str, record: dict[str, Any]) -> None:
         item = self._contracts.setdefault(name, _contract_item(name))
@@ -190,10 +156,16 @@ class AuditProjector:
                 item["last_wall_time"] = data.get("wall_time") or item["last_wall_time"]
             if isinstance(data, dict) and event_type == "OrderEvent":
                 self._upsert_order(name, data, at)
+            if isinstance(data, dict) and event_type == "OrderQueryCompleteEvent" and not data.get("error_id"):
+                for order in data.get("orders", []):
+                    if isinstance(order, dict) and self._find_order(name, order) is not None:
+                        self._upsert_order(name, order, at)
             if isinstance(data, dict) and event_type == "TradeEvent":
                 self._record_trade(name, data, at)
             if isinstance(data, dict) and event_type == "PositionQueryCompleteEvent":
                 self._record_position_query(item, data, at)
+                if str(data.get("request_id", "")).startswith("recovery-manual-"):
+                    item["manual_flatten_inflight"] = False
 
         for action in record.get("actions", ()) if isinstance(record.get("actions"), list) else ():
             if not isinstance(action, dict) or action.get("type") != "Action":
@@ -286,7 +258,6 @@ class AuditProjector:
             self._order_id_keys[name][order_id] = key
         if client_id:
             order["client_id"] = client_id
-        self._sync_order_view(name)
 
     def _sync_order_view(self, name: str) -> None:
         orders = list(self._order_maps[name].values())
@@ -356,6 +327,7 @@ class AuditProjector:
         if isinstance(net_position, (int, float)) and not isinstance(net_position, bool):
             item["confirmed_position"] = {
                 "net_position": net_position,
+                "gross_position": data.get("gross_position"),
                 "confirmed_at": at,
                 "confirmed_wall_time": item.get("last_wall_time"),
                 "request_id": data.get("request_id"),
@@ -384,12 +356,18 @@ class AuditProjector:
             if len(item["causal_timeline"]) > _MAX_TIMELINE:
                 del item["causal_timeline"][:-_MAX_TIMELINE]
             calculation = trace.get("calculation") if isinstance(trace.get("calculation"), dict) else {}
+            if trace.get("code") == "manual_flatten_requested":
+                item["manual_flatten_inflight"] = True
+            elif trace.get("code") in {"manual_flatten_query_failed", "manual_flatten_complete"}:
+                item["manual_flatten_inflight"] = False
             if calculation.get("reason"):
                 entry["reason_label"] = _reason_zh(calculation["reason"])
+            if trace.get("code") == "manual_flatten_complete":
+                item["resume_quotes_at"] = calculation.get("resume_quotes_at")
             rounds = calculation.get("round_trips")
             if isinstance(rounds, (int, float)) and not isinstance(rounds, bool):
                 item["round_trips"] = rounds
-            if item.get("state") == "RISK_HOLD" and trace.get("code"):
+            if item.get("state") == "RISK_HOLD" and trace.get("code") == "risk_hold":
                 reason = calculation.get("reason") or calculation.get("failure_reason") or trace["code"]
                 risk_key = f"{self.identity.run_id}:{name}:{reason}"
                 item["risk_reason"] = reason
@@ -411,6 +389,7 @@ class AuditProjector:
 
     def _decorate_contract(self, name: str, item: dict[str, Any], now_value: float) -> dict[str, Any]:
         updated = dict(item)
+        updated["resume_wait_seconds"] = max(0, (item.get("resume_quotes_at") or 0) - now_value)
         effective_contract = next(
             (
                 contract
@@ -486,16 +465,27 @@ class AuditProjector:
         self._load_effective_strategy(audit_root)
         for name in self.identity.contracts:
             event_path = audit_root / name / "events.jsonl"
-            key = name
-            records, offset, tail = self._read_complete_records(
-                event_path,
-                self._offsets.get(key, 0),
-                self._tails.get(key, ""),
-            )
-            self._offsets[key] = offset
-            self._tails[key] = tail
-            for record in records:
-                self._apply_record(name, record)
+            try:
+                offset = self._offsets.get(name, 0)
+                if event_path.stat().st_size < offset:
+                    offset = 0
+                with event_path.open("r", encoding="utf-8") as handle:
+                    handle.seek(offset)
+                    while line := handle.readline():
+                        if not line.endswith("\n"):
+                            break
+                        try:
+                            record = json.loads(line)
+                        except json.JSONDecodeError:
+                            pass
+                        else:
+                            if isinstance(record, dict):
+                                self._apply_record(name, record)
+                        offset = handle.tell()
+                self._offsets[name] = offset
+                self._sync_order_view(name)
+            except OSError:
+                pass
 
         summary_path = audit_root / "summary.json"
         try:

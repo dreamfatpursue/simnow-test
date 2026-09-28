@@ -1,0 +1,2 @@
+# Install into .venv-recorder only. MD binding is copied from project vendor.
+pyarrow==21.0.0
