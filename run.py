@@ -255,8 +255,8 @@ def connect(settings: Settings) -> int:
         from live_grid.ctp_native import activate_ctp_native_libs
 
         native_variant = activate_ctp_native_libs(settings.environment)
-    except (FileNotFoundError, RuntimeError, ValueError) as exc:
-        print(f"CTP 原生库变体切换失败: {exc}", file=sys.stderr)
+    except (FileNotFoundError, ImportError, OSError, RuntimeError, ValueError) as exc:
+        print(f"CTP 原生库选择或加载失败: {exc}", file=sys.stderr)
         return 3
 
     try:

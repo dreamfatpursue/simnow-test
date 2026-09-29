@@ -1,10 +1,11 @@
-import hashlib
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
+import live_grid.ctp_native as ctp_native
 from live_grid.ctp_native import (
     CTP_NATIVE_VARIANT_BY_ENV,
     activate_ctp_native_libs,
@@ -12,87 +13,139 @@ from live_grid.ctp_native import (
 )
 
 
-def _write(path: Path, data: bytes) -> None:
+def _write(path: Path, data: bytes = b"") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
 
 
-def _sha(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def _fake_project(root: Path) -> tuple[Path, SimpleNamespace, dict[str, Path]]:
+    vendor = root / "vendor"
+    package = vendor / "vnpy_ctp"
+    api = package / "api"
+    _write(package / "__init__.py")
+    _write(api / "__init__.py")
+    _write(api / "ctp_constant.py")
+
+    build = vendor / "build" / f"cp{sys.version_info.major}{sys.version_info.minor}"
+    for name in ("vnctptd", "vnctpmd"):
+        _write(build / f"{name}.cpython-test.so", name.encode())
+
+    slots: dict[str, Path] = {}
+    for name in ctp_native._NATIVE_NAMES:
+        framework = api / f"{name}.framework"
+        slots[name] = framework / "Versions/A" / name
+        _write(slots[name], f"tracked-{name}".encode())
+        for variant in ("simnow", "guangfa"):
+            _write(
+                api / "ctp_variants" / variant / name,
+                f"{variant}-{name}".encode(),
+            )
+
+    fake_package = SimpleNamespace(
+        __file__=str(package / "__init__.py"),
+        __path__=[str(package)],
+    )
+    return api, fake_package, slots
 
 
 class CtpNativeVariantTests(unittest.TestCase):
+    def setUp(self) -> None:
+        if ctp_native._RUNTIME_DIRECTORY is not None:
+            ctp_native._RUNTIME_DIRECTORY.cleanup()
+        ctp_native._RUNTIME_DIRECTORY = None
+        ctp_native._RUNTIME_VARIANT = None
+        ctp_native._RUNTIME_FAILURE = None
+
+    def tearDown(self) -> None:
+        if ctp_native._RUNTIME_DIRECTORY is not None:
+            ctp_native._RUNTIME_DIRECTORY.cleanup()
+        ctp_native._RUNTIME_DIRECTORY = None
+        ctp_native._RUNTIME_VARIANT = None
+        ctp_native._RUNTIME_FAILURE = None
+
+    def _activate(
+        self,
+        environment: str,
+        api: Path,
+        package: SimpleNamespace,
+        temp_root: str,
+        load_error: Exception | None = None,
+    ) -> str:
+        extension_loader = (
+            patch.object(ctp_native, "_load_darwin_extension", side_effect=load_error)
+            if load_error is not None
+            else patch.object(ctp_native, "_load_darwin_extension", return_value=None)
+        )
+        with (
+            patch.object(ctp_native.platform, "system", return_value="Darwin"),
+            patch.object(ctp_native.importlib, "import_module", return_value=package),
+            patch.object(ctp_native, "_ctp_api_loaded", return_value=False),
+            patch.object(ctp_native.tempfile, "tempdir", temp_root),
+            extension_loader as load_extension,
+            patch.dict(sys.modules, {"vnpy_ctp": package}, clear=False),
+        ):
+            sys.modules.pop("vnpy_ctp.api", None)
+            result = activate_ctp_native_libs(environment, api_dir=api)
+            self.extension_load_calls = load_extension.call_args_list
+            return result
+
     def test_environment_maps_to_variant(self) -> None:
         self.assertEqual(variant_for_environment("first"), "simnow")
         self.assertEqual(variant_for_environment("7x24"), "simnow")
         self.assertEqual(variant_for_environment("guangfa"), "guangfa")
         self.assertEqual(CTP_NATIVE_VARIANT_BY_ENV["7x24"], "simnow")
 
-    def test_activate_copies_selected_variant_into_active_framework_slots(self) -> None:
+    def test_activate_uses_isolated_runtime_and_preserves_tracked_frameworks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            api = Path(tmp)
-            for variant, trader, md in (
-                ("simnow", b"simnow-trader", b"simnow-md"),
-                ("guangfa", b"guangfa-trader", b"guangfa-md"),
-            ):
-                _write(api / "ctp_variants" / variant / "thosttraderapi_se", trader)
-                _write(api / "ctp_variants" / variant / "thostmduserapi_se", md)
-            trader_slot = api / "thosttraderapi_se.framework/Versions/A/thosttraderapi_se"
-            md_slot = api / "thostmduserapi_se.framework/Versions/A/thostmduserapi_se"
-            _write(trader_slot, b"stale-trader")
-            _write(md_slot, b"stale-md")
+            for environment, variant in (("7x24", "simnow"), ("guangfa", "guangfa")):
+                if ctp_native._RUNTIME_DIRECTORY is not None:
+                    ctp_native._RUNTIME_DIRECTORY.cleanup()
+                    ctp_native._RUNTIME_DIRECTORY = None
+                    ctp_native._RUNTIME_VARIANT = None
+                    ctp_native._RUNTIME_FAILURE = None
+                api, package, slots = _fake_project(Path(tmp) / variant)
+                self.assertEqual(self._activate(environment, api, package, tmp), variant)
+                runtime_package = Path(ctp_native._RUNTIME_DIRECTORY.name) / "vnpy_ctp"
+                runtime_api = runtime_package / "api"
+                for name in ctp_native._NATIVE_NAMES:
+                    self.assertEqual(
+                        (runtime_api / f"{name}.framework/Versions/A" / name).read_bytes(),
+                        f"{variant}-{name}".encode(),
+                    )
+                    self.assertEqual(slots[name].read_bytes(), f"tracked-{name}".encode())
+                for name in ctp_native._API_EXTENSION_NAMES:
+                    self.assertTrue(list(runtime_api.glob(f"{name}*")))
+                self.assertEqual(
+                    [call.args[0] for call in self.extension_load_calls],
+                    [f"vnpy_ctp.api.{name}" for name in ctp_native._API_EXTENSION_NAMES],
+                )
+                self.assertTrue(
+                    all(call.args[1].parent == runtime_api for call in self.extension_load_calls)
+                )
+                api_module = package.__dict__["api"]
+                self.assertEqual(api_module.__dict__["__file__"], str(runtime_api / "__init__.py"))
+                self.assertEqual(
+                    api_module.__dict__["__spec__"].submodule_search_locations,
+                    [str(runtime_api)],
+                )
+                self.assertEqual(self._activate(environment, api, package, tmp), variant)
 
-            with patch("live_grid.ctp_native.platform.system", return_value="Darwin"):
-                chosen = activate_ctp_native_libs("7x24", api_dir=api)
-
-            self.assertEqual(chosen, "simnow")
-            self.assertEqual(trader_slot.read_bytes(), b"simnow-trader")
-            self.assertEqual(md_slot.read_bytes(), b"simnow-md")
-
-            with patch("live_grid.ctp_native.platform.system", return_value="Darwin"):
-                chosen = activate_ctp_native_libs("guangfa", api_dir=api)
-
-            self.assertEqual(chosen, "guangfa")
-            self.assertEqual(trader_slot.read_bytes(), b"guangfa-trader")
-            self.assertEqual(md_slot.read_bytes(), b"guangfa-md")
-
-    def test_activate_is_noop_when_active_already_matches(self) -> None:
+    def test_activate_rejects_switch_after_ctp_api_loaded(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            api = Path(tmp)
-            payload = b"same-bytes"
-            _write(api / "ctp_variants/simnow/thosttraderapi_se", payload)
-            _write(api / "ctp_variants/simnow/thostmduserapi_se", payload)
-            trader_slot = api / "thosttraderapi_se.framework/Versions/A/thosttraderapi_se"
-            md_slot = api / "thostmduserapi_se.framework/Versions/A/thostmduserapi_se"
-            _write(trader_slot, payload)
-            _write(md_slot, payload)
-            before_trader = trader_slot.stat().st_mtime_ns
-            before_md = md_slot.stat().st_mtime_ns
+            api, package, _ = _fake_project(Path(tmp))
+            self._activate("first", api, package, tmp)
+            with patch.object(ctp_native.platform, "system", return_value="Darwin"):
+                with self.assertRaisesRegex(RuntimeError, "当前进程已选择"):
+                    activate_ctp_native_libs("guangfa", api_dir=api)
 
-            with patch("live_grid.ctp_native.platform.system", return_value="Darwin"):
-                activate_ctp_native_libs("first", api_dir=api)
-
-            self.assertEqual(trader_slot.stat().st_mtime_ns, before_trader)
-            self.assertEqual(md_slot.stat().st_mtime_ns, before_md)
-            self.assertEqual(_sha(trader_slot), _sha(api / "ctp_variants/simnow/thosttraderapi_se"))
-
-    def test_activate_rejects_switch_after_native_modules_loaded(self) -> None:
+    def test_failed_native_load_requires_a_new_process(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            api = Path(tmp)
-            _write(api / "ctp_variants/simnow/thosttraderapi_se", b"simnow")
-            _write(api / "ctp_variants/simnow/thostmduserapi_se", b"simnow")
-            _write(api / "ctp_variants/guangfa/thosttraderapi_se", b"guangfa")
-            _write(api / "ctp_variants/guangfa/thostmduserapi_se", b"guangfa")
-            _write(api / "thosttraderapi_se.framework/Versions/A/thosttraderapi_se", b"guangfa")
-            _write(api / "thostmduserapi_se.framework/Versions/A/thostmduserapi_se", b"guangfa")
-
-            fake_modules = {"vnpy_ctp.api.vnctptd": object()}
-            with (
-                patch("live_grid.ctp_native.platform.system", return_value="Darwin"),
-                patch.dict(sys.modules, fake_modules, clear=False),
-            ):
-                with self.assertRaisesRegex(RuntimeError, "已加载"):
-                    activate_ctp_native_libs("7x24", api_dir=api)
+            api, package, _ = _fake_project(Path(tmp))
+            with self.assertRaisesRegex(ImportError, "native load failed"):
+                self._activate("first", api, package, tmp, ImportError("native load failed"))
+            with patch.object(ctp_native.platform, "system", return_value="Darwin"):
+                with self.assertRaisesRegex(RuntimeError, "必须用新进程重启"):
+                    activate_ctp_native_libs("guangfa", api_dir=api)
 
 
 if __name__ == "__main__":

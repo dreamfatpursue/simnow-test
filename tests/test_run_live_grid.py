@@ -301,7 +301,11 @@ class RunLiveGridTests(unittest.TestCase):
                 run_live_grid,
                 "load_settings",
                 side_effect=RuntimeError("missing credentials"),
-            ) as load_settings:
+            ) as load_settings, patch.object(
+                run_live_grid,
+                "activate_ctp_native_libs",
+                return_value="simnow",
+            ):
                 self.assertEqual(run_live_grid.main(), 3)
             load_settings.assert_called_once_with("7x24")
 
@@ -430,6 +434,10 @@ class RunLiveGridTests(unittest.TestCase):
                 run_live_grid.time,
                 "sleep",
                 fake_sleep,
+            ), patch.object(
+                run_live_grid,
+                "activate_ctp_native_libs",
+                return_value="simnow",
             ):
                 self.assertEqual(run_live_grid.main(), 0)
 
