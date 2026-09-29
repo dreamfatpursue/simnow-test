@@ -3,9 +3,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from live_grid.audit import AuditError, AuditWriter, MultiContractAuditWriter
+from live_grid.audit import AuditError, AuditEventDecoder, AuditWriter, MultiContractAuditWriter
 from live_grid.config import MultiContractConfig, StrategyConfig
-from live_grid.session import Action, ClockEvent, ContractEvent, TradeEvent
+from live_grid.session import (
+    Action,
+    ClockEvent,
+    ContractEvent,
+    OrderEvent,
+    OrderQueryCompleteEvent,
+    TradeEvent,
+    TradeQueryCompleteEvent,
+)
 
 
 def config() -> StrategyConfig:
@@ -99,6 +107,129 @@ class AuditTests(unittest.TestCase):
             trade = json.loads(lines[1])["event"]["data"]
             self.assertEqual(contract["size"], 10.0)
             self.assertEqual(trade["exchange_time"], "2026-08-17T21:03:05+08:00")
+
+    def test_repeated_query_snapshots_round_trip_and_trade_identity_is_removed(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            writer = AuditWriter(config(), root)
+            order = OrderEvent(
+                "order-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1,
+                traded=0, price=3400.0, client_id="quote-1-buy",
+            )
+            order_trace = [{"code": "query_checked", "calculation": {"count": 1}}]
+            for request_id, at in (("orders-1", 1.0), ("orders-2", 2.0)):
+                writer.record(
+                    OrderQueryCompleteEvent(request_id, "rb2601", "SHFE", (order,)),
+                    [Action("query_position", {"request_id": request_id})],
+                    "RISK_HOLD",
+                    at,
+                    trace=order_trace,
+                )
+
+            raw_trade = {
+                "BrokerID": "broker-secret",
+                "InvestorID": "investor-secret",
+                "UserID": "user-secret",
+                "InstrumentID": "rb2601",
+                "ExchangeID": "SHFE",
+                "TradeID": "trade-1",
+                "OrderRef": "order-ref-1",
+                "TradeDate": "20260928",
+                "TradeTime": "09:30:00",
+                "Direction": "0",
+                "OffsetFlag": "0",
+                "HedgeFlag": "1",
+                "Price": 3400.0,
+                "Volume": 1,
+                "UnrecognizedPrivateField": "must-not-persist",
+            }
+            trade_trace = [{"code": "trade_query_checked", "calculation": {"count": 1}}]
+            for request_id, at in (("trades-1", 3.0), ("trades-2", 4.0)):
+                writer.record(
+                    TradeQueryCompleteEvent(
+                        request_id, "rb2601", "SHFE", (raw_trade,), error_id=0,
+                    ),
+                    [],
+                    "RISK_HOLD",
+                    at,
+                    trace=trade_trace,
+                )
+            writer.close()
+
+            path = Path(writer.directory) / "events.jsonl"
+            raw_records = [json.loads(line) for line in path.read_text().splitlines()]
+            self.assertIn("query_snapshot_id", raw_records[0])
+            self.assertEqual(raw_records[1]["query_snapshot_ref"], raw_records[0]["query_snapshot_id"])
+            self.assertEqual(raw_records[1]["query_snapshot_count"], 1)
+            self.assertNotIn("orders", raw_records[1]["event"]["data"])
+            self.assertNotIn("trace", raw_records[1])
+            self.assertIn("query_snapshot_id", raw_records[2])
+            self.assertEqual(raw_records[3]["query_snapshot_ref"], raw_records[2]["query_snapshot_id"])
+
+            decoder = AuditEventDecoder()
+            records = [decoder.decode(record) for record in raw_records]
+            self.assertEqual(records[0]["event"]["data"]["orders"], records[1]["event"]["data"]["orders"])
+            self.assertEqual(records[0]["trace"], records[1]["trace"])
+            self.assertEqual(records[1]["event"]["data"]["request_id"], "orders-2")
+            self.assertEqual(records[1]["actions"][0]["data"]["payload"]["request_id"], "orders-2")
+            self.assertEqual(records[2]["event"]["data"]["trades"][0]["TradeID"], "trade-1")
+            self.assertEqual(records[2]["event"]["data"]["trades"], records[3]["event"]["data"]["trades"])
+            self.assertEqual(records[2]["trace"], records[3]["trace"])
+            content = path.read_text()
+            for private_value in ("broker-secret", "investor-secret", "user-secret", "must-not-persist"):
+                self.assertNotIn(private_value, content)
+            self.assertIn("InstrumentID", content)
+            self.assertIn("TradeID", content)
+
+    def test_query_snapshot_changes_and_errors_keep_full_records(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            writer = AuditWriter(config(), root)
+            base = OrderEvent("order-1", "rb2601", "SHFE", "BUY", "NOTTRADED", 1, client_id="q1")
+            changed = OrderEvent("order-1", "rb2601", "SHFE", "BUY", "CANCELLED", 1, client_id="q1")
+            trace_one = [{"code": "check", "calculation": {"version": 1}}]
+            trace_two = [{"code": "check", "calculation": {"version": 2}}]
+            for event, trace in (
+                (OrderQueryCompleteEvent("q1", "rb2601", "SHFE", (base,)), trace_one),
+                (OrderQueryCompleteEvent("q2", "rb2601", "SHFE", (base,)), trace_one),
+                (OrderQueryCompleteEvent("q3", "rb2601", "SHFE", (base,)), trace_two),
+                (OrderQueryCompleteEvent("q4", "rb2601", "SHFE", (changed,)), None),
+                (OrderQueryCompleteEvent("q5", "rb2601", "SHFE", (), error_id=1, error_msg="offline"), None),
+                (OrderQueryCompleteEvent("q6", "rb2601", "SHFE", (base,)), None),
+            ):
+                writer.record(event, [], "RISK_HOLD", float(len(event.request_id)), trace=trace)
+            writer.close()
+            records = [
+                json.loads(line)
+                for line in (Path(writer.directory) / "events.jsonl").read_text().splitlines()
+            ]
+            self.assertIn("query_snapshot_id", records[0])
+            self.assertIn("query_snapshot_ref", records[1])
+            self.assertIn("query_snapshot_id", records[2])
+            self.assertIn("query_snapshot_id", records[3])
+            self.assertNotIn("query_snapshot_id", records[4])
+            self.assertNotIn("query_snapshot_ref", records[4])
+            self.assertIn("query_snapshot_id", records[5])
+
+    def test_query_snapshot_decoder_rejects_missing_reference(self) -> None:
+        decoder = AuditEventDecoder()
+        records = (
+            {
+                "event": {"type": "OrderQueryCompleteEvent", "data": {"request_id": "q2"}},
+                "query_snapshot_ref": 99,
+                "query_snapshot_count": 1,
+            },
+            {
+                "event": {"type": "OrderQueryCompleteEvent", "data": {"request_id": "q2"}},
+                "query_snapshot_ref": None,
+                "query_snapshot_count": 1,
+            },
+            {
+                "event": {"type": "OrderQueryCompleteEvent", "data": {"request_id": "q2"}},
+                "query_snapshot_count": 1,
+            },
+        )
+        for record in records:
+            with self.subTest(record=record), self.assertRaises(AuditError):
+                decoder.decode(record)
 
 
 class MultiContractAuditTests(unittest.TestCase):

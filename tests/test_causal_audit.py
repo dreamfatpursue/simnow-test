@@ -121,7 +121,7 @@ class CausalAuditTests(unittest.TestCase):
             directory = writer.finish({"terminal_state": "FINISHED"})
 
             effective = json.loads((Path(directory) / "effective_strategy.json").read_text(encoding="utf-8"))
-            self.assertEqual(effective["audit_schema_version"], 2)
+            self.assertEqual(effective["audit_schema_version"], 3)
 
     def test_market_pause_records_book_protection_operands(self) -> None:
         session, _ = start_quoting_session()

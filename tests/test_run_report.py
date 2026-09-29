@@ -28,6 +28,42 @@ def strategy_doc(symbol: str = "rb2601", exchange: str = "SHFE", target_lots: in
 
 
 class RunReportTests(unittest.TestCase):
+    def test_run_loader_restores_v3_query_references_and_accepts_v2(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "run-v3"
+            events_path = run_dir / "rb2601@SHFE" / "events.jsonl"
+            records = [
+                {
+                    "at": 1,
+                    "event": {"type": "OrderQueryCompleteEvent", "data": {
+                        "request_id": "q1", "symbol": "rb2601", "exchange": "SHFE",
+                        "error_id": 0, "orders": [{"order_id": "o1", "status": "NOTTRADED"}],
+                    }},
+                    "actions": [], "state_before": "RISK_HOLD", "state_after": "RISK_HOLD",
+                    "trace": [{"code": "risk_hold", "calculation": {"reason": "test"}}],
+                    "query_snapshot_id": 1,
+                },
+                {
+                    "at": 2,
+                    "event": {"type": "OrderQueryCompleteEvent", "data": {
+                        "request_id": "q2", "symbol": "rb2601", "exchange": "SHFE", "error_id": 0,
+                    }},
+                    "actions": [], "state_before": "RISK_HOLD", "state_after": "RISK_HOLD",
+                    "query_snapshot_ref": 1, "query_snapshot_count": 1,
+                },
+            ]
+            events_path.parent.mkdir(parents=True)
+            events_path.write_text("\n".join(json.dumps(record) for record in records) + "\n")
+
+            run = report._load_run(run_dir)
+            restored = run.contract_events["rb2601@SHFE"]
+            self.assertNotIn("orders", restored[0]["event"]["data"])
+            self.assertNotIn("orders", restored[1]["event"]["data"])
+            self.assertEqual(restored[1]["trace"], restored[0]["trace"])
+            self.assertEqual(restored[1]["event"]["data"]["request_id"], "q2")
+            report._check_audit_schema({"audit_schema_version": 2}, Path("legacy-v2.json"))
+            report._check_audit_schema({"audit_schema_version": 3}, Path("current-v3.json"))
+
     def test_run_mode_generates_single_run_html_from_structured_audit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

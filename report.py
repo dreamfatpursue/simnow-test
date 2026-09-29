@@ -15,7 +15,12 @@ from math import isfinite
 from pathlib import Path
 from typing import Any
 
-from live_grid.audit import AUDIT_SCHEMA_VERSION, AuditError, AuditWriter
+from live_grid.audit import (
+    SUPPORTED_AUDIT_SCHEMA_VERSIONS,
+    AuditError,
+    AuditEventDecoder,
+    AuditWriter,
+)
 
 
 @dataclass(frozen=True)
@@ -257,6 +262,21 @@ def _assert_report_safe(value: Any, path: Path) -> None:
         raise RunReportError(f"审计内容包含禁止字段: {path}") from exc
 
 
+def _read_audit_events(path: Path) -> list[dict[str, Any]]:
+    # Run reports use order/trade callbacks, not account query snapshots; keep
+    # their references compact while restoring the causal trace they render.
+    decoder = AuditEventDecoder(restore_query_items=False)
+    try:
+        with path.open(encoding="utf-8") as handle:
+            return [
+                decoder.decode(json.loads(line))
+                for line in handle
+                if line.strip()
+            ]
+    except (OSError, json.JSONDecodeError, AuditError) as exc:
+        raise RunReportError(f"事件日志读取失败: {path}: {exc}") from exc
+
+
 def _weighted_price(fills: list[Fill]) -> float:
     total = sum(fill.volume for fill in fills)
     if total == 0:
@@ -267,11 +287,7 @@ def _weighted_price(fills: list[Fill]) -> float:
 def _load_run(run_dir: Path) -> RunFacts | None:
     contract_events: dict[str, list[dict[str, Any]]] = {}
     for events_file in sorted(run_dir.glob("*/events.jsonl")):
-        contract_events[events_file.parent.name] = [
-            json.loads(record)
-            for record in events_file.read_text(encoding="utf-8").splitlines()
-            if record.strip()
-        ]
+        contract_events[events_file.parent.name] = _read_audit_events(events_file)
     if not contract_events:
         return None
     summary_file = run_dir / "summary.json"
@@ -740,7 +756,7 @@ def _read_json(path: Path, label: str) -> dict[str, Any]:
 
 
 def _check_audit_schema(effective: dict[str, Any], path: Path) -> None:
-    if effective.get("audit_schema_version") != AUDIT_SCHEMA_VERSION:
+    if effective.get("audit_schema_version") not in SUPPORTED_AUDIT_SCHEMA_VERSIONS:
         raise RunReportError(f"不支持的审计格式: {path}")
 
 
@@ -929,14 +945,7 @@ def build_run_report(run_dir: str | Path) -> RunReport:
         _assert_report_safe(contract_summary, events_file.parent / "summary.json")
         if contract_summary.get("terminal_state") not in {"FINISHED", "FAILED"}:
             raise RunReportError(f"合约尚未进入完整终态: {events_file.parent / 'summary.json'}")
-        try:
-            events = [
-                json.loads(line)
-                for line in events_file.read_text(encoding="utf-8").splitlines()
-                if line.strip()
-            ]
-        except (OSError, json.JSONDecodeError) as exc:
-            raise RunReportError(f"事件日志读取失败: {events_file}: {exc}") from exc
+        events = _read_audit_events(events_file)
         if not events:
             raise RunReportError(f"合约事件日志为空: {events_file}")
         _assert_report_safe(events, events_file)

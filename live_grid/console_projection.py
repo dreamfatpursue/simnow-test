@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .activity import ActivityIdentity
+from .audit import AuditEventDecoder
 from report import _reason_zh, _trace_label
 
 
@@ -99,6 +100,7 @@ class AuditProjector:
     def __init__(self, identity: ActivityIdentity) -> None:
         self.identity = identity
         self._offsets: dict[str, int] = {}
+        self._event_decoders: dict[str, AuditEventDecoder] = {}
         self._contracts: dict[str, dict[str, Any]] = {
             name: _contract_item(name) for name in identity.contracts
         }
@@ -469,6 +471,8 @@ class AuditProjector:
                 offset = self._offsets.get(name, 0)
                 if event_path.stat().st_size < offset:
                     offset = 0
+                    self._event_decoders.pop(name, None)
+                decoder = self._event_decoders.setdefault(name, AuditEventDecoder())
                 with event_path.open("r", encoding="utf-8") as handle:
                     handle.seek(offset)
                     while line := handle.readline():
@@ -477,11 +481,14 @@ class AuditProjector:
                         try:
                             record = json.loads(line)
                         except json.JSONDecodeError:
-                            pass
-                        else:
-                            if isinstance(record, dict):
-                                self._apply_record(name, record)
+                            offset = handle.tell()
+                            self._offsets[name] = offset
+                            continue
+                        if isinstance(record, dict):
+                            record = decoder.decode(record)
+                            self._apply_record(name, record)
                         offset = handle.tell()
+                        self._offsets[name] = offset
                 self._offsets[name] = offset
                 self._sync_order_view(name)
             except OSError:

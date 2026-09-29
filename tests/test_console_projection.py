@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from live_grid.activity import ActivityIdentity, ActivityLock
+from live_grid.audit import AuditError
 from live_grid.console_projection import AuditProjector
 from trading_console import ConsoleState
 
@@ -46,6 +47,105 @@ def append_records(path: Path, records: list[dict]) -> None:
 
 
 class AuditProjectorTests(unittest.TestCase):
+    def test_invalid_snapshot_reference_fails_projection_without_advancing_past_it(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            audit_root = Path(root) / "audit" / "run-1"
+            event_path = audit_root / "rb2601@SHFE" / "events.jsonl"
+            full = {
+                "at": 1,
+                "event": {"type": "OrderQueryCompleteEvent", "data": {
+                    "request_id": "query-1", "symbol": "rb2601", "exchange": "SHFE",
+                    "error_id": 0, "orders": [{"order_id": "order-1", "status": "NOTTRADED"}],
+                }},
+                "state_before": "RISK_HOLD", "state_after": "RISK_HOLD", "actions": [],
+                "query_snapshot_id": 1,
+            }
+            broken = {
+                "at": 2,
+                "event": {"type": "OrderQueryCompleteEvent", "data": {
+                    "request_id": "query-2", "symbol": "rb2601", "exchange": "SHFE", "error_id": 0,
+                }},
+                "state_before": "RISK_HOLD", "state_after": "RISK_HOLD", "actions": [],
+                "query_snapshot_ref": 99, "query_snapshot_count": 1,
+            }
+            append_records(event_path, [full, broken])
+            projector = AuditProjector(run_identity(audit_root, ("rb2601@SHFE",)))
+
+            with self.assertRaisesRegex(AuditError, "引用无效"):
+                projector.refresh(now=2)
+            self.assertEqual(projector._offsets["rb2601@SHFE"], len(json.dumps(full) + "\n"))
+            with self.assertRaisesRegex(AuditError, "引用无效"):
+                projector.refresh(now=3)
+
+    def test_projector_restores_order_and_trace_from_incremental_query_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            audit_root = Path(root) / "audit" / "run-1"
+            event_path = audit_root / "rb2601@SHFE" / "events.jsonl"
+            submit = {
+                "at": 1,
+                "event": {"type": "ClockEvent", "data": {"at": 1}},
+                "state_before": "QUOTING",
+                "state_after": "QUOTING",
+                "actions": [
+                    {
+                        "type": "Action",
+                        "data": {
+                            "kind": "submit_order",
+                            "payload": {
+                                "client_id": "quote-1-buy", "symbol": "rb2601",
+                                "exchange": "SHFE", "side": "BUY", "price": 3400.0,
+                                "volume": 1,
+                            },
+                        },
+                    }
+                ],
+            }
+            submitted_order = {
+                "at": 1.5,
+                "event": {"type": "OrderEvent", "data": {
+                    "order_id": "order-1", "client_id": "quote-1-buy", "symbol": "rb2601",
+                    "exchange": "SHFE", "side": "BUY", "offset": "OPEN", "status": "SUBMITTING",
+                    "volume": 1, "traded": 0, "price": 3400.0,
+                }},
+                "state_before": "QUOTE_PENDING", "state_after": "QUOTE_PENDING", "actions": [],
+            }
+            append_records(event_path, [submit, submitted_order])
+            order = {
+                "order_id": "order-1", "client_id": "quote-1-buy", "symbol": "rb2601",
+                "exchange": "SHFE", "side": "BUY", "offset": "OPEN", "status": "NOTTRADED",
+                "volume": 1, "traded": 0, "price": 3400.0,
+            }
+            full = {
+                "at": 2,
+                "event": {"type": "OrderQueryCompleteEvent", "data": {
+                    "request_id": "query-1", "symbol": "rb2601", "exchange": "SHFE",
+                    "error_id": 0, "orders": [order],
+                }},
+                "state_before": "RISK_HOLD", "state_after": "RISK_HOLD", "actions": [],
+                "trace": [{"code": "risk_hold", "calculation": {"reason": "test"}}],
+                "query_snapshot_id": 1,
+            }
+            append_records(event_path, [full])
+            projector = AuditProjector(run_identity(audit_root, ("rb2601@SHFE",)))
+            first = projector.refresh(now=2)
+            item = first["contracts"][0]
+            self.assertEqual(item["logical_orders"][0]["status_path"], ["SUBMITTING", "NOTTRADED"])
+
+            reference = {
+                "at": 3,
+                "event": {"type": "OrderQueryCompleteEvent", "data": {
+                    "request_id": "query-2", "symbol": "rb2601", "exchange": "SHFE", "error_id": 0,
+                }},
+                "state_before": "RISK_HOLD", "state_after": "RISK_HOLD", "actions": [],
+                "query_snapshot_ref": 1, "query_snapshot_count": 1,
+            }
+            append_records(event_path, [reference])
+            second = projector.refresh(now=3)
+            item = second["contracts"][0]
+            self.assertEqual(item["logical_orders"][0]["last_at"], 3)
+            self.assertEqual(item["logical_orders"][0]["status_path"], ["SUBMITTING", "NOTTRADED"])
+            self.assertEqual([entry["code"] for entry in item["causal_timeline"]], ["risk_hold", "risk_hold"])
+
     def test_each_contract_uses_its_own_round_limit(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             audit_root = Path(root)

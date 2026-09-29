@@ -18,6 +18,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from live_grid.activity import ActivityIdentity, ActivityLock, default_activity_lock_path
+from live_grid.audit import AuditError
 from live_grid.config import MultiContractConfig, StrategyConfigError
 from live_grid.console_projection import AuditProjector
 from run import SETTING_ENV_BY_PROFILE
@@ -483,7 +484,12 @@ class TradingConsoleHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"strategies": strategies})
             return
         if path == "/api/run/current":
-            self._send_json(200, self.console_state.current_overview())
+            try:
+                snapshot = self.console_state.current_overview()
+            except AuditError as exc:
+                self._send_error_json(500, f"审计日志不可用: {exc}")
+                return
+            self._send_json(200, snapshot)
             return
         self._send_error_json(404, "接口不存在")
 
@@ -527,6 +533,9 @@ class TradingConsoleHandler(BaseHTTPRequestHandler):
                 return
         except StrategyConfigError as exc:
             self._send_error_json(422, str(exc))
+            return
+        except AuditError as exc:
+            self._send_error_json(500, f"审计日志不可用: {exc}")
             return
         except ConsoleInputError as exc:
             self._send_error_json(409, str(exc))
