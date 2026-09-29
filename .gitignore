@@ -10,4 +10,5 @@ audit/
 .venv-recorder/
 .recorder-runtime/
 ctp-data/
+.vntrader/ctp/*.con
 .scratch/market-data-recorder/baseline-hashes.json
