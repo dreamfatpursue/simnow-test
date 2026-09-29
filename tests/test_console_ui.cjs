@@ -103,6 +103,18 @@ assert.equal(get('#freshness-banner').hidden, true);
 assert.equal(get('#stop').hidden, true);
 assert.match(get('#run-status').textContent, /已结束/);
 
+// A stopped abnormal run stays historical; only a fresh read-only check clears the current account warning.
+run('renderOverview({...snapshot, status:"process_abnormal_exit", display_status:"recheck_passed", recheck:{status:"passed",stage:"完成",message:"通过",completed_at:"2026-09-29T10:05:00+08:00",contracts:[{contract:"IF2610@CFFEX",long_position:0,short_position:0,active_orders:0,unknown_orders:0}]}, run:{...snapshot.run,contracts:["IF2610@CFFEX"]}})');
+assert.equal(get('#recheck-card').hidden, false);
+assert.match(get('#recheck-title').textContent, /已停止/);
+assert.match(get('#recheck-content').innerHTML, /多空持仓均为 0/);
+assert.equal(get('#recheck-launch').hidden, false);
+assert.equal(get('#contract-card').hidden, true);
+run('renderOverview({...snapshot, status:"process_abnormal_exit", display_status:"rechecking", recheck:{status:"checking",stage:"持仓查询",message:"正在查询",contracts:["IF2610@CFFEX"]}, run:{...snapshot.run,contracts:["IF2610@CFFEX"]}})');
+assert.match(get('#recheck-title').textContent, /正在核对/);
+assert.equal(get('#recheck').hidden, true);
+assert.equal(get('#preview').disabled, true);
+
 // Unknown order states and arbitrary audit text must not turn into executable markup.
 run('snapshot.status="active"; snapshot.stop_requested=false; selectedContract="IF2610@CFFEX"; snapshot.contracts[0].logical_orders[0].status_unknown=true; snapshot.contracts[0].logical_orders[0].client_id="<img src=x onerror=alert(1)>"; renderOverview(snapshot)');
 assert.match(get('#orders-table').innerHTML, /状态未知，待核对/);

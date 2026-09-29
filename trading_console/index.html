@@ -51,6 +51,10 @@ footer{margin-top:22px;font-size:.8rem;color:#586b82}
 <header class="page-header"><div><div class="eyebrow">SIMNOW / TRADING CONSOLE</div><h1>交易控制台</h1></div><span class="badge">本机 · 仿真交易</span></header>
 <div id="file-notice" class="message warn" hidden>当前打开的是页面文件，无法读取运行数据。请启动本机控制服务后访问 <a href="http://127.0.0.1:8765/">http://127.0.0.1:8765/</a>。</div>
 <div id="status" class="message" role="status" aria-live="polite">正在加载控制台……</div>
+<section id="recheck-card" class="card run-card" hidden>
+  <div class="section-header"><div class="inline"><h2 id="recheck-title">账户核对</h2><span id="recheck-stage" class="badge"></span></div><div class="inline"><button id="recheck" type="button">重新核对</button><button id="recheck-launch" type="button" class="primary" hidden>查看启动配置</button></div></div>
+  <div id="recheck-content"></div>
+</section>
 <section id="run-card" class="card run-card" hidden>
   <div class="section-header"><div class="inline"><h2 id="run-title">当前运行</h2><span id="run-stage" class="badge blue"></span><span id="run-environment" class="badge"></span><span id="run-mode" class="badge"></span></div><button id="stop" class="danger" type="button" hidden>安全停止</button></div>
   <p id="run-status" class="muted"></p><div id="risk-banner" class="message risk" role="alert" hidden></div><div id="freshness-banner" class="message warn" role="status" hidden></div><div id="connection-strip" class="connection-strip"></div>
@@ -203,12 +207,13 @@ async function request(path, options = {}) {
 function mutation(path, body) { return request(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); }
 function updateButtons() {
   const running = ["active","starting"].includes(overview?.status);
-  $("#preview").disabled = running || connectionFailed || previewPending || savePending || startPending || previewEditing || !$("#strategy").value;
+  const rechecking = overview?.display_status === "rechecking";
+  $("#preview").disabled = running || rechecking || connectionFailed || previewPending || savePending || startPending || previewEditing || !$("#strategy").value;
   $("#edit").hidden = previewEditing; $("#save").hidden = !previewEditing; $("#cancel-edit").hidden = !previewEditing;
-  $("#edit").disabled = running || connectionFailed || previewPending || savePending || startPending || previewEditing || !previewEffective;
-  $("#save").disabled = running || connectionFailed || previewPending || savePending || startPending || !previewEditing;
+  $("#edit").disabled = running || rechecking || connectionFailed || previewPending || savePending || startPending || previewEditing || !previewEffective;
+  $("#save").disabled = running || rechecking || connectionFailed || previewPending || savePending || startPending || !previewEditing;
   $("#cancel-edit").disabled = savePending;
-  $("#start").disabled = running || connectionFailed || startPending || previewPending || savePending || previewEditing || !confirmation || !previewReady;
+  $("#start").disabled = running || rechecking || connectionFailed || startPending || previewPending || savePending || previewEditing || !confirmation || !previewReady;
   $("#stop").hidden = overview?.status !== "active";
   const stopping = overview?.stop_requested || (overview?.run?.run_id && pendingStopRunId === overview.run.run_id);
   $("#stop").disabled = Boolean(stopping); $("#stop").textContent = stopping ? "正在安全停止…" : "安全停止";
@@ -230,12 +235,29 @@ function beepRisk() {
   } catch (_) { /* Audio is optional; the visible risk banner remains. */ }
 }
 function renderRisk(body) {
-  const entries = (body.contracts || []).filter((item) => item.risk).map((item) => ({key:item.risk_key,label:item.symbol + "：" + (reasons[item.risk_reason] || "等待风险核对（" + (item.risk_reason || "原因未提供") + "）")}));
-  if (body.run_risk) entries.push({key:body.run_risk.key,label:reasons[body.run_risk.reason] || "运行风险：" + body.run_risk.reason});
+  const entries = body.display_status === "recheck_passed" ? [] : (body.contracts || []).filter((item) => item.risk).map((item) => ({key:item.risk_key,label:item.symbol + "：" + (reasons[item.risk_reason] || "等待风险核对（" + (item.risk_reason || "原因未提供") + "）")}));
+  if (body.run_risk && body.display_status !== "recheck_passed") entries.push({key:body.run_risk.key,label:reasons[body.run_risk.reason] || "运行风险：" + body.run_risk.reason});
   const nextKeys = new Set(entries.map((item) => item.key).filter(Boolean));
   if (overviewInitialized) for (const key of nextKeys) if (!knownRiskKeys.has(key)) beepRisk();
   knownRiskKeys = nextKeys; overviewInitialized = true;
   $("#risk-banner").hidden = !entries.length; $("#risk-banner").textContent = entries.map((item) => item.label).join("；");
+}
+function renderRecheck(body) {
+  const abnormal = body.status === "process_abnormal_exit";
+  $("#recheck-card").hidden = !abnormal;
+  if (!abnormal) return;
+  const check = body.recheck || null, mode = body.display_status || "recheck_before";
+  const rows = Array.isArray(check?.contracts) ? check.contracts : [];
+  const sourceContracts = body.run?.contracts || [];
+  const title = mode === "recheck_passed" ? "已停止 · 目标合约核对通过" : mode === "rechecking" ? "正在核对账户" : mode === "recheck_stale" ? "已停止 · 待重新核对" : check?.status === "risk" ? "核对未通过 · 发现持仓或遗留委托" : check?.status === "incomplete" ? "核对未完成" : "进程异常退出";
+  const stage = mode === "recheck_passed" ? ["正常待机","good"] : mode === "rechecking" ? ["核对中","blue"] : check?.status === "risk" ? ["风险待处理","risk"] : check?.status === "incomplete" || mode === "recheck_stale" ? ["状态待确认","warn"] : ["待核对","warn"];
+  const message = mode === "recheck_passed" ? "截至 " + timeText(check.completed_at) + "，目标合约多空持仓均为 0，且无活动或未知委托。" : mode === "rechecking" ? (check?.message || "正在查询目标合约的委托和持仓，尚未形成核对结论。") : mode === "recheck_stale" ? "上次核对记录仅供参考；当前控制服务尚未重新验证账户状态。" : check?.message || "交易进程已退出，当前持仓和委托尚未确认。";
+  const resultRows = rows.length ? rows : sourceContracts.map((contract) => ({contract,long_position:null,short_position:null,active_orders:null,unknown_orders:null}));
+  const details = resultRows.map((item) => '<tr><td>' + esc(item.contract) + '</td><td class="num">' + esc(units(item.long_position,"手")) + '</td><td class="num">' + esc(units(item.short_position,"手")) + '</td><td class="num">' + esc(units(item.active_orders,"笔")) + '</td><td class="num">' + esc(units(item.unknown_orders,"笔")) + '</td></tr>');
+  $("#recheck-title").textContent = title; setBadge("#recheck-stage",stage[0],stage[1]);
+  $("#recheck").hidden = mode === "rechecking"; $("#recheck").disabled = mode === "rechecking";
+  $("#recheck-launch").hidden = mode !== "recheck_passed";
+  setHTML("#recheck-content",'<p class="muted">' + esc(envNames[body.run?.environment] || body.run?.environment || "仿真环境待确认") + " · 当前配置账户 · " + esc(sourceContracts.join("、") || "目标合约待确认") + '</p><p class="message ' + (stage[1] === "risk" ? "risk" : stage[1] === "warn" ? "warn" : "") + '">' + esc(message) + '</p>' + table([["目标合约"],["多仓","num"],["空仓","num"],["活动委托","num"],["未知委托","num"]],details,"未提供目标合约") + '<p class="muted">' + (check?.completed_at ? "核对时间：" + esc(timeText(check.completed_at)) + " · 查询连接已关闭" : mode === "rechecking" ? "账户核对中，请等待结果。" : "尚未执行本次核对。") + '</p><details data-key="recheck-detail"><summary>检查过程</summary>' + paramGrid([["阶段",check?.stage || "待开始"],["结果",check?.status === "passed" ? "通过" : check?.status === "risk" ? "发现风险" : check?.status === "incomplete" ? "未完成" : "进行中"],["说明",check?.message || "只查询目标委托和持仓，不会下单或撤单"]]) + '</details>' + (mode === "recheck_passed" ? '<p class="muted">本次结果仅覆盖当前配置账户的目标合约；原运行账户一致性未记录。</p>' : ''));
 }
 function renderOrders(item) {
   const all = $("#order-filter").value === "all";
@@ -304,18 +326,18 @@ function renderContract() {
   renderOrders(item); renderTrades(item); renderTimeline(item); renderParameters("#run-parameters",overview.effective,selectedContract);
 }
 function renderOverview(body) {
-  overview = body; renderRisk(body);
+  overview = body; renderRisk(body); renderRecheck(body);
   const run = body.run || {};
   if (run.run_id && run.run_id !== lastRunId) { lastRunId = run.run_id; selectedContract = ""; $("#launch-panel").open = false; invalidatePreview(); }
-  const idle = body.status === "idle", starting = body.status === "starting", stopped = body.status === "terminal", abnormal = body.status === "process_abnormal_exit";
-  $("#run-card").hidden = idle; $("#contract-card").hidden = idle || starting || !body.contracts?.length; $("#detail-card").hidden = idle || starting || !body.contracts?.length;
+  const idle = body.status === "idle", starting = body.status === "starting", stopped = body.status === "terminal", abnormal = body.status === "process_abnormal_exit", recheckPassed = body.display_status === "recheck_passed";
+  $("#run-card").hidden = idle; $("#contract-card").hidden = idle || starting || recheckPassed || !body.contracts?.length; $("#detail-card").hidden = idle || starting || recheckPassed || !body.contracts?.length;
   $("#launch-title").textContent = ["active","starting"].includes(body.status) ? "启动设置（已有运行，不能重复启动）" : idle ? "启动一次运行" : "启动下一次运行";
   if (idle) { $("#launch-panel").open = true; updateButtons(); return; }
-  $("#run-title").textContent = stopped ? "运行已结束" : abnormal ? "进程异常退出" : starting ? "正在启动进程" : "当前运行";
-  setBadge("#run-stage",starting ? "启动准备" : body.overall_stage || "等待会话事实",body.overall_stage === "风险" || abnormal ? "risk" : body.overall_stage === "安全收口" ? "warn" : "blue");
+  $("#run-title").textContent = stopped ? "运行已结束" : abnormal && body.display_status === "recheck_passed" ? "上次运行记录 · 原异常已保留" : abnormal ? "进程异常退出" : starting ? "正在启动进程" : "当前运行";
+  setBadge("#run-stage",recheckPassed ? "上次状态" : starting ? "启动准备" : body.overall_stage || "等待会话事实",recheckPassed ? "warn" : body.overall_stage === "风险" || abnormal ? "risk" : body.overall_stage === "安全收口" ? "warn" : "blue");
   setBadge("#run-environment",envNames[run.environment] || "仿真环境待确认"); setBadge("#run-mode",modeText(run.market_data_mode),run.market_data_mode === "replay_override" ? "warn" : ""); $("#run-mode").hidden = !run.market_data_mode;
   const stopping = body.stop_requested || (run.run_id && pendingStopRunId === run.run_id);
-  $("#run-status").textContent = starting ? "启动请求已受理，等待交易进程取得活动锁。" : (stopped ? "本次运行已结束，以下为最后记录。" : abnormal ? "当前账户状态未确认；以下仅为最后已知事实。" : "开始于 " + timeText(run.started_at) + "。") + (stopping && !stopped ? " 安全停止已请求，正在等待全部合约撤单、对账及必要的平仓。" : "") + (body.contracts?.some((item) => item.state === "WAITING_FOR_CONTRACT") ? " 正在连接 CTP／查询合约信息，SimNow 等待 2～3 分钟属正常。" : "");
+  $("#run-status").textContent = starting ? "启动请求已受理，等待交易进程取得活动锁。" : (stopped ? "本次运行已结束，以下为最后记录。" : abnormal && body.display_status === "recheck_passed" ? "原运行未形成完整结束摘要，以下保留最后记录。" : abnormal ? "当前账户状态未确认；以下仅为最后已知事实。" : "开始于 " + timeText(run.started_at) + "。") + (stopping && !stopped ? " 安全停止已请求，正在等待全部合约撤单、对账及必要的平仓。" : "") + (body.contracts?.some((item) => item.state === "WAITING_FOR_CONTRACT") ? " 正在连接 CTP／查询合约信息，SimNow 等待 2～3 分钟属正常。" : "");
   $("#freshness-banner").hidden = !(body.status === "active" && body.data_stale); $("#freshness-banner").textContent = "运行数据已中断，当前显示最后快照。只要控制服务可用，仍可请求安全停止。";
   if (starting) { setHTML("#connection-strip",""); $("#launch-panel").open = false; }
   setHTML("#run-metadata",paramGrid([["运行编号",run.run_id],["开始时间（北京时间）",timeText(run.started_at)],["进程 PID",run.pid],["策略 SHA-256",run.strategy_hash],["审计目录",run.audit_dir]]));
@@ -388,6 +410,13 @@ $("#start").addEventListener("click",async () => {
     $("#launch-panel").open = false; showStatus(body.status === "already_started" ? "已有活动运行，已切换到该运行。" : "启动请求已受理。"); await pollOverview();
   } catch (error) { invalidatePreview(); showStatus(error.message + "；请重新预览后核对运行状态。",true); } finally { startPending = false; updateButtons(); }
 });
+$("#recheck").addEventListener("click",async () => {
+  const runId = overview?.run?.run_id;
+  if (!runId || $("#recheck").disabled) return;
+  try { const body = await mutation("/api/run/recheck",{run_id:runId}); showStatus(body.message || "账户核对已受理。"); await pollOverview(); }
+  catch (error) { showStatus("账户核对尚未受理：" + error.message,true); }
+});
+$("#recheck-launch").addEventListener("click",() => { $("#launch-panel").open = true; $("#launch-panel").scrollIntoView({block:"nearest"}); });
 let flattenSubmitting = false;
 $("#flatten").addEventListener("click",async () => {
   if ($("#flatten").disabled) return;

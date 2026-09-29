@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from live_grid.activity import ActivityIdentity, ActivityLock
+from live_grid.activity import ActivityIdentity, ActivityLock, OperationLock
 
 
 def identity(audit_dir: str = "audit/run") -> ActivityIdentity:
@@ -49,6 +49,17 @@ class ActivityLockTests(unittest.TestCase):
             self.assertNotIn("password", content)
             self.assertNotIn("account", content)
             held.release()
+
+    def test_operation_lock_is_exclusive_and_reusable(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "operation.lock"
+            held = OperationLock.try_acquire(path)
+            self.assertIsNotNone(held)
+            self.assertIsNone(OperationLock.try_acquire(path))
+            held.release()
+            next_lock = OperationLock.try_acquire(path)
+            self.assertIsNotNone(next_lock)
+            next_lock.release()
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from live_grid.activity import ActivityIdentity, ActivityLock, default_activity_lock_path
+from live_grid.activity import ActivityIdentity, ActivityLock, OperationLock, default_activity_lock_path, default_operation_lock_path
 from live_grid.audit import MultiContractAuditWriter, new_run_id
 from live_grid.config import MultiContractConfig, StrategyConfigError
 from live_grid.ctp_adapter import CtpLiveGridAdapter
@@ -23,6 +23,7 @@ from run import SETTING_ENV_BY_PROFILE, load_settings
 _TERMINAL_STATES = {SessionState.FINISHED, SessionState.FAILED}
 ACTIVE_RUN_CONFLICT_EXIT_CODE = 4
 ACTIVITY_LOCK_PATH = default_activity_lock_path()
+OPERATION_LOCK_PATH = default_operation_lock_path()
 
 
 def print_preview(config: MultiContractConfig, environment: str, market_data_mode: str = "normal") -> None:
@@ -149,9 +150,14 @@ def main() -> int:
     sessions: list[LiveGridSession] = []
     adapter: CtpLiveGridAdapter | None = None
     activity_lock: ActivityLock | None = None
+    operation_lock: OperationLock | None = None
     try:
         run_id: str | None = None
         if args.confirm_simnow:
+            operation_lock = OperationLock.try_acquire(OPERATION_LOCK_PATH)
+            if operation_lock is None:
+                print("账户核对或另一启动操作正在进行，请稍后重试。", file=sys.stderr)
+                return ACTIVE_RUN_CONFLICT_EXIT_CODE
             run_id = new_run_id()
             identity = ActivityIdentity(
                 run_id=run_id,
@@ -175,6 +181,8 @@ def main() -> int:
                         file=sys.stderr,
                     )
                 return ACTIVE_RUN_CONFLICT_EXIT_CODE
+            operation_lock.release()
+            operation_lock = None
         try:
             run_audit = MultiContractAuditWriter(config, args.audit_dir, run_id=run_id)
             if activity_lock is not None:
@@ -277,6 +285,8 @@ def main() -> int:
             run_audit.close()
         if activity_lock is not None:
             activity_lock.release()
+        if operation_lock is not None:
+            operation_lock.release()
 
 
 if __name__ == "__main__":

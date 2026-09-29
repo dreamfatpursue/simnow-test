@@ -58,6 +58,12 @@ def default_activity_lock_path(project_root: Path | None = None) -> Path:
     return root / "audit" / ".active-run.lock"
 
 
+def default_operation_lock_path(project_root: Path | None = None) -> Path:
+    """A short-lived gate for CTP setup operations, not a trading-run identity."""
+    root = Path(project_root) if project_root is not None else Path(__file__).resolve().parents[1]
+    return root / "audit" / ".operation.lock"
+
+
 def _read_identity(handle: TextIO) -> ActivityIdentity | None:
     handle.seek(0)
     try:
@@ -164,6 +170,44 @@ class ActivityLock:
             self._handle = None
 
     def __enter__(self) -> "ActivityLock":
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self.release()
+
+
+class OperationLock:
+    """Advisory lock for the short hand-off between starting and account rechecking."""
+
+    def __init__(self, handle: TextIO) -> None:
+        self._handle: TextIO | None = handle
+
+    @classmethod
+    def try_acquire(cls, path: str | Path) -> "OperationLock | None":
+        lock_path = Path(path)
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = lock_path.open("a+", encoding="utf-8")
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            if exc.errno not in {errno.EACCES, errno.EAGAIN}:
+                handle.close()
+                raise
+            handle.close()
+            return None
+        return cls(handle)
+
+    def release(self) -> None:
+        handle = self._handle
+        if handle is None:
+            return
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
+            self._handle = None
+
+    def __enter__(self) -> "OperationLock":
         return self
 
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:

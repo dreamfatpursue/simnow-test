@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from live_grid.account_recheck import new_recheck_record, read_latest_recheck, utc_now, write_recheck
 from live_grid.activity import ActivityIdentity, ActivityLock, default_activity_lock_path
 from live_grid.audit import AuditError
 from live_grid.config import MultiContractConfig, StrategyConfigError
@@ -90,6 +91,8 @@ class ConsoleState:
         self._projection_guard = threading.Lock()
         self._stop_requested: set[str] = set()
         self._start_guard = threading.Lock()
+        self._recheck_process: Any | None = None
+        self._recheck_context_id = secrets.token_urlsafe(12)
 
     def _safe_strategy_path(self, strategy_name: str) -> Path:
         if (
@@ -256,6 +259,9 @@ class ConsoleState:
                 self._confirmation = None
                 return launching
 
+            if self._recheck_is_running():
+                raise ConsoleInputError("账户核对中，请等待完成后再启动")
+
             env_status = environment_status(confirmation.environment)
             if not env_status["ready"]:
                 raise ConsoleInputError("仿真环境缺少必要变量: " + ", ".join(env_status["missing"]))
@@ -291,6 +297,51 @@ class ConsoleState:
             self._confirmation = None
             self._launching_process = process
             return {"status": "starting", "pid": process.pid, "message": "正在启动进程"}
+
+    def _recheck_is_running(self) -> bool:
+        process = self._recheck_process
+        return process is not None and process.poll() is None
+
+    def recheck(self, run_id: str) -> dict[str, Any]:
+        """Start an isolated process that can query but cannot submit or cancel orders."""
+        with self._start_guard:
+            active = self.current_activity()
+            if active is not None:
+                raise ConsoleInputError("当前有活动交易运行，不能执行账户核对")
+            if self._launching_status() is not None:
+                raise ConsoleInputError("交易进程正在启动，不能执行账户核对")
+            identity = ActivityLock.read_record(self.activity_lock_path)
+            if identity is None or identity.run_id != run_id:
+                raise ConsoleInputError("运行身份已变化，请刷新当前运行页面")
+            if not Path(identity.audit_dir).is_dir():
+                raise ConsoleInputError("运行审计目录不可用")
+            if self._recheck_is_running():
+                record = read_latest_recheck(identity.audit_dir, identity.run_id)
+                return {"status": "checking", "message": "账户核对已在进行", "recheck": record}
+
+            record = new_recheck_record(identity, self._recheck_context_id)
+            write_recheck(identity.audit_dir, record)
+            command = [
+                trading_python(), "-m", "live_grid.account_recheck",
+                "--project-root", str(self.project_root),
+                "--run-id", identity.run_id,
+                "--context-id", self._recheck_context_id,
+            ]
+            try:
+                process = subprocess.Popen(
+                    command,
+                    cwd=self.project_root,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except OSError as exc:
+                record.update(status="incomplete", stage="本地检查", message=f"账户核对进程启动失败: {exc}", completed_at=utc_now())
+                write_recheck(identity.audit_dir, record)
+                raise ConsoleInputError(record["message"]) from exc
+            self._recheck_process = process
+            return {"status": "checking", "message": "账户核对已受理", "recheck": record}
 
     def current_activity(self) -> ActivityIdentity | None:
         return ActivityLock.read_active(self.activity_lock_path)
@@ -396,6 +447,22 @@ class ConsoleState:
                 "key": f"{identity.run_id}:process_abnormal_exit",
                 "reason": "process_abnormal_exit",
             }
+        record = read_latest_recheck(identity.audit_dir, identity.run_id)
+        if record is not None:
+            if record.get("status") == "checking" and (self._recheck_process is None or self._recheck_process.poll() is not None):
+                record = {**record, "status": "incomplete", "stage": "本地检查", "message": "账户核对进程已退出，未取得完整结果"}
+                write_recheck(identity.audit_dir, record)
+            snapshot["recheck"] = record
+            snapshot["recheck_current"] = record.get("context_id") == self._recheck_context_id
+            if status == "process_abnormal_exit":
+                if record.get("context_id") != self._recheck_context_id:
+                    snapshot["display_status"] = "recheck_stale"
+                elif record.get("status") == "checking":
+                    snapshot["display_status"] = "rechecking"
+                elif record.get("status") == "passed":
+                    snapshot["display_status"] = "recheck_passed"
+                else:
+                    snapshot["display_status"] = "recheck_failed"
         return snapshot
 
 
@@ -522,6 +589,10 @@ class TradingConsoleHandler(BaseHTTPRequestHandler):
             if path == "/api/run/start":
                 result = self.console_state.start(payload.get("confirmation"))
                 self._send_json(202 if result["status"] == "starting" else 200, result)
+                return
+            if path == "/api/run/recheck":
+                result = self.console_state.recheck(payload.get("run_id"))
+                self._send_json(202, result)
                 return
             if path == "/api/run/flatten":
                 result = self.console_state.flatten(payload.get("run_id"), payload.get("contract"))

@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from live_grid.account_recheck import read_latest_recheck
 from live_grid.activity import ActivityIdentity, ActivityLock
 from live_grid.config import StrategyConfigError
 from trading_console import ConsoleInputError, ConsoleState, TradingConsoleServer
@@ -237,6 +238,35 @@ class TradingConsoleStateTests(unittest.TestCase):
             self.assertEqual(result["status"], "already_started")
             self.assertEqual(result["run"]["run_id"], "existing-run")
             popen.assert_not_called()
+
+    def test_recheck_spawns_a_separate_read_only_module_and_blocks_start(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            write_strategy(root)
+            audit_dir = Path(root) / "audit" / "existing-run"
+            audit_dir.mkdir(parents=True)
+            lock_path = Path(root) / "activity.lock"
+            identity = ActivityIdentity(
+                run_id="existing-run", pid=1234, started_at="2026-09-04T01:02:03+00:00",
+                environment="first", market_data_mode="normal", strategy_hash="existing-hash",
+                contracts=("rb2601@SHFE",), audit_dir=str(audit_dir),
+            )
+            held, _ = ActivityLock.try_acquire(lock_path, identity)
+            held.release()
+            state = ConsoleState(root, activity_lock_path=lock_path)
+            checking = SimpleNamespace(pid=3456, poll=lambda: None)
+            with patch("trading_console.subprocess.Popen", return_value=checking) as popen:
+                result = state.recheck("existing-run")
+            command = popen.call_args.args[0]
+            self.assertEqual(result["status"], "checking")
+            self.assertEqual(command[1:3], ["-m", "live_grid.account_recheck"])
+            self.assertNotIn("--confirm-simnow", command)
+            self.assertNotIn("send_order", " ".join(command))
+            self.assertEqual(read_latest_recheck(audit_dir, "existing-run")["status"], "checking")
+
+            with ready_environment():
+                preview = state.preview("strategy.json", "first")
+                with self.assertRaisesRegex(ConsoleInputError, "账户核对中"):
+                    state.start(preview["confirmation"])
 
     def test_stop_sends_one_signal_only_to_matching_active_run(self) -> None:
         with tempfile.TemporaryDirectory() as root:
